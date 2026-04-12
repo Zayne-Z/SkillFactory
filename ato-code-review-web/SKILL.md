@@ -2,7 +2,7 @@
 name: ato-code-review-web
 description: >-
   前端代码检视 Skill，适用于 Vue2/Vue3 等前端项目。通过多专家 Subagent 协作，
-  对 Git 分支变动代码进行全面检视，输出结构化代码检视报告。
+  对 Git 分支相对基准的 **diff 变更行** 进行检视（非全文），输出按模板填写的完整结构化报告。
   使用场景：用户要求进行代码检视、Code Review、分支对比分析时触发。
   支持断点续检、批量处理大型变动、智能技术栈识别。
 ---
@@ -186,6 +186,12 @@ prompts/task-planner.md → subagent_type="generalPurpose"
 
 ## Phase 5：多专家代码检视（分批 + 分专家执行）
 
+**检视范围（所有专家必须遵守）**
+
+- 仅针对 `git diff {{BRANCH2}}...{{BRANCH1}}` 中的**变更行**（及理解所需的最小上下文）进行检视。
+- **不得**对未变更代码做问题报告；不得要求通读全文件后罗列历史问题。
+- 各专家 Prompt 中均已写明「检视范围」；主 Agent 启动 Subagent 时勿删减该说明。
+
 **每批文件由以下专家依次或并行检视：**
 
 | 专家 | Prompt 文件 | 检视方向 | 输出文件 |
@@ -227,7 +233,7 @@ prompts/fix-advisor.md → subagent_type="generalPurpose"
 prompts/report-synthesizer.md → subagent_type="generalPurpose"
 ```
 
-读取所有批次的全部专家结果 + 修复建议，按 `templates/report-template.md` 模板生成最终报告：
+读取所有批次的全部专家结果 + 修复建议，**按 `templates/report-template.md` 全章节**生成最终报告（含：变动文件清单 → 问题清单 → 必改清单及人工填写区）。报告为**唯一交付物**，合成结果中**不得**引导用户再去查阅 `.codereview` 过程文件或本 SKILL 的步骤说明。
 
 ```
 codereview/report_<branch1>_<YYYY-MM-DD>.md
@@ -315,6 +321,7 @@ codereview/report_<branch1>_<YYYY-MM-DD>.md
 | `{{STATE_PATH}}` | `.codereview/state.json` |
 | `{{TEMPLATE_PATH}}` | `.cursor/skills/ato-code-review-web/templates/report-template.md` |
 | `{{REPORT_PATH}}` | `codereview/report_<branch1>_<YYYY-MM-DD>.md` |
+| `{{MUST_FIX_SECTION_INTRO}}` / `{{MUST_FIX_TABLE_ROWS}}` | 由报告合成阶段根据 Critical/High 问题生成（见 `report-synthesizer.md`） |
 
 ---
 

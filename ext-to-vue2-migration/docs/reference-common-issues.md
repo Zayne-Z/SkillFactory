@@ -52,6 +52,15 @@
 </el-table-column>
 ```
 
+### 4.1 行为一致性：下拉数据、表格列、日期形态
+
+**问题**：迁移时为「省事」或「现代化」改变数据加载方式或 UI 结构，导致与源行为不一致。
+
+**须遵守**：
+- **下拉**：源静态则目标静态；源接口异步则目标必须异步取选项，二者**不可互换**。  
+- **表格**：列与 `dataIndex`、行数据字段与源 Grid/接口一致，**不增加**无业务依据的列或行字段。  
+- **日期**：源为开始时间、结束时间**两个字段**时，迁移后仍为**两个**日期/时间表单项；**不要**擅自改成一个日期范围组件。
+
 ### 5. 表单验证差异
 **问题**：ExtJS 的验证器（`vtype`、`validator`）与 Element UI `rules` 差异大
 **解决**：
@@ -75,10 +84,13 @@ rules: {
 }
 ```
 
-### 6. 下拉框远程搜索
-**问题**：ExtJS ComboBox 的远程搜索模式与 el-select 差异大
+### 6. 下拉框远程搜索与静态选项
+**问题**：ExtJS ComboBox 的远程搜索模式与 el-select 差异大；且易与「静态下拉」混淆。
+
+**原则**：先看源——**远程 Store/接口** → 用 `remote`/`remote-method` 或请求后赋值；**静态 data** → 用本地 `options` 数组。**不要**把静态改成远程或把远程改成写死。
+
 ```html
-<!-- Vue2 远程搜索下拉 -->
+<!-- Vue2 远程搜索下拉（仅当源为异步加载选项时） -->
 <el-select v-model="value" filterable remote :remote-method="remoteSearch" :loading="loading">
   <el-option v-for="item in options" :key="item.id" :label="item.name" :value="item.id" />
 </el-select>

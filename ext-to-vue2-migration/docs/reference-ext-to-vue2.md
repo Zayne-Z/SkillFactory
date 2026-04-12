@@ -287,6 +287,24 @@ export default {
 | `displayfield` | `<span>` 或 `el-form-item` 纯展示 | |
 | `fieldcontainer` | `el-form-item` 嵌套 | |
 
+### 行为一致性（迁移时必须遵守）
+
+以下原则优先于「看起来更现代」的重构：
+
+1. **下拉框（combobox / tagfield 等）与数据从哪来**  
+   - 源为**本地静态**（`data: [...]`、无 `proxy`、`loadData` 一次填充且无 URL）→ Vue 侧用本地数组/`el-option` 列表，**不要**改成必须请求接口才能出选项。  
+   - 源为**接口异步**（`proxy.url`、`rest`、远程 `store.load`、`beforequery` 拉选项等）→ Vue 侧必须保留**异步加载**（`created`/`mounted` 请求、`remote`/`remote-method` 等），**不要**改成写死选项。  
+   - 保持与源一致的「何时、如何」取数，避免静态/异步混用。
+
+2. **表格（grid columns 与行数据）**  
+   - `el-table-column` 的 `prop`、列数、操作列与源 `columns` **对齐**；不要为「增强」增加源中不存在的业务列。  
+   - 行对象字段与接口/源 Model 一致，**不要**在 `tableData` 行上随意增加仅前端使用、源未定义的额外属性（除非与现有目标项目强约定）。
+
+3. **日期与时间控件形态**  
+   - 源为**两个独立字段**（两个 `datefield` / `start`+`end`）→ Vue 用**两个** `el-date-picker`（或等价），**禁止**擅自合并为一个 `type="daterange"`。  
+   - 源已为单字段范围或 Ext 明确范围语义时，再用 `daterange`/`datetimerange`。  
+   - `timefield` 两个独立时刻同理，保持两个控件，不合并为单个时间范围（除非源即如此）。
+
 ---
 
 ## 4. 弹窗与消息

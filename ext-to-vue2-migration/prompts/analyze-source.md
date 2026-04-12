@@ -45,7 +45,10 @@
 - 从 Ajax 封装文件分析请求/响应格式
 - 分析分页参数格式
 - 分析 Store/Proxy 的常见配置
-- 写入：`## 数据交互模式`
+- **下拉与表格（供迁移对齐）**：
+  - 统计 ComboBox/下拉：`store` 为静态 `data`、本地构造还是 `proxy`/`url` 远程加载；常见 `autoLoad`、`beforequery` 模式
+  - 统计 Grid：`columns` 与 `model`/`fields` 的对应关系，是否有仅展示、不参与提交的列
+- 写入：`## 数据交互模式`（建议含小节「下拉数据来源模式」「表格字段与列」）
 
 ### section = "auth"
 分析权限和认证。

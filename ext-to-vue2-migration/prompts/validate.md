@@ -75,6 +75,14 @@ npx eslint <file> --no-eslintrc --rule '{\"no-undef\":\"warn\",\"no-unused-vars\
 - 组件名是否是多词（Vue 风格指南推荐）
 - 是否有 `console.log` 遗留
 
+### 8. 行为一致性抽查（对照源 Ext 与 conversion-guide）
+在可获取源文件的前提下，对本次迁移页面做语义核对（非语法检查）：
+- **下拉框**：源若为远程 Store/接口加载，目标是否仍存在对应异步加载；源若为静态选项，目标是否未无故改为仅远程
+- **表格**：`el-table-column` 列集合是否与源 Grid 列语义一致；表格行数据是否未多出源/接口未定义的字段
+- **日期时间**：源若为两个独立 `datefield`/字段名，目标是否仍为两个独立控件，**未**擅自合并为 `daterange`
+
+若无法读取源文件，在报告中注明「未对照源文件」，并列出风险项。
+
 ## 输出格式
 
 生成 `.migration/validation-report.md`：
@@ -103,6 +111,9 @@ npx eslint <file> --no-eslintrc --rule '{\"no-undef\":\"warn\",\"no-unused-vars\
 
 ## 6. ESLint — ✅/⚠️/❌
 （通过/警告/错误统计）
+
+## 7. 行为一致性 — ✅/⚠️/❌
+（对照源与转换指南：下拉数据加载方式、表格列与字段、日期是否拆分/合并）
 
 ## 修复建议
 （如果有问题，给出具体修复建议）

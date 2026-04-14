@@ -1,4 +1,4 @@
-# 状态文件结构说明
+# 状态文件结构与断点恢复
 
 ## 文件路径
 
@@ -8,7 +8,7 @@
 
 ```json
 {
-  "version": "1.0",
+  "version": "2.0",
   "skill": "ato-code-review-java",
   "created_at": "2026-04-06T10:00:00.000Z",
   "updated_at": "2026-04-06T10:00:00.000Z",
@@ -16,23 +16,11 @@
   "current_phase": "branch_selection",
 
   "branches": {
-    "branch1": "feature/user-service",
+    "branch1": "",
     "branch2": "master"
   },
 
-  "tech_stack": {
-    "language": "java",
-    "java_version": "17",
-    "framework": "spring-boot",
-    "spring_boot_version": "2.7.18",
-    "orm": "mybatis",
-    "database": "mysql",
-    "build_tool": "maven",
-    "has_lombok": true,
-    "has_mapstruct": false,
-    "has_swagger": true,
-    "other_deps": ["hutool", "guava"]
-  },
+  "tech_stack": {},
 
   "diff_analysis": {
     "total_files": 0,
@@ -42,19 +30,7 @@
     "completed": false
   },
 
-  "review_progress": {
-    "batch-001": {
-      "files": ["src/main/java/com/example/service/UserService.java"],
-      "scanner":   "pending",
-      "spec":      "pending",
-      "perf":      "pending",
-      "security":  "pending",
-      "framework": "pending",
-      "robust":    "pending",
-      "sql":       "pending",
-      "fix":       "pending"
-    }
-  },
+  "review_progress": {},
 
   "synthesis": {
     "status": "pending",
@@ -65,32 +41,78 @@
 }
 ```
 
-## 阶段值说明
+## 阶段值（current_phase）
 
-| current_phase | 含义 |
-|---------------|------|
-| `branch_selection` | 等待用户输入分支 |
-| `diff_analysis` | 正在获取变动文件清单 |
-| `tech_stack` | 正在分析技术栈 |
-| `task_planning` | 正在规划检视任务 |
-| `reviewing` | 多专家检视进行中 |
-| `fix_advising` | 修复建议生成中 |
-| `synthesizing` | 报告合成中 |
-| `completed` | 检视完成 |
+| 值 | 含义 | 进入条件 |
+|----|------|---------|
+| `branch_selection` | 等待用户输入分支 | Phase 0 初始化后 |
+| `diff_analysis` | 获取变动文件 | Phase 1 分支确认后 |
+| `tech_stack` | 技术栈分析 | Phase 2 分批完成后 |
+| `task_planning` | 任务规划 | Phase 3 完成后 |
+| `reviewing` | 多专家检视 | Phase 4 完成后 |
+| `fix_advising` | 批次修复建议 | 嵌入 reviewing 循环 |
+| `synthesizing` | 报告合成 | 所有批次完成后 |
+| `completed` | 全部结束 | Phase 7 完成后 |
+
+## review_progress 结构
+
+Phase 4 完成后，主 Builder 根据 `task-plan.json` 初始化：
+
+```json
+"review_progress": {
+  "batch-001": {
+    "files": ["src/.../UserController.java", "src/.../UserServiceImpl.java"],
+    "core":     "pending",
+    "spring":   "pending",
+    "security": "pending",
+    "data":     "pending",
+    "fix":      "pending"
+  },
+  "batch-002": {
+    "files": ["src/.../UserMapper.java", "src/.../UserMapper.xml"],
+    "core":     "pending",
+    "spring":   "skipped",
+    "security": "skipped",
+    "data":     "pending",
+    "fix":      "pending"
+  }
+}
+```
 
 ## 专家状态值
 
-| 状态值 | 含义 |
-|--------|------|
-| `pending` | 待执行 |
-| `in_progress` | 执行中 |
-| `completed` | 已完成 |
-| `skipped` | 跳过（该批次无相关文件，如纯 POJO 跳过 SQL 专家） |
-| `failed` | 执行失败 |
+| 值 | 含义 | 后续动作 |
+|----|------|---------|
+| `pending` | 待执行 | 主 Builder 拉起子 Builder |
+| `in_progress` | 执行中 | 子 Builder 正在跑 |
+| `completed` | 已完成 | 跳过 |
+| `skipped` | 不适用 | 跳过（如纯 POJO 跳过 data） |
+| `failed` | 执行失败（已重试 2 次） | 跳过，记录到 notes[] |
 
-## 断点恢复逻辑
+专家键名：`core` / `spring` / `security` / `data` / `fix`
 
-1. 启动时读取 `state.json`
-2. 根据 `current_phase` 跳转到对应阶段
-3. 在 `review_progress` 中找到第一个非 `completed` 的批次+专家
-4. 从该位置继续执行
+## 断点恢复逻辑（主 Builder 每次启动必执行）
+
+```
+1. 读取 state.json
+2. 根据 current_phase 跳转到对应 Phase
+3. 若 current_phase == "reviewing"：
+   a. 扫描 review_progress
+   b. 找到第一个 batch 的第一个非 completed/skipped 的专家
+   c. 若该专家是 "in_progress"（说明上次中断了）→ 重置为 "pending"
+   d. 从该处继续
+4. 若 current_phase == "synthesizing"：
+   检查 synthesis.status，非 completed 则重跑报告合成
+```
+
+## in_progress 防死锁
+
+如果主 Builder 读到某个专家状态为 `in_progress`，说明上次执行中途中断（主 Builder 或子 Builder 崩溃）。此时：
+
+- 检查对应结果文件（如 `.codereview/results/batch-001-core.json`）是否存在
+  - 文件存在且 JSON 合法 → 直接标记 `completed`
+  - 不存在或损坏 → 重置为 `pending`，重新执行
+
+## updated_at
+
+主 Builder 每次写回 state.json 时更新此字段为当前 ISO 时间戳，便于追踪最后操作时间。

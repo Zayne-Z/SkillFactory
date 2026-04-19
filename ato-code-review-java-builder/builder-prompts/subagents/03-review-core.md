@@ -21,10 +21,16 @@
 
 **只检视本次 Git 差异中的变更行**，不对整文件做通篇评审。
 
-1. 对每个文件执行：`git --no-pager diff {{BRANCH2}}...{{BRANCH1}} -- <file_path>`，以统一 diff 为唯一检视对象。
-2. **仅**报告与 diff 中新增（`+`）或修改块**直接相关**的问题。
-3. 为理解变更块可读取变更行前后各少量行（建议不超过 15 行）；**禁止**为扩大范围通读整文件。
-4. 若无问题，`issues: []` 且 `summary.total_issues` 为 `0`。
+1. **优先**读取 `{{DIFF_PATCH_PATH}}`（若主 Builder 已提供且文件存在）：其中为本批次合并的 unified diff，与对多文件执行 `git --no-pager diff {{BRANCH2}}...{{BRANCH1}} -- <paths…>` 等价。
+2. 若 patch 不存在或为空，再对每个文件：`git --no-pager diff {{BRANCH2}}...{{BRANCH1}} -- <file_path>`。
+3. **仅**报告与 diff 中新增（`+`）或修改块**直接相关**的问题。
+4. 为理解变更块可读取变更行前后各少量行（建议不超过 15 行）；**禁止**为扩大范围通读整文件。
+5. 若无问题，`issues: []` 且 `summary.total_issues` 为 `0`。
+
+## 严重级别范围
+
+- 若 `{{SEVERITY_MODE}}` 为 `critical_high_only`：**仅**输出 `critical` 与 `high` 的 issue，**不得**输出 `medium` / `low`（summary 中对应计数为 0）。
+- 若为 `all`：可输出全部级别。
 
 ## 输入变量
 
@@ -32,6 +38,8 @@
 - `{{BATCH_FILES}}`：本批次文件列表（JSON 数组）
 - `{{BRANCH1}}`：被检视分支
 - `{{BRANCH2}}`：对比分支
+- `{{DIFF_PATCH_PATH}}`：本批次预计算 patch 路径（可选）
+- `{{SEVERITY_MODE}}`：`all` 或 `critical_high_only`
 - `{{TECH_STACK}}`：技术栈信息（JSON，可选）
 - `{{STANDARDS_PATH}}`：Java 规范参考，默认 `{SKILL_ROOT}/docs/java-standards.md`（`{SKILL_ROOT}` 由主 Builder 在交接时给出绝对路径）
 - `{{OUTPUT_PATH}}`：结果输出路径（`.codereview/results/{{BATCH_ID}}-core.json`）
@@ -94,3 +102,7 @@ return 后不可达代码、永远真/假条件、未使用 import/局部变量�
 - `medium`/`low`：规范与清洁度
 - `line` **必须为字符串**（`"78"` 或 `"78-95"`）
 - 问题 ID 前缀：**COR-**
+
+## 禁止误报：语法类问题
+
+**不要**基于 diff 片段报告「缺少分隔符（逗号、分号）」「括号不匹配」等**编译级语法错误**。diff 只显示变更行及少量上下文，逗号或括号可能在 hunk 边界外的未展示行上。若你在 diff 片段中未看到某个逗号/分号，**先确认完整语句**（读取该行前后各 15 行上下文）再判断；若仍无法确认，**不报告**。编译错误应由 IDE / `javac` 发现，不是代码检视的重点。

@@ -23,10 +23,10 @@
 
 ### Step 1：读取所有输入
 
-1. 读取 `state.json` 获取基本信息（分支、日期）
+1. 读取 `state.json` 获取基本信息（分支、日期、`review_options.severity_mode`、`review_options.skip_low_risk_files`）
 2. 读取 `tech-stack.json` 获取技术栈
-3. 读取 `file-inventory.json` 获取文件统计与文件列表行
-4. 读取报告模板 `report-template.md`（**必须逐节对齐**，不得省略章节）
+3. 读取 `file-inventory.json` 获取文件统计与文件列表行；若有 `review_scope`，在报告基本信息中写明跳过低风险文件数量与说明
+4. 读取报告模板 `report-template.md`（**必须逐节对齐**，不得省略章节）；填写 `{{SEVERITY_MODE_LABEL}}`（如「全部级别」/「仅 Critical + High」）、`{{LOW_RISK_SCOPE_LABEL}}`（如「已检视全部变动文件」或「已跳过 N 个低风险文件，详见清单 review_scope」）
 5. 逐批次读取专家结果，**新版文件名**：
    - `batch-NNN-core.json`、`batch-NNN-spring.json`、`batch-NNN-security.json`、`batch-NNN-data.json`、`batch-NNN-fix.json`
 
@@ -41,7 +41,7 @@
 
 ### Step 2：汇总统计
 
-- 按严重级别统计（critical/high/medium/low）
+- 按严重级别统计（critical/high/medium/low）；若 `severity_mode` 为 `critical_high_only`，在「基本信息」或第四节说明 **本轮未收集 medium/low**，汇总表中对应数量应为 0
 - 按问题类别统计（与各 JSON 的 `category` 一致）
 - 按文件统计（问题最多 Top 5 文件）
 - **合并去重**（同一文件、同一行、实质相同根因只保留一条，严重级别取高）：

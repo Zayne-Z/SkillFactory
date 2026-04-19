@@ -25,8 +25,9 @@ description: >-
 │   ├── mybatis-reference.md
 │   └── state-structure.md    ← state.json 字段说明
 ├── scripts/
-│   ├── get-diff-files.js     ← 生成变动文件清单
-│   └── batch-processor.js    ← 智能分批
+│   ├── get-diff-files.js     ← 生成变动文件清单（可选跳过低风险类型）
+│   ├── batch-processor.js    ← 智能分批
+│   └── export-batch-diffs.js ← 按批次预计算 unified diff（各专家共用）
 ├── templates/
 │   └── report-template.md    ← 最终报告模板
 └── builder-prompts/          ← ⚠️ 仅供人工创建 Builder 时参考，运行时不读取
@@ -41,6 +42,7 @@ description: >-
 {项目根}/
 ├── .codereview/
 │   ├── state.json            ← 全程状态（断点核心）
+│   ├── diffs/                ← 各批次 *.patch（预计算 diff，Phase 2 生成）
 │   ├── file-inventory.json
 │   ├── tech-stack.json
 │   ├── task-plan.json
@@ -58,7 +60,7 @@ description: >-
 **每个操作前读 `state.json`，每个操作后立即写回。** 字段详见 `{SKILL_ROOT}/docs/state-structure.md`。
 
 关键字段：
-- `current_phase`：当前大阶段（`branch_selection` → `diff_analysis` → `tech_stack` → `task_planning` → `reviewing` → `fix_advising` → `synthesizing` → `completed`）
+- `current_phase`：当前大阶段（`branch_selection` → `diff_analysis` → `tech_stack` → `task_planning` → `reviewing` → `synthesizing` → `completed`）
 - `review_progress.{batch-NNN}.{expert}`：`pending` / `in_progress` / `completed` / `skipped` / `failed`
 
 ### 2.2 主 Builder 启动逻辑（每次对话开头必执行）
@@ -70,9 +72,14 @@ description: >-
    └─ 存在   → 读取 current_phase
        ├─ completed     → 告知用户「检视已完成，报告在 codereview/ 下」
        └─ 其它          → 跳转到对应 Phase 继续
-3. 对 reviewing 阶段：扫描 review_progress，
-   找到第一个 status != completed && status != skipped 的 {batch}+{expert}
-   从该处继续
+3. 兼容性补丁：若 state.json 不含 review_options 字段
+   → 补入默认值 { "severity_mode": "all", "skip_low_risk_files": false }
+   → 写回 state.json（保证后续阶段可安全读取）
+4. 对 reviewing 阶段：按批次、按专家顺序（见 Phase 5）扫描 review_progress，
+   找到第一个 status 为 pending 或 in_progress 的 {batch}+{expert}（completed / skipped / failed 跳过；
+   in_progress 时先按 docs/state-structure.md「in_progress 防死锁」校验结果 JSON，再决定 completed 或改 pending 重跑）
+5. 对 synthesizing 阶段：若 synthesis.report_path 已有可读报告文件，可将 synthesis 与 current_phase 标为完成；否则重跑报告合成
+6. 幂等（可选）：tech_stack 且 tech-stack.json 已合法 → 可直接进入 task_planning；task_planning 且 task-plan.json 已存在 → 补全 review_progress 后进入 reviewing
 ```
 
 **这意味着**：用户可以在任何时刻关闭主 Builder，重新打开后它会自动从断点继续。
@@ -119,17 +126,23 @@ description: >-
 
 ---
 
-### Phase 1：分支选择（主 Builder 本地执行）
+### Phase 1：分支与检视选项（主 Builder 本地执行）
 
 1. 向用户确认：`BRANCH1`（被检视分支）、`BRANCH2`（基准，默认 `master`）
-2. 验证分支存在：`git branch -a | grep <branch>`
-3. 更新 `state.json`：写入 `branches`，设 `current_phase = "diff_analysis"`
+2. **检视深度**（必问，写入 `state.json` → `review_options.severity_mode`）：
+   - `all`：全部级别（Critical / High / Medium / Low 均报告）
+   - `critical_high_only`：仅 Critical + High（专家不得输出 Medium / Low）
+3. **是否跳过低风险文件**（必问，写入 `review_options.skip_low_risk_files`：`true` / `false`）：
+   - **是**：Phase 2 调用 `get-diff-files.js` 时追加 `--skip-low-risk true`，清单排除脚本识别的 DTO/VO/Request/Response、Entity/DO/PO、测试类（`*Test` / `*Tests`）；`file-inventory.json` 的 `review_scope` 记录被跳过路径
+   - **否**：不排除（仍可按 task-plan 对纯 POJO 批次做专家剪枝）
+4. 验证分支存在：`git rev-parse --verify <branch>`（返回非空即存在；**不要**用 `grep`，Windows PowerShell 无此命令）
+5. 更新 `state.json`：写入 `branches`、`review_options`，设 `current_phase = "diff_analysis"`
 
 ---
 
 ### Phase 2：变动文件与分批（主 Builder + 脚本）
 
-**Step 1：生成清单**
+**Step 1：生成清单**（若 `review_options.skip_low_risk_files === true`，追加 `--skip-low-risk true`）
 ```bash
 node "{SKILL_ROOT}/scripts/get-diff-files.js" --branch1 {BRANCH1} --branch2 {BRANCH2} --output .codereview/file-inventory.json
 ```
@@ -139,7 +152,17 @@ node "{SKILL_ROOT}/scripts/get-diff-files.js" --branch1 {BRANCH1} --branch2 {BRA
 node "{SKILL_ROOT}/scripts/batch-processor.js" --inventory .codereview/file-inventory.json --max-lines 600 --output .codereview/file-inventory.json
 ```
 
-**Step 3：** 向用户展示批次数、文件数、行数，确认后设 `current_phase = "tech_stack"`
+**Step 3：预计算批次 diff（默认执行）**
+
+多专家各自反复 `git diff` 会重复 I/O，且 diff 文本可能不一致。**每批次只对 Git 调用一次**，将 unified diff 写入 `.codereview/diffs/{BATCH_ID}.patch`，子 Builder **优先读该文件**，与多次单文件 diff 等价，上下文更稳定。
+
+```bash
+node "{SKILL_ROOT}/scripts/export-batch-diffs.js" --inventory .codereview/file-inventory.json --output-dir .codereview/diffs
+```
+
+脚本会更新 `file-inventory.json` 的 `diff_bundle`（含 `manifest.json`）。若某 patch 为空，子专家可回退为按文件 `git diff`。若 `manifest` 中单批 `byte_length` 过大，可告警或调整 `max-lines` 分批。
+
+**Step 4：** 向用户展示批次数、文件数、行数及跳过低风险统计（若有），确认后设 `current_phase = "tech_stack"`
 
 ---
 
@@ -211,18 +234,23 @@ node "{SKILL_ROOT}/scripts/batch-processor.js" --inventory .codereview/file-inve
 | `BATCH_FILES` | 该批次文件列表 JSON（从 task-plan.json 读取） |
 | `BRANCH1` | 被检视分支 |
 | `BRANCH2` | 基准分支 |
+| `DIFF_PATCH_PATH` | `.codereview/diffs/{BATCH_ID}.patch`（Phase 2 已导出则必传；不存在则子 Builder 仅用 git） |
+| `SEVERITY_MODE` | `state.json` → `review_options.severity_mode`（`all` 或 `critical_high_only`） |
 | `TECH_STACK` | tech-stack.json 内容摘要（或路径，让子 Builder 自读） |
 | `OUTPUT_PATH` | 结果文件路径 |
 | `SKILL_ROOT` | 本 Skill 根目录（子 Builder 需读取 docs/ 下参考文档） |
 
 **检视范围（硬性规则，传达给每个子 Builder）：**
 
-> 只检视 `git --no-pager diff {BRANCH2}...{BRANCH1} -- <file>` 的变更行。
-> 禁止对未改动代码批量报问题。`line` 字段必须为字符串。
+> **优先**读取 `DIFF_PATCH_PATH` 中的 unified diff（与 `git --no-pager diff {BRANCH2}...{BRANCH1} -- <paths…>` 等价）。缺失或为空时再对每个文件执行 `git --no-pager diff {BRANCH2}...{BRANCH1} -- <file>`。
+> 只检视变更行；禁止对未改动代码批量报问题。`line` 字段必须为字符串。
+>
+> 若 `SEVERITY_MODE` 为 `critical_high_only`，**仅**输出 `critical` 与 `high`，不得输出 `medium` / `low`。
 
 **适用性剪枝（来自 task-plan.json 的 `applicable_experts`）：**
 
-- 纯 POJO/DTO/Entity → 跳过 spring、data
+- 若 `review_options.skip_low_risk_files` 为 `true`，DTO/Entity/测试类已在 Phase 2 排除，不会出现在批次中
+- 若为 `false`：纯 POJO/DTO/Entity 批次 → 跳过 spring、data
 - 纯 Mapper XML → 重点 data + core
 - Controller → security + spring 重点
 - Service → spring + data 重点
@@ -238,8 +266,14 @@ node "{SKILL_ROOT}/scripts/batch-processor.js" --inventory .codereview/file-inve
 |------|---|
 | `BATCH_ID` | 当前批次 |
 | `BATCH_FILES` | 当前批次文件列表 |
+| `BRANCH1` | 被检视分支（与 Phase 5 相同） |
+| `BRANCH2` | 基准分支（与 Phase 5 相同） |
+| `DIFF_PATCH_PATH` | `.codereview/diffs/{BATCH_ID}.patch`（Phase 2 `export-batch-diffs.js` 已生成；主 Builder 按 `BATCH_ID` 自动拼装路径并传入，**用户无需填写**；与检视专家共用同一份 unified diff） |
 | `RESULTS_DIR` | `.codereview/results/` |
+| `SEVERITY_MODE` | 同 Phase 5（`critical_high_only` 时仅对 C/H 问题给修复建议） |
 | `OUTPUT_PATH` | `.codereview/results/{BATCH_ID}-fix.json` |
+
+**修复阶段上下文规则（须传达给子 Builder）：** 优先从 `DIFF_PATCH_PATH` 中定位各 `issue` 对应文件与行号附近的 hunk，用 patch 内已有上下文生成修复片段；**禁止**对同一工作区源文件反复 `read_file`。仅当 patch 缺失、为空或 hunk 上下文不足以写出正确补丁时，对该文件**最多**使用一次工作区读取（或 `git --no-pager diff {BRANCH2}...{BRANCH1} -- <file>`），并合并该文件内多条 issue 所需的行区间。
 
 ---
 
@@ -256,6 +290,8 @@ node "{SKILL_ROOT}/scripts/batch-processor.js" --inventory .codereview/file-inve
 | `INVENTORY_PATH` | `.codereview/file-inventory.json` |
 | `TEMPLATE_PATH` | `{SKILL_ROOT}/templates/report-template.md` |
 | `REPORT_PATH` | `codereview/report_{BRANCH1}_{DATE}.md`（`/` → `_`） |
+
+合成官须读取 `state.json` 的 `review_options` 与 `file-inventory.json` 的 `review_scope`，填入报告基本信息（检视深度、是否跳过低风险及跳过文件数）。
 
 **完成后：** 设 `current_phase = "completed"`，向用户输出报告路径与问题统计摘要。
 
@@ -281,7 +317,7 @@ node "{SKILL_ROOT}/scripts/batch-processor.js" --inventory .codereview/file-inve
 ## 5. Git 命令备忘
 
 ```bash
-git branch -a | grep "branch-name"
+git rev-parse --verify "branch-name"
 git --no-pager diff --name-only {BRANCH2}...{BRANCH1}
 git --no-pager diff {BRANCH2}...{BRANCH1} -- path/to/File.java
 git --no-pager diff --stat {BRANCH2}...{BRANCH1}

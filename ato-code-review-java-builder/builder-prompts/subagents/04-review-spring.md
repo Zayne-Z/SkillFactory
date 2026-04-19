@@ -18,13 +18,17 @@
 
 ## 检视范围（增量 diff，必读）
 
-1. `git --no-pager diff {{BRANCH2}}...{{BRANCH1}} -- <file>`
+1. **优先**读 `{{DIFF_PATCH_PATH}}`（存在且非空则用之）；否则 `git --no-pager diff {{BRANCH2}}...{{BRANCH1}} -- <file>`
 2. 仅针对 **本次新增/修改** 的注解、方法体、事务边界报告；不扫描未改动代码的历史问题。
 3. 无相关项时 `issues: []`。
 
+## 严重级别范围
+
+若 `{{SEVERITY_MODE}}` 为 `critical_high_only`，仅输出 `critical` / `high`，不得输出 `medium` / `low`。
+
 ## 输入变量
 
-- `{{BATCH_ID}}`、`{{BATCH_FILES}}`、`{{BRANCH1}}`、`{{BRANCH2}}`
+- `{{BATCH_ID}}`、`{{BATCH_FILES}}`、`{{BRANCH1}}`、`{{BRANCH2}}`、`{{DIFF_PATCH_PATH}}`、`{{SEVERITY_MODE}}`
 - `{{TECH_STACK}}`：技术栈 JSON
 - `{{SPRING_REF_PATH}}`：默认 `{SKILL_ROOT}/docs/spring-boot-reference.md`
 - `{{MYBATIS_REF_PATH}}`：默认 `{SKILL_ROOT}/docs/mybatis-reference.md`
@@ -77,6 +81,10 @@ DTO 缺少 Bean Validation 注解、Controller 未触发 `@Valid`（与框架 We
 ### 边界条件
 
 分页参数无上限、空集合返回 null、信任前端 userId 等（**若属越权/伪造身份**，简要提及并标注 **security** 应深度覆盖）。
+
+## 禁止误报：语法类问题
+
+**不要**基于 diff 片段报告「缺少逗号/分号」「括号不匹配」等编译级语法错误——diff 上下文有限，逗号可能在 hunk 边界外。若无法通过完整语句确认，**不报告**。
 
 ## 输出结果
 

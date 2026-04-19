@@ -16,48 +16,50 @@
 - `{{TECH_STACK_PATH}}`：技术栈分析结果路径（`.codereview/tech-stack.json`）
 - `{{OUTPUT_PATH}}`：任务计划输出路径（`.codereview/task-plan.json`）
 
+## 重要：批次来源
+
+**批次已由脚本 `batch-processor.js` 在 `file-inventory.json` 的 `batches` 字段中生成**（含智能分组：Mapper 配对、模块聚合、优先级排序）。
+
+**你不得重新生成批次或调整批次内的文件分组。** 你的职责是：读取已有批次 → 为每个批次标注 `applicable_experts` → 输出 `task-plan.json`。这样才能保证后续预计算 diff（`.codereview/diffs/{BATCH_ID}.patch`）与实际检视批次一致。
+
 ## 执行步骤
 
 ### Step 1：读取输入
 
-读取文件清单和技术栈信息。
+1. 读取 `{{INVENTORY_PATH}}`（`file-inventory.json`），获取 `batches` 数组与 `files` 数组。
+2. 读取 `{{TECH_STACK_PATH}}`（`tech-stack.json`），获取技术栈信息。
+3. 若清单中 `review_scope.skip_low_risk_files` 为 `true`，则变动列表已排除 DTO/Entity/测试等，任务规划**不得**再假设这些文件在本轮检视范围内（`skipped_low_risk_files` 仅作报告说明用）。
 
-### Step 2：识别 Java 文件类型
+### Step 2：文件类型 → 专家映射规则
 
-按文件路径和内容特征分类：
+按每个文件的 `type` 字段（已由脚本预分类）判断适用专家：
 
-| 文件特征 | 分类 | 关键检视专家 |
-|---------|------|------------|
-| `*Controller.java` | 控制层 | core、security、spring |
-| `*Service.java` / `*ServiceImpl.java` | 业务层 | core、spring、data |
-| `*Mapper.java` / `*Repository.java` | 数据访问层 | data、spring（集成） |
-| `*Mapper.xml` | SQL 映射文件 | data（重点）、core |
-| `*Entity.java` / `*DO.java` / `*PO.java` | 实体类 | core |
-| `*VO.java` / `*DTO.java` / `*Request.java` | 数据传输对象 | core、security |
-| `*Config.java` / `*Configuration.java` | 配置类 | security、spring |
-| `*Util.java` / `*Helper.java` | 工具类 | core、security、data（若含 SQL） |
-| `*Test.java` | 测试类 | core |
-| `application*.yml` / `application*.properties` | 配置文件 | security、data（连接池） |
-| `pom.xml` / `build.gradle` | 构建文件 | security |
+| 文件类型 | 适用专家 |
+|---------|---------|
+| `controller` | core、security、spring |
+| `service-impl` / `service-interface` | core、spring、data |
+| `mapper` / `repository` | core、data、spring（集成） |
+| `mapper-xml` | core、data |
+| `entity` / `dto` | core |
+| `config-java` | core、security、spring |
+| `util` | core、security、data（若含 SQL） |
+| `test` | core |
+| `config-yaml` / `config-properties` | security、data（连接池） |
+| `build` | security |
+| 其它 | core |
 
-### Step 3：各专家适用性规则
+### Step 3：为每个批次标注 applicable_experts
 
-```
-core：所有 Java 文件；YAML/Gradle/pom 仅当存在「可读的格式/命名」类问题时少量涉及（通常跳过）
-spring：Controller、Service、配置类、Mapper 接口（Spring 集成）；跳过纯 POJO、纯 XML 批次可 skip
-security：Controller、配置、工具类、pom、DTO/Request、含密钥的 yml
-data：Mapper.java/xml、Repository、Service 内数据库访问；含连接池的 yml；跳过无 SQL/无 ORM 的纯 DTO 批次
-修复专家：每批次汇总后运行一次（fix）
-```
+遍历 `batches`：
 
-### Step 4：生成批次
+1. 取该批次所有文件的 `type`，按上表取**并集**得到 `applicable_experts`。
+2. **core** 对所有批次均适用。
+3. 若批次内全部为 `entity` / `dto` / `enum` 且 `review_scope.skip_low_risk_files` 为 `false`，则 `spring` 和 `data` 设为 skipped。
+4. **fix** 不列入 `applicable_experts`（fix 由主 Builder 在每批专家全部完成后自动调用）。
 
-- 每批变动行数不超过 600 行
-- Mapper.xml 优先与对应 Mapper.java 分在同一批
-- Controller + Service（同一功能模块）优先同批
-- 超过 600 行的单文件单独成批
+### Step 4：输出任务计划
 
-### Step 5：输出任务计划
+**直接复用 inventory 的批次结构**，仅追加 `applicable_experts` 与统计字段：
 
 ```json
 {
@@ -69,8 +71,8 @@ data：Mapper.java/xml、Repository、Service 内数据库访问；含连接池�
       "id": "batch-001",
       "description": "用户模块 Controller + Service",
       "files": [
-        { "path": "src/main/java/com/example/controller/UserController.java", "type": "controller", "changed_lines": 85 },
-        { "path": "src/main/java/com/example/service/impl/UserServiceImpl.java", "type": "service", "changed_lines": 210 }
+        { "path": "src/.../UserController.java", "type": "controller", "changed_lines": 85 },
+        { "path": "src/.../UserServiceImpl.java", "type": "service-impl", "changed_lines": 210 }
       ],
       "total_lines": 295,
       "applicable_experts": ["core", "spring", "security", "data"]
@@ -79,27 +81,23 @@ data：Mapper.java/xml、Repository、Service 内数据库访问；含连接池�
       "id": "batch-002",
       "description": "用户模块 Mapper + XML",
       "files": [
-        { "path": "src/main/java/com/example/mapper/UserMapper.java", "type": "mapper", "changed_lines": 45 },
-        { "path": "src/main/resources/mapper/UserMapper.xml", "type": "mapper-xml", "changed_lines": 180 }
+        { "path": "src/.../UserMapper.java", "type": "mapper", "changed_lines": 45 },
+        { "path": "src/.../UserMapper.xml", "type": "mapper-xml", "changed_lines": 180 }
       ],
       "total_lines": 225,
-      "applicable_experts": ["core", "spring", "data"]
+      "applicable_experts": ["core", "data"]
     }
   ],
   "review_strategy": {
-    "parallel_available": true,
-    "recommended_mode": "wave2",
-    "wave_a": ["core", "security"],
-    "wave_b": ["spring", "data"],
     "serial_order": ["core", "security", "spring", "data"],
-    "note": "VS Code Builder：每专家单独子 Builder；同波次最多并行 2 个"
+    "note": "每专家单独子 Builder，按 serial_order 依次执行"
   }
 }
 ```
 
 ## 注意事项
 
-- 检视范围均为 **`branch2...branch1` 的 diff 变更行**
-- 批次 ID：`batch-NNN`（三位数字）
-- 纯 POJO/DTO/Entity 批次可跳过 **spring**、**data**
-- 纯 XML Mapper 批次：**data** + **core** 为主，**spring** 常 `skipped`
+- **批次 ID、文件列表、total_lines 必须与 `file-inventory.json` 完全一致**，不得重新分组
+- 检视范围均为 `branch2...branch1` 的 diff 变更行
+- 若 `review_scope.skip_low_risk_files` 为 `true`，inventory 中已不含 DTO/Entity/测试类，无需再做 POJO 剪枝
+- 若为 `false`，纯 POJO/DTO/Entity 批次可将 spring、data 标为不适用

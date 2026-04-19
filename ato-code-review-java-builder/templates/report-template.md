@@ -10,6 +10,8 @@
 |------|------|
 | 检视分支 | `{{BRANCH1}}` |
 | 对比基准 | `{{BRANCH2}}` |
+| 检视深度 | {{SEVERITY_MODE_LABEL}} |
+| 低风险文件 | {{LOW_RISK_SCOPE_LABEL}} |
 | 检视时间 | {{REVIEW_DATE}} |
 | 技术栈 | {{TECH_STACK_SUMMARY}} |
 | 变动文件数 | {{TOTAL_FILES}} 个 |

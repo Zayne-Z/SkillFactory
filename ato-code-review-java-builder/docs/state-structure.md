@@ -20,6 +20,11 @@
     "branch2": "master"
   },
 
+  "review_options": {
+    "severity_mode": "all",
+    "skip_low_risk_files": false
+  },
+
   "tech_stack": {},
 
   "diff_analysis": {
@@ -41,6 +46,20 @@
 }
 ```
 
+## review_options
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `severity_mode` | string | `all`：报告所有严重级别；`critical_high_only`：仅 Critical + High |
+| `skip_low_risk_files` | boolean | `true` 时 Phase 2 对 `get-diff-files.js` 传 `--skip-low-risk true`，排除 DTO/Entity/测试等（详见清单 `review_scope`） |
+
+Phase 1 用户确认分支后必须与分支一并写入；断点续跑时子 Builder 通过主 Builder 传入的 `SEVERITY_MODE` 等变量读取此配置。
+
+## file-inventory.json 补充字段（非 state.json）
+
+- `review_scope`：`get-diff-files.js` 写入，含 `skip_low_risk_files`、`skipped_low_risk_files` 等，供报告说明。
+- `diff_bundle`：`export-batch-diffs.js` 写入，含预计算 patch 目录与 `manifest.json` 路径。
+
 ## 阶段值（current_phase）
 
 | 值 | 含义 | 进入条件 |
@@ -49,8 +68,7 @@
 | `diff_analysis` | 获取变动文件 | Phase 1 分支确认后 |
 | `tech_stack` | 技术栈分析 | Phase 2 分批完成后 |
 | `task_planning` | 任务规划 | Phase 3 完成后 |
-| `reviewing` | 多专家检视 | Phase 4 完成后 |
-| `fix_advising` | 批次修复建议 | 嵌入 reviewing 循环 |
+| `reviewing` | 多专家检视（含每批次的修复建议） | Phase 4 完成后 |
 | `synthesizing` | 报告合成 | 所有批次完成后 |
 | `completed` | 全部结束 | Phase 7 完成后 |
 
@@ -97,21 +115,25 @@ Phase 4 完成后，主 Builder 根据 `task-plan.json` 初始化：
 1. 读取 state.json
 2. 根据 current_phase 跳转到对应 Phase
 3. 若 current_phase == "reviewing"：
-   a. 扫描 review_progress
-   b. 找到第一个 batch 的第一个非 completed/skipped 的专家
-   c. 若该专家是 "in_progress"（说明上次中断了）→ 重置为 "pending"
-   d. 从该处继续
+   a. 扫描 review_progress（批次顺序与 task-plan / inventory 一致）
+   b. 对每个批次按专家顺序（core → security → spring → data → fix）查找：**第一个**状态为 `pending` 或 `in_progress` 的专家；`completed` / `skipped` / `failed` 均跳过（`failed` 为终态，不再自动改 pending）
+   c. 若选中项为 "in_progress"：按下方「in_progress 防死锁」处理后再继续
+   d. 从该处拉起子 Builder 或继续主流程
 4. 若 current_phase == "synthesizing"：
-   检查 synthesis.status，非 completed 则重跑报告合成
+   若 synthesis.report_path 指向的报告文件已存在且非空 → 可将 synthesis.status 置 completed、current_phase 置 completed；
+   否则检查 synthesis.status，非 completed 则重跑报告合成
+5. 幂等（可选优化）：current_phase == "tech_stack" 且 .codereview/tech-stack.json 已存在且合法 → 可直接进入 task_planning；
+   current_phase == "task_planning" 且 task-plan.json 已存在 → 可补全 review_progress 后进入 reviewing（避免重复跑子 Builder）
 ```
 
 ## in_progress 防死锁
 
 如果主 Builder 读到某个专家状态为 `in_progress`，说明上次执行中途中断（主 Builder 或子 Builder 崩溃）。此时：
 
-- 检查对应结果文件（如 `.codereview/results/batch-001-core.json`）是否存在
-  - 文件存在且 JSON 合法 → 直接标记 `completed`
-  - 不存在或损坏 → 重置为 `pending`，重新执行
+- 检查对应结果文件是否存在且 JSON 合法：
+  - 检视专家：`.codereview/results/{BATCH_ID}-{core|spring|security|data}.json`
+  - **fix**：`.codereview/results/{BATCH_ID}-fix.json`
+  - 满足 → 标记 `completed`；否则 → 重置为 `pending` 并重新执行
 
 ## updated_at
 

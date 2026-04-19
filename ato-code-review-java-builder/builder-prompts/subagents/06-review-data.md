@@ -19,13 +19,17 @@
 
 ## 检视范围（增量 diff，必读）
 
-1. `git --no-pager diff {{BRANCH2}}...{{BRANCH1}} -- <file>`
+1. **优先**读 `{{DIFF_PATCH_PATH}}`（存在且非空）；否则 `git --no-pager diff {{BRANCH2}}...{{BRANCH1}} -- <file>`
 2. XML 仅检视 diff 中出现的 SQL 片段。
 3. 无相关项时 `issues: []`。
 
+## 严重级别范围
+
+若 `{{SEVERITY_MODE}}` 为 `critical_high_only`，仅输出 `critical` / `high`，不得输出 `medium` / `low`。
+
 ## 输入变量
 
-- `{{BATCH_ID}}`、`{{BATCH_FILES}}`、`{{BRANCH1}}`、`{{BRANCH2}}`
+- `{{BATCH_ID}}`、`{{BATCH_FILES}}`、`{{BRANCH1}}`、`{{BRANCH2}}`、`{{DIFF_PATCH_PATH}}`、`{{SEVERITY_MODE}}`
 - `{{TECH_STACK}}`：ORM、数据库、是否有 Redis 等
 - `{{MYBATIS_REF_PATH}}`：默认 `{SKILL_ROOT}/docs/mybatis-reference.md`
 - `{{OUTPUT_PATH}}`：`.codereview/results/{{BATCH_ID}}-data.json`
@@ -60,6 +64,10 @@
 ### 连接池与序列化
 
 `application.yml` 中连接池参数合理性（若本批次含配置文件 diff）；缓存中大对象/敏感对象。
+
+## 禁止误报：语法类问题
+
+**不要**基于 diff 片段报告「缺少逗号/分号」「XML 标签不闭合」等编译级语法错误——diff 上下文有限，标记可能在 hunk 边界外。若无法通过完整语句确认，**不报告**。
 
 ## 输出结果
 

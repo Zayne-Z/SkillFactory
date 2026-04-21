@@ -6,7 +6,7 @@
 
 在 VS Code AI 插件中 **手动创建 9 个 Builder**（**1 个主 + 8 个子**），并将下表中对应文件的内容粘贴为各 Builder 的系统提示词。
 
-检视专家已由 7 位合并为 **4 位**：`core`（扫描+规范）、`framework`（Vue+样式）、`reliability`（性能+健壮性）、`security`。
+检视专家已由 7 位合并为 **4 位**：`core`（扫描+规范）、`framework`（Vue/React+样式）、`reliability`（性能+健壮性）、`security`。
 
 ### 主 Builder（1 个）
 

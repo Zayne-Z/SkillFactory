@@ -14,6 +14,7 @@
 - 目标文件路径：`{{target_files}}`（要生成的文件路径）
 - 转换指南：`{{guide_path}}`（`.migration/conversion-guide.md`）
 - 记忆文件：`{{memory_path}}`（`.migration/memory.json`）
+- 用户补充（可选）：`{{user_hint}}` — 主 Agent 对用户口头纠正/提醒的**一句话摘要**；无则留空
 - 目标项目路径：`{{target_project}}`
 
 ## 执行步骤
@@ -21,14 +22,18 @@
 ### 1. 准备阶段
 
 **A. 读取转换指南**
-读取 `.migration/conversion-guide.md`，理解本项目的转换规则。
+读取 `.migration/conversion-guide.md`，理解本项目的转换规则。若指南未覆盖某 Ext 控件或需确认 UI 标签/import：**同目录**读取 `.migration/target-analysis.md`，重点看 **「第三方 UI 组件库」「已有公共组件」**，不得默认按通用 Element 示例编写而目标项目实际为其他 UI 库。
 
 **B. 查阅记忆**
-读取 `.migration/memory.json`，搜索与当前任务相关的经验：
-- 查 `component_mappings`：当前源文件用了哪些 Ext 组件，有没有已知映射？
-- 查 `patterns`：有没有类似页面类型的成功迁移案例？有的话读取 `reference_file`
-- 查 `issues`：有没有需要注意的坑？
-- 查 `api_mappings`：相关接口是否已映射？
+读取 `.migration/memory.json`（详见 `docs/memory-system.md`），**按优先级**：
+1. **`user_lessons`**：用户曾强调的规则（优先于个人推断）
+2. **`resolution_paths`**：与当前任务相似场景下，Agent 曾「多步查阅后才成功」的解题轨迹，可复用其 `outcome` / `steps`
+3. **`component_mappings`**：当前源文件用了哪些 Ext 组件，有没有已知映射？
+4. **`patterns`**：有没有类似页面类型的成功迁移案例？有的话读取 `reference_file`
+5. **`issues`**：有没有需要注意的坑？
+6. **`api_mappings`**：相关接口是否已映射？
+
+若 `{{user_hint}}` 非空，或你在**本轮对话**中听到用户「记住 / 必须 / 不要 / 统一用…」等长期约束，须在**记忆更新阶段**写入 `user_lessons`（勿只口头答应）。
 
 **C. 读取源文件**
 逐个读取源文件（每次一个），分析：
@@ -102,6 +107,7 @@ export function getXxxList(params) {
 - [ ] 所有 import 引用的文件/模块都存在
 - [ ] API 调用方式与目标项目一致
 - [ ] 命名风格与目标项目一致
+- [ ] 使用的 UI 组件库标签、表格/表单写法与 `target-analysis.md` / `conversion-guide.md` 中的目标栈一致（未误用参考文档中的默认 Element 示例）
 - [ ] 表单验证规则完整（如源文件有验证）
 - [ ] 分页逻辑正确（如有表格）
 - [ ] 下拉选项：静态/异步模式与源一致，未错配
@@ -110,16 +116,18 @@ export function getXxxList(params) {
 
 ### 5. 记忆更新阶段
 
-迁移完成后，评估本次迁移中的新发现，更新 `.migration/memory.json`：
+迁移完成后，评估本次迁移中的新发现，**一次写回** `.migration/memory.json`：
 
 **必须记录的**：
 - 新遇到的 Ext 组件映射（如果 component_mappings 中没有）
 - 新发现的成功模式（如果 patterns 中没有类似的）
 - 遇到的问题和解决方案（无论大小）
 - 新的 API 映射关系
+- **`user_lessons`**：若 `{{user_hint}}` 非空，或用户在本轮明确说了长期有效的纠正意见，压缩为条目写入（`id`、`content`、`task_id`、`created_at`、`source`）
+- **`resolution_paths`**：若本次**经 ≥3 个不同信息源查阅或多次尝试才定稿**（如 memory → target-analysis → conversion-guide → 参考页 → 源文件），追加一条（`goal`、`steps`、`outcome`、`key_files`、`confidence`）；若任务很顺则不必硬写
 
 **记录格式**：
-- patterns 新条目的 confidence 初始为 0.7
+- patterns 新条目的 confidence 初始为 0.7（字符串 `"0.7"`）
 - 如果复用了已有 pattern，将其 confidence +0.05（上限 0.99）
 - 在 patterns 的 reference_file 字段填入本次生成的 Vue 文件路径
 

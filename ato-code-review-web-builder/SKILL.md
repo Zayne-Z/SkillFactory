@@ -1,7 +1,7 @@
 ---
 name: ato-code-review-web-builder
 description: >-
-  前端（Vue 等）增量代码检视 Skill（Builder 模式）。主 Builder 读取本文件驱动全流程，通过预配置的子 Builder
+  前端（Vue / React 等）增量代码检视 Skill（Builder 模式）。主 Builder 读取本文件驱动全流程，通过预配置的子 Builder
   分阶段完成检视；中间状态写入 .codereview/state.json，支持断点续跑，适配中等上下文模型。
 ---
 
@@ -20,7 +20,9 @@ description: >-
 ├── docs/
 │   ├── vue2-reference.md
 │   ├── vue3-reference.md
+│   ├── react-reference.md
 │   ├── general-standards.md
+│   ├── security-checklist.md
 │   └── state-structure.md
 ├── scripts/
 │   ├── get-diff-files.js
@@ -176,7 +178,7 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 | 专家 | 子 Builder | 输出 | 合并来源 |
 |------|------------|------|----------|
 | core | `web-codereview-review-core` | `{BATCH_ID}-core.json` | 扫描 + 规范 |
-| framework | `web-codereview-review-framework` | `{BATCH_ID}-framework.json` | Vue + 样式 |
+| framework | `web-codereview-review-framework` | `{BATCH_ID}-framework.json` | Vue/React + 样式 |
 | reliability | `web-codereview-review-reliability` | `{BATCH_ID}-reliability.json` | 性能 + 健壮性 |
 | security | `web-codereview-review-security` | `{BATCH_ID}-security.json` | 安全（独立） |
 
@@ -191,7 +193,7 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 | `SEVERITY_MODE` | `state.json` → `review_options.severity_mode` |
 | `TECH_STACK` | 摘要或路径（子 Builder 可读 `tech-stack.json`） |
 | `OUTPUT_PATH` | 结果路径 |
-| `SKILL_ROOT` | 本 Skill 根目录（读 `docs/vue2-reference.md` 等） |
+| `SKILL_ROOT` | 本 Skill 根目录（子 Builder 按需读 `docs/` 下参考文档） |
 
 **检视范围（传达给子 Builder）：**
 
@@ -199,9 +201,9 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 
 **适用性：** 以 `task-plan.json` 的 `applicable_experts` 为准；非适用专家在 `review_progress` 中为 `skipped`。
 
-**框架专家路径变量：**`VUE2_REF_PATH` = `{SKILL_ROOT}/docs/vue2-reference.md`  
-`VUE3_REF_PATH` = `{SKILL_ROOT}/docs/vue3-reference.md`  
-`GENERAL_STANDARDS_PATH` = `{SKILL_ROOT}/docs/general-standards.md`
+**框架专家路径变量**（主 Builder 仅在与 **framework** 子 Builder 通信时传入）：`VUE2_REF_PATH` = `{SKILL_ROOT}/docs/vue2-reference.md`；`VUE3_REF_PATH` = `{SKILL_ROOT}/docs/vue3-reference.md`；`REACT_REF_PATH` = `{SKILL_ROOT}/docs/react-reference.md`；`GENERAL_STANDARDS_PATH` = `{SKILL_ROOT}/docs/general-standards.md`。
+
+**安全专家路径变量**（主 Builder 仅在与 **security** 子 Builder 通信时传入）：`SECURITY_REF_PATH` = `{SKILL_ROOT}/docs/security-checklist.md`。
 
 ---
 

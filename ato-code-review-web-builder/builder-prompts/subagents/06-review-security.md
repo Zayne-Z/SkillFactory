@@ -23,22 +23,24 @@
 ## 严重级别范围
 
 - 若 `{{SEVERITY_MODE}}` 为 `critical_high_only`：**仅**输出 `critical` 与 `high` 的 issue，**不得**输出 `medium` / `low`（summary 中对应计数为 0）。
-- 若为 `all`：可输出全部级别。
+  - **可疑但证据不足**：仍用 **`high`**，在 `description` 中写明「需人工确认数据来源 / 是否已净化 / 鉴权是否在服务端生效」等；**禁止**用 `medium`/`low` 表达不确定项。
+- 若为 `all`：可输出全部级别；此时若证据不足可用 `medium` 并说明需人工确认。
 
 ## 输出格式注意
 
 - JSON 中 `issues[].line` **必须为字符串**（如 `"45"` 或 `"78-95"`）。
 - JSON 中 `issues[].symbol` **必须为字符串**：Vue 填 `组件名#模板块/函数/生命周期`，JS/TS 填 `文件名#函数名` / `类名#方法名`，配置文件填最近配置键；无法判断时填 `"unknown"`，但不要省略。
 
+## 参考文档（可选，控制篇幅）
 
-
+若需对齐清单用语，可读取 `{{SECURITY_REF_PATH}}`（默认 `{SKILL_ROOT}/docs/security-checklist.md`）；**不要**全文粘贴到输出，仅用于自检。
 
 ## 输入变量
+
 - `{{DIFF_PATCH_PATH}}`：本批次预计算 patch（可选）
 - `{{SEVERITY_MODE}}`：`all` 或 `critical_high_only`
+- `{{SECURITY_REF_PATH}}`：安全检视参考（默认 `{SKILL_ROOT}/docs/security-checklist.md`）
 - `{{SKILL_ROOT}}`：Skill 根目录（读取参考文档时用绝对路径）
-
-
 - `{{BATCH_ID}}`：当前批次 ID
 - `{{BATCH_FILES}}`：本批次文件列表
 - `{{BRANCH1}}`：被检视分支
@@ -51,6 +53,7 @@
 
 **高风险**
 - `v-html` 直接绑定用户输入（未经 HTML 转义）
+- React：`dangerouslySetInnerHTML` 使用不可信或未净化 HTML
 - `innerHTML` 直接插入外部数据
 - `document.write()` 使用
 - `eval()` / `new Function()` 执行外部字符串
@@ -60,15 +63,14 @@
 - 将用户输入直接用于 DOM 操作
 
 **检查点**
-```javascript
-// ❌ 危险
+```jsx
+// Vue — 危险
 <div v-html="userInput"></div>
 
-// ⚠️ 需要确认 content 来源
-<div v-html="richTextContent"></div>
+// React — 危险
+<div dangerouslySetInnerHTML={{ __html: userInput }} />
 
-// ✅ 安全（纯文本绑定）
-<div>{{ userInput }}</div>
+// ⚠️ 需确认内容来源是否可信 / 是否已净化
 ```
 
 ### 敏感信息泄露
@@ -151,7 +153,7 @@ console.log('用户信息:', { phone: '138xxxx', idCard: '310...' })
 
 ## 注意事项
 
-- 安全问题要谨慎，避免误报（如 `v-html` 绑定后端返回的经过净化的富文本，不应报错误）
-- critical 级别问题：明确存在漏洞的代码
-- high 级别问题：有明显安全风险的模式
-- 遇到可疑但不确定的情况，用 medium 并说明"需人工确认来源"
+- 安全问题要谨慎，避免误报（如 `v-html` / `dangerouslySetInnerHTML` 绑定**已确认**净化后的富文本，不应报 issue）
+- **critical**：可确认的漏洞利用路径或明确泄露密钥等
+- **high**：明显危险模式，或 **`critical_high_only` 下需人工跟进的疑点**（见上文严重级别说明）
+- **`all` 模式**：证据不足时用 `medium` 并说明需人工确认；**`critical_high_only` 时不得输出 medium/low**

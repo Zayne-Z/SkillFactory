@@ -217,9 +217,10 @@ prompts/generate-guide.md → 填充 section 变量
 ## Phase 5: 逐页迁移（Subagent 执行，核心阶段）
 
 ### 5.0 迁移前
-- 确认 memory.json 存在（不存在则初始化空结构）
+- 确认 memory.json 存在（不存在则按 `docs/memory-system.md` 初始化空结构，含 `user_lessons` / `resolution_paths` 空数组）
 - 读取 plan.md 获取当前批次任务
 - 询问用户本次迁移几个任务（建议 1-3 个）
+- 若用户刚口头补充了长期约束，在下一任务变量中传入 **`user_hint`**（一两句话摘要）
 
 ### 5.1 逐任务执行
 迁移时必须保持与源行为一致（详见 `prompts/migrate-page.md`）：**下拉**数据静态/异步不可错配；**表格**列与行字段不擅自增删；**开始/结束时间**若源为分开字段则迁移后仍分开，不擅自改为范围组件。
@@ -229,9 +230,12 @@ prompts/generate-guide.md → 填充 section 变量
 ```
 读取 prompts/migrate-page.md
 填充变量：task_id, task_name, source_files, target_files,
-          guide_path, memory_path, target_project
+          guide_path, memory_path, target_project,
+          user_hint（可选，无则空）
 调用 Task 工具，subagent_type="generalPurpose"
 ```
+
+记忆须按 `docs/memory-system.md` 维护 **`user_lessons`**（用户提醒）与 **`resolution_paths`**（多步查阅后才成功的路径沉淀）。
 
 **⚠️ 一次只启动一个迁移 Subagent**——因为后一个任务可能依赖前一个的记忆更新。
 

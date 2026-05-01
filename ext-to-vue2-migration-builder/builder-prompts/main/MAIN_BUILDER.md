@@ -30,7 +30,7 @@
 - `ext-vue2-migrate-page`
 - `ext-vue2-validate`
 
-调用时机与传入变量以 `{SKILL_ROOT}/SKILL.md` 为准。**Phase 5 一次只拉起一个** `ext-vue2-migrate-page`。
+调用时机与传入变量以 `{SKILL_ROOT}/SKILL.md` 为准。**Phase 5 一次只拉起一个** `ext-vue2-migrate-page`。用户刚补充长期约束时，下一任务传入可选变量 **`USER_HINT`**（摘要），以便写入 `memory.json` 的 `user_lessons`（见 `docs/memory-system.md`）。
 
 ## 脚本
 

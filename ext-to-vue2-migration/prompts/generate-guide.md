@@ -21,9 +21,9 @@
 
 ### section = "std_mappings"
 生成标准 Ext 组件的映射方案。
-- 读取通用参考 reference-ext-to-vue2.md 的组件映射
-- 结合目标项目的 UI 框架和已有组件进行适配
-- 写入：`## 2. 标准 Ext 组件 → 目标方案`
+- 读取通用参考 reference-ext-to-vue2.md 的组件映射（示例多以 Element UI 为主）
+- **必须以 target-analysis.md 中「第三方 UI 组件库」「已有公共组件」为准**：替换标签名、API 与 import；若参考与目标分析冲突，**以目标分析为准**
+- 写入：`## 2. 标准 Ext 组件 → 目标方案`，并包含子节 **`## 2.1 目标 UI 库与 Ext 对照（项目实际）`**：按目标项目真实 UI 库，列出 Grid/Form/Window/Combo/Date 等高频 Ext 模式对应到本项目的组件名与注意事项
 
 ### section = "data_rules"
 生成数据交互转换规则。

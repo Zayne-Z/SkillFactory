@@ -50,7 +50,7 @@
 
 ### module_list
 
-- 结合 `{{MODULES}}` 与 **Phase 1A 产物**：若存在 `{PROJECT_ROOT}/.migration/scans/*.json`（主 Builder 传入目录或告知路径），优先读取各文件中的 `summary` / `pages` 汇总；若无扫描文件则仅依据分析与目录抽样
+- 结合 `{{MODULES}}` 与 **Phase 1A 产物**：若主 Builder 传入了 `{{SCANS_DIR}}`，则读取该目录下各 `*.json` 中的 `summary` / `pages` 汇总；未传入则仅依据分析与目录抽样（或由主 Builder 在提示中给出 scans 目录绝对路径）
 - 写入：`## 模块清单`（模块名 | 路径 | 页面数 | JS 数 | 复杂度）
 
 ## 输出方式

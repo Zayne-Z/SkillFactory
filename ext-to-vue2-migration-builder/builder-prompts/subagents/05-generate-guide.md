@@ -25,8 +25,8 @@
 
 ### std_mappings
 
-- 结合 `{{REFERENCE_PATH}}` 与目标技术栈
-- 写入：`## 2. 标准 Ext 组件 → 目标方案`
+- 结合 `{{REFERENCE_PATH}}` 与 **目标技术栈**；`{{REFERENCE_PATH}}` 中示例多以 Element UI 为主，**必须以 `{{TARGET_ANALYSIS_PATH}}` 中「第三方 UI 组件库」「已有公共组件」为准** 替换标签名、API 与 import 方式
+- 写入：`## 2. 标准 Ext 组件 → 目标方案`，其中须包含子节 **`## 2.1 目标 UI 库与 Ext 对照（项目实际）`**：按目标项目真实 UI 库，列出 Grid/Form/Window/Combo/Date 等高频 Ext 模式对应到 **本项目** 的组件名与注意事项（若目标分析与参考冲突，**以目标分析为准**）
 
 ### data_rules
 

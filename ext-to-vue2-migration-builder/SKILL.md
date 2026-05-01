@@ -1,8 +1,9 @@
 ---
-name: ext-to-vue2-migration
+name: ext-to-vue2-migration-builder
 description: >-
-  ExtJS/JSP → Vue2 迁移 Skill（主 Builder 模式）。主 Builder 读取本文件驱动全流程，通过预配置的子 Builder
-  分阶段执行；中间状态写入 .migration/state.json，支持断点续跑，适配中等上下文模型。
+  ExtJS/JSP → Vue2 迁移 Skill（主 Builder 编排版，目录名常含 builder 后缀）。主 Builder 读取本文件驱动全流程，
+  通过预配置的子 Builder 分阶段执行；中间状态写入 .migration/state.json，支持断点续跑，适配中等上下文模型。
+  与单文件 prompts 版 ext-to-vue2-migration 为同一流程的不同封装形态。
 ---
 
 # ExtJS → Vue2 迁移 · 主 Builder 工作流
@@ -163,6 +164,8 @@ node "{SKILL_ROOT}/scripts/scan.js" overview "{source_project}"
 
 对 `target_sections`：`config` → `components` → `code_style` → `api_layer` → `store_router`：
 
+> **说明**：`components` 段落须覆盖 **package.json 中的第三方 UI 库、注册/按需方式、页面中的真实用法**（见子 Builder 提示词），否则迁移易误用默认 Element 等示例。
+
 **子 Builder：** `ext-vue2-analyze-target`
 
 | 变量 | 说明 |
@@ -236,9 +239,12 @@ node "{SKILL_ROOT}/scripts/scan.js" overview "{source_project}"
 | `TARGET_FILES` | 目标文件路径列表 |
 | `GUIDE_PATH` | `.migration/conversion-guide.md` |
 | `MEMORY_PATH` | `.migration/memory.json` |
+| `USER_HINT`（可选） | 用户在本任务前口头补充的长期约束，主 Builder **摘要成一两句话**传入；无则省略或空字符串 |
 | `TARGET_PROJECT` | `state.target_project` |
 | `SOURCE_PROJECT` | `state.source_project` |
 | `OUTPUT_PATH` | `.migration/task-results/{TASK_ID}.json` |
+
+**记忆强化（Phase 5）**：子 Builder 须按 `docs/memory-system.md` 维护 `user_lessons`（用户提醒）与 `resolution_paths`（多步查阅后才成功的路径沉淀）；主 Builder 在用户刚说完纠正意见后启动下一任务时，应把要点写入 `USER_HINT`。
 
 3. 主 Builder 根据摘要更新 `migration_tasks[].status`、`progress`、`progress.md`（可简要追加一行，不必全文读取 guide）。  
 4. 批次结束询问是否继续，直至无 `pending` 或用户暂停。全部完成 → `current_phase = "validating"`。

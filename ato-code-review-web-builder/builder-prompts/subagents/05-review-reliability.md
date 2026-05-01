@@ -13,7 +13,7 @@
 ## 职责边界
 
 - **不报告**：纯命名/注释/style规范 —— **core**。
-- **不报告**：Vue 响应式 API 误用（如该用 \$set）—— **framework**（但若表现为「未清理定时器」属本专家）。
+- **不报告**：Vue 响应式 API 误用（如该用 \$set）、React hooks 误用（如在条件内调用 hooks）—— **framework**（但若表现为「未清理定时器」属本专家）。
 - **不报告**：XSS/密钥 —— **security**。
 
 ## 检视范围（增量 diff，强制）
@@ -30,7 +30,8 @@
 
 ## 检查清单 A：性能
 
-- `v-for` `:key`、v-if/v-show、列表虚拟滚动、computed vs 模板方法、Vue3 `v-memo` / `shallowRef` 等
+- Vue：`v-for` `:key`、v-if/v-show、列表虚拟滚动、computed vs 模板方法、Vue3 `v-memo` / `shallowRef` 等
+- React：列表 `key` 稳定性（如滥用 `index` 作 key 导致重排性能问题）、`memo`/`useMemo`/`useCallback` 是否与 diff 引入的渲染热点相关
 - 监听器/定时器/WebSocket/图表实例在卸载时清理；重复请求、防抖节流、懒加载与按需引入
 
 ## 检查清单 B：健壮性

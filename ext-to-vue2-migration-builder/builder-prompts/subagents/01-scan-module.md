@@ -69,7 +69,7 @@ node "{{SCAN_SCRIPT}}" detail "{{MODULE_PATH}}"
 }
 ```
 
-`pages` 等数组元素字段与原版 `prompts/scan-module.md` 一致：`name`、`file`、`type`、`lines`、`ext_components`、`dependencies`、`complexity`（`low|medium|high`）。
+`pages`（及放入 `components` 等数组）的元素字段：**`name`**（可读名）、**`file`**（相对 `MODULE_PATH`）、**`type`**（如 `jsp`/`grid`/`form`）、**`lines`**（字符串）、**`ext_components`**（字符串数组）、**`dependencies`**（引用路径等）、**`complexity`**（`low|medium|high`）。
 
 ## 注意事项
 

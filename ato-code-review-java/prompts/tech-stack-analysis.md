@@ -1,3 +1,9 @@
+> **子 agent**：`java-codereview-tech-stack` | Phase 3
+> 将本文件内容粘贴到 opencode 或其它 AI 编排器中该 agent 的系统提示词。
+> **完成约定**：执行完毕后必须将结果写入 `{{OUTPUT_PATH}}`。主编排 Agent 通过检查该文件是否存在且 JSON 合法来判断任务是否完成。若你遇到上下文超长，优先将**已完成的部分结果**写入文件，然后停止。
+
+---
+
 # 技术栈分析专家 Prompt
 
 ## 角色
@@ -89,4 +95,4 @@
 
 - 如果是多模块项目，在 `review_notes` 中说明模块结构
 - 如果 Spring Boot 版本 >= 3.0，标记 `spring_boot_v3: true`（Jakarta EE 命名空间）
-- 连接池类型影响性能专家对连接池配置的检视方向
+- 连接池类型影响 **data** 专家对连接池与数据源相关配置的检视方向

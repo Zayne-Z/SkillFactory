@@ -10,6 +10,8 @@
 |------|------|
 | 检视分支 | `{{BRANCH1}}` |
 | 对比基准 | `{{BRANCH2}}` |
+| 检视深度 | {{SEVERITY_MODE_LABEL}} |
+| 低风险文件 | {{LOW_RISK_SCOPE_LABEL}} |
 | 检视时间 | {{REVIEW_DATE}} |
 | 技术栈 | {{TECH_STACK_SUMMARY}} |
 | 变动文件数 | {{TOTAL_FILES}} 个 |
@@ -44,13 +46,10 @@
 
 | 检视领域 | 问题数 | 最高严重级别 |
 |---------|--------|------------|
-| 代码扫描（NPE/异常处理/死代码） | {{COUNT_SCANNER}} | {{MAX_SCANNER}} |
-| 规范检查（命名/注释/魔法数字） | {{COUNT_SPEC}} | {{MAX_SPEC}} |
-| 性能检查（线程安全/循环优化/缓存） | {{COUNT_PERF}} | {{MAX_PERF}} |
-| 安全检查（SQL注入/越权/反序列化） | {{COUNT_SECURITY}} | {{MAX_SECURITY}} |
-| 框架规范（Spring/事务/注解） | {{COUNT_FRAMEWORK}} | {{MAX_FRAMEWORK}} |
-| 健壮性检查（异常/事务/幂等性） | {{COUNT_ROBUST}} | {{MAX_ROBUST}} |
-| SQL 检查（N+1/索引/ORM反模式） | {{COUNT_SQL}} | {{MAX_SQL}} |
+| 核心静态（规范 / NPE / 资源 / 基础缺陷） | {{COUNT_CORE}} | {{MAX_CORE}} |
+| Spring 与业务可靠性（注解 / 事务 / 幂等 / 竞态） | {{COUNT_SPRING}} | {{MAX_SPRING}} |
+| 安全（鉴权 / 敏感信息 / 反序列化 / Java 侧 SQL 拼接） | {{COUNT_SECURITY}} | {{MAX_SECURITY}} |
+| 数据与性能（SQL / ORM / N+1 / 线程安全与缓存） | {{COUNT_DATA}} | {{MAX_DATA}} |
 
 ### 3.3 问题最多的文件 Top 5
 
@@ -78,45 +77,27 @@
 
 ## 五、详细检视结果
 
-### 5.1 代码扫描（NPE / 异常处理 / 死代码）
+### 5.1 核心静态（规范 / NPE / 资源 / 基础缺陷）
 
-{{SCANNER_ISSUES_DETAIL}}
-
----
-
-### 5.2 代码规范（命名 / 注释 / 代码结构）
-
-{{SPEC_ISSUES_DETAIL}}
+{{CORE_ISSUES_DETAIL}}
 
 ---
 
-### 5.3 性能问题（线程安全 / 循环优化 / 缓存）
+### 5.2 Spring 与业务可靠性（Spring {{SPRING_BOOT_VERSION}}）
 
-{{PERF_ISSUES_DETAIL}}
+{{SPRING_ISSUES_DETAIL}}
 
 ---
 
-### 5.4 安全问题（SQL注入 / 越权 / 敏感信息）
+### 5.3 安全问题（鉴权 / 敏感信息 / 反序列化等）
 
 {{SECURITY_ISSUES_DETAIL}}
 
 ---
 
-### 5.5 框架规范（Spring {{SPRING_BOOT_VERSION}}）
+### 5.4 数据与性能（SQL / ORM / N+1 / 并发与缓存）
 
-{{FRAMEWORK_ISSUES_DETAIL}}
-
----
-
-### 5.6 健壮性问题（异常处理 / 事务 / 幂等性）
-
-{{ROBUST_ISSUES_DETAIL}}
-
----
-
-### 5.7 SQL 问题（N+1 / 索引 / ORM 反模式）
-
-{{SQL_ISSUES_DETAIL}}
+{{DATA_ISSUES_DETAIL}}
 
 ---
 
@@ -130,8 +111,8 @@
 
 ## 七、问题清单摘要（全量）
 
-| # | 问题 ID | 文件 | 行号 | 级别 | 领域 | 问题描述 |
-|---|---------|------|------|------|------|---------|
+| # | 问题 ID | 文件 | 行号 | 函数/方法 | 级别 | 领域 | 问题描述 |
+|---|---------|------|------|-----------|------|------|---------|
 {{ISSUE_TABLE_ROWS}}
 
 > **说明**：「操作/结论」请在 **第八节** 的必改项表中统一填写；本节为全量索引。

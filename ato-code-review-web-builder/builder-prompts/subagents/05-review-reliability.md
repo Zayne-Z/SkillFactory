@@ -20,6 +20,7 @@
 
 1. **优先** `{{DIFF_PATCH_PATH}}`；否则 `git --no-pager diff`。
 2. `issues[].line` **字符串**；`critical_high_only` 时仅 `critical`/`high`。
+3. `issues[].symbol` **字符串且必填**：Vue 填 `组件名#函数/生命周期/computed/watch`，JS/TS 填 `文件名#函数名` / `类名#方法名`；模板级问题填 `组件名#template`；无法判断时填 `"unknown"`。
 
 ## 输入变量
 
@@ -52,6 +53,7 @@
       "id": "REL-001",
       "file": "src/views/X.vue",
       "line": "56",
+      "symbol": "X.vue#loadData",
       "severity": "critical",
       "category": "null_reference",
       "title": "…",

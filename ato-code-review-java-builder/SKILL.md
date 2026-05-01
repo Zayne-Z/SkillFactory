@@ -143,12 +143,12 @@ description: >-
 ### Phase 2：变动文件与分批（主 Builder + 脚本）
 
 **Step 1：生成清单**（若 `review_options.skip_low_risk_files === true`，追加 `--skip-low-risk true`）
-```bash
+```powershell
 node "{SKILL_ROOT}/scripts/get-diff-files.js" --branch1 {BRANCH1} --branch2 {BRANCH2} --output .codereview/file-inventory.json
 ```
 
 **Step 2：分批**
-```bash
+```powershell
 node "{SKILL_ROOT}/scripts/batch-processor.js" --inventory .codereview/file-inventory.json --max-lines 600 --output .codereview/file-inventory.json
 ```
 
@@ -156,7 +156,7 @@ node "{SKILL_ROOT}/scripts/batch-processor.js" --inventory .codereview/file-inve
 
 多专家各自反复 `git diff` 会重复 I/O，且 diff 文本可能不一致。**每批次只对 Git 调用一次**，将 unified diff 写入 `.codereview/diffs/{BATCH_ID}.patch`，子 Builder **优先读该文件**，与多次单文件 diff 等价，上下文更稳定。
 
-```bash
+```powershell
 node "{SKILL_ROOT}/scripts/export-batch-diffs.js" --inventory .codereview/file-inventory.json --output-dir .codereview/diffs
 ```
 
@@ -243,7 +243,7 @@ node "{SKILL_ROOT}/scripts/export-batch-diffs.js" --inventory .codereview/file-i
 **检视范围（硬性规则，传达给每个子 Builder）：**
 
 > **优先**读取 `DIFF_PATCH_PATH` 中的 unified diff（与 `git --no-pager diff {BRANCH2}...{BRANCH1} -- <paths…>` 等价）。缺失或为空时再对每个文件执行 `git --no-pager diff {BRANCH2}...{BRANCH1} -- <file>`。
-> 只检视变更行；禁止对未改动代码批量报问题。`line` 字段必须为字符串。
+> 只检视变更行；禁止对未改动代码批量报问题。`line` 字段必须为字符串；每条 issue 必须补充 `symbol`（如 `UserServiceImpl#createOrder`、`UserMapper.xml#selectById`），报告不得只依赖行号定位。
 >
 > 若 `SEVERITY_MODE` 为 `critical_high_only`，**仅**输出 `critical` 与 `high`，不得输出 `medium` / `low`。
 
@@ -316,7 +316,7 @@ node "{SKILL_ROOT}/scripts/export-batch-diffs.js" --inventory .codereview/file-i
 
 ## 5. Git 命令备忘
 
-```bash
+```powershell
 git rev-parse --verify "branch-name"
 git --no-pager diff --name-only {BRANCH2}...{BRANCH1}
 git --no-pager diff {BRANCH2}...{BRANCH1} -- path/to/File.java

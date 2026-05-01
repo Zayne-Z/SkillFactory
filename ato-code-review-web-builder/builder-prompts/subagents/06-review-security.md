@@ -28,6 +28,7 @@
 ## 输出格式注意
 
 - JSON 中 `issues[].line` **必须为字符串**（如 `"45"` 或 `"78-95"`）。
+- JSON 中 `issues[].symbol` **必须为字符串**：Vue 填 `组件名#模板块/函数/生命周期`，JS/TS 填 `文件名#函数名` / `类名#方法名`，配置文件填最近配置键；无法判断时填 `"unknown"`，但不要省略。
 
 
 
@@ -124,6 +125,7 @@ console.log('用户信息:', { phone: '138xxxx', idCard: '310...' })
       "id": "SEC-001",
       "file": "src/components/RichTextDisplay.vue",
       "line": "12",
+      "symbol": "RichTextDisplay.vue#template",
       "severity": "critical",
       "category": "xss",
       "title": "v-html 绑定未经验证的用户输入",
@@ -135,6 +137,7 @@ console.log('用户信息:', { phone: '138xxxx', idCard: '310...' })
       "id": "SEC-002",
       "file": "src/utils/request.js",
       "line": "5",
+      "symbol": "request.js#module",
       "severity": "high",
       "category": "sensitive_info",
       "title": "硬编码 API 密钥",

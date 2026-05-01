@@ -24,7 +24,7 @@
  * }
  */
 
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -43,7 +43,7 @@ function parseArgs(args) {
 // 识别 Java 文件类型（用于任务规划专家的优先级判断）
 function getJavaFileType(filePath) {
   const basename = path.basename(filePath, '.java');
-  const lowerPath = filePath.toLowerCase();
+  const lowerPath = filePath.replace(/\\/g, '/').toLowerCase();
   const lowerBase = basename.toLowerCase();
 
   // 按后缀名分类（非 .java 文件）
@@ -93,15 +93,16 @@ function isLowRiskType(fileType) {
 
 // 判断是否为需要检视的文件（过滤无关文件）
 function isReviewableFile(filePath) {
+  const normalizedPath = filePath.replace(/\\/g, '/');
   const ignoredPaths = [
     'node_modules/', '.git/', 'target/', 'build/', 'out/',
     '.mvn/', '.gradle/', '__pycache__/', '.idea/', '.vscode/',
     'test-output/', 'generated-sources/',
   ];
-  if (ignoredPaths.some(p => filePath.includes(p))) return false;
+  if (ignoredPaths.some(p => normalizedPath.includes(p))) return false;
 
   // 过滤生成的 MapStruct 实现类
-  if (filePath.includes('/generated/') || path.basename(filePath).includes('MapperImpl')) return false;
+  if (normalizedPath.includes('/generated/') || path.basename(filePath).includes('MapperImpl')) return false;
 
   const reviewableExts = [
     '.java', '.xml', '.yml', '.yaml', '.properties',
@@ -125,9 +126,9 @@ function getFileSize(filePath) {
   }
 }
 
-function exec(cmd) {
+function execGit(args) {
   try {
-    return execSync(cmd, {
+    return execFileSync('git', args, {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, GIT_PAGER: 'cat', GIT_TERMINAL_PROMPT: '0' },
@@ -157,9 +158,9 @@ function main() {
 
   console.log(`正在分析分支差异: ${branch1} vs ${branch2} ...`);
 
-  // 验证分支存在（不使用 2>/dev/null，exec 已将 stderr 管道化，跨平台兼容）
-  const b1Exists = exec(`git rev-parse --verify "${branch1}"`);
-  const b2Exists = exec(`git rev-parse --verify "${branch2}"`);
+  // 验证分支存在：使用 execFileSync 传参，不依赖 bash/cmd/PowerShell 的解析规则。
+  const b1Exists = execGit(['rev-parse', '--verify', branch1]);
+  const b2Exists = execGit(['rev-parse', '--verify', branch2]);
 
   if (!b1Exists) {
     console.error(`错误：分支 "${branch1}" 不存在`);
@@ -171,7 +172,8 @@ function main() {
   }
 
   // 获取变动文件列表（含状态）
-  const diffNameStatus = exec(`git diff --name-status "${branch2}"..."${branch1}"`);
+  const revisionRange = `${branch2}...${branch1}`;
+  const diffNameStatus = execGit(['diff', '--name-status', revisionRange]);
   if (!diffNameStatus) {
     console.log('两个分支之间没有差异。');
     const emptyResult = {
@@ -194,7 +196,7 @@ function main() {
   }
 
   // 获取变动统计
-  const diffNumStat = exec(`git diff --numstat "${branch2}"..."${branch1}"`);
+  const diffNumStat = execGit(['diff', '--numstat', revisionRange]);
 
   // 解析 numstat
   const numStatMap = {};

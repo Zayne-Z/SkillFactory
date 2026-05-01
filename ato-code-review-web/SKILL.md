@@ -1,356 +1,307 @@
 ---
 name: ato-code-review-web
 description: >-
-  前端代码检视 Skill，适用于 Vue2/Vue3 等前端项目。通过多专家 Subagent 协作，
-  对 Git 分支相对基准的 **diff 变更行** 进行检视（非全文），输出按模板填写的完整结构化报告。
-  使用场景：用户要求进行代码检视、Code Review、分支对比分析时触发。
-  支持断点续检、批量处理大型变动、智能技术栈识别。
+  前端（Vue 等）增量代码检视 Skill。主编排 Agent 读取本文件驱动全流程，可通过 opencode
+  并行拉起子 agent/subagent 分阶段完成检视；中间状态写入 .codereview/state.json，
+  支持断点续跑，适配中等上下文模型。
 ---
 
-# 前端代码检视 Skill（ato-code-review-web）
+# 前端代码检视 · 主编排工作流
 
-## 架构
+> **本文件是主编排 Agent 运行时的唯一指令来源。**
+> 主编排 Agent 负责编排、状态管理、并行调度与故障恢复；**不做**深度代码检视。
 
-**主 Agent 编排 + 多专家 Subagent 并行/串行检视**
+---
 
-- **主 Agent**：状态管理、用户交互、阶段调度、结果汇总
-- **Subagent**：每个专家独立上下文，避免超长上下文问题
-
-## 目录结构
+## 1. Skill 目录（`{SKILL_ROOT}` = 本 SKILL.md 所在目录）
 
 ```
-.cursor/skills/ato-code-review-web/
-├── SKILL.md                      ← 主编排逻辑（当前文件）
+{SKILL_ROOT}/
+├── SKILL.md
 ├── docs/
-│   ├── vue2-reference.md         # Vue2 规范与常见问题
-│   ├── vue3-reference.md         # Vue3 规范与常见问题
-│   ├── general-standards.md      # 通用前端规范
-│   └── state-structure.md        # 状态文件结构说明
-├── prompts/
-│   ├── tech-stack-analysis.md    # 技术栈分析专家
-│   ├── task-planner.md           # 检视任务规划专家
-│   ├── code-scanner.md           # 代码扫描专家
-│   ├── spec-reviewer.md          # 规范专家
-│   ├── perf-reviewer.md          # 性能专家
-│   ├── security-reviewer.md      # 安全专家
-│   ├── framework-reviewer.md     # 框架专家
-│   ├── robustness-reviewer.md    # 健壮性专家
-│   ├── style-reviewer.md         # 样式专家
-│   ├── fix-advisor.md            # 修复专家
-│   └── report-synthesizer.md     # 分析合成官
+│   ├── vue2-reference.md
+│   ├── vue3-reference.md
+│   ├── general-standards.md
+│   └── state-structure.md
 ├── scripts/
-│   ├── get-diff-files.js         # 获取分支变动文件清单
-│   └── batch-processor.js        # 文件批量分组工具
-└── templates/
-    └── report-template.md        # 检视报告模板
+│   ├── get-diff-files.js
+│   ├── batch-processor.js
+│   └── export-batch-diffs.js
+├── templates/
+│   └── report-template.md
+└── prompts/                  ← 子 agent 系统提示词（opencode/其它编排器按文件加载）
+    ├── tech-stack-analysis.md
+    ├── task-planner.md
+    ├── code-scanner.md       ← core：核心静态（兼容旧文件名）
+    ├── framework-reviewer.md ← framework：Vue + 样式
+    ├── perf-reviewer.md      ← reliability：性能 + 健壮性
+    ├── security-reviewer.md
+    ├── fix-advisor.md
+    └── report-synthesizer.md
 ```
 
-## 运行时生成文件
+**运行时生成：**
 
 ```
-.codereview/                      ← 自动创建，过程文件
-├── state.json                    ← 全程状态（主 Agent 读写）
-├── file-inventory.json           ← 变动文件清单（含批次划分）
-├── tech-stack.json               ← 技术栈分析结果
-├── task-plan.json                ← 检视任务列表
-├── results/
-│   ├── batch-001-scanner.json    ← 扫描专家结果（按批次）
-│   ├── batch-001-spec.json       ← 规范专家结果
-│   ├── batch-001-perf.json       ← 性能专家结果
-│   ├── batch-001-security.json   ← 安全专家结果
-│   ├── batch-001-framework.json  ← 框架专家结果
-│   ├── batch-001-robust.json     ← 健壮性专家结果
-│   ├── batch-001-style.json      ← 样式专家结果
-│   └── batch-001-fix.json        ← 修复专家结果
-codereview/                       ← 最终报告输出目录
-└── report_<branch>_<date>.md     ← 检视报告（命名如 report_Release_AMP-CORE6.10.0_2026-04-06.md）
-```
-
----
-
-## 启动入口
-
-```
-检查 .codereview/state.json
-├── 不存在 → Phase 0（初始化）
-└── 存在 → 读取 current_phase 和 checkpoint
-    ├── branch_selection   → Phase 1
-    ├── diff_analysis      → Phase 2（检查 file_batches 进度）
-    ├── tech_stack         → Phase 3
-    ├── task_planning      → Phase 4
-    ├── reviewing          → Phase 5（找到未完成的批次和专家）
-    ├── fix_advising       → Phase 6
-    └── synthesizing       → Phase 7
+{项目根}/
+├── .codereview/
+│   ├── state.json
+│   ├── diffs/ ← 各批次 *.patch（Phase 2 预计算）
+│   ├── file-inventory.json
+│   ├── tech-stack.json
+│   ├── task-plan.json
+│   └── results/
+└── codereview/
+    └── report_<branch>_<date>.md
 ```
 
 ---
 
-## Phase 0：初始化
+## 2. 断点续跑与故障恢复
 
-1. 检查 `.codereview/state.json` 是否存在
-2. 不存在则创建目录和初始状态文件
-3. 进入 Phase 1
+### 2.1 状态驱动
+
+每个操作前读 `state.json`，操作后立即写回。字段见 `{SKILL_ROOT}/docs/state-structure.md`。
+
+### 2.2 主编排 Agent 启动（每次对话开头）
+
+```
+1. 确认 {SKILL_ROOT} 绝对路径
+2. 读取 .codereview/state.json
+   - 不存在：Phase 0 初始化
+   - 存在：读取 current_phase
+     - 若为 completed：告知报告路径；否则跳到对应 Phase
+3. 若缺少 review_options → 补 { severity_mode: "all", skip_low_risk_files: false } 并写回
+4. **reviewing**：按批次、按专家顺序 `core` → `framework` → `reliability` → `security` → `fix`，找到第一个状态为 `pending` 或 `in_progress` 的项（`completed` / `skipped` / **`failed`** 均跳过；`failed` 为终态，除非用户要求人工改回 `pending`）
+   - `in_progress`：按 `docs/state-structure.md`「in_progress 防死锁」校验对应 `*-{expert}.json` 或 `*-fix.json`
+5. **synthesizing**：若 `synthesis.report_path` 已有可读报告 → 可将 `synthesis.status` 与 `current_phase` 置完成；否则重跑报告子 agent
+6. **幂等（可选）**：`tech_stack` 且 `tech-stack.json` 已合法 → 可直接 `task_planning`；`task_planning` 且 `task-plan.json` 已存在 → 补全 `review_progress` 后进入 `reviewing`
+```
+
+### 2.3 子 agent 调用与故障恢复
+
+**标准流程：** 拉起子 agent 前将该专家标为 `in_progress` 并写回 `state.json`；返回后根据结果文件是否合法标为 `completed` 或进入故障恢复。
+
+**故障恢复：** 子 agent 超时/异常：将该专家置 `pending`，新实例重试，**最多 2 次**；仍失败则 `failed` 并记入 `notes[]`。
+
+### 2.4 主编排 Agent 上下文纪律
+
+禁止将子 agent 提示词全文、`docs/` 全文、结果 JSON 全量读入主对话；只传变量与路径。上下文将满时写 `state.json` 并请用户重启主编排 Agent。
+
+### 2.5 opencode 并行执行约定
+
+本 Skill 可通过 opencode 执行。主编排 Agent 应将 `prompts/*.md` 作为子 agent 的系统提示词来源，并通过任务描述传入变量。每个子 agent 的唯一交付物是写入约定的 `OUTPUT_PATH` JSON/报告文件；主编排 Agent 只检查文件，不依赖对话内容合并结果。
+
+**并行原则：**
+
+- Phase 3 技术栈、Phase 4 任务规划存在依赖关系，必须串行。
+- Phase 5 中，同一批次内 `core`、`framework`、`reliability`、`security` 四个专家彼此独立，凡 `task-plan.json` 标记为适用且状态为 `pending` / `failed` 的，可以通过 opencode 并行拉起。
+- 并行启动前，先把这些专家状态统一写为 `in_progress`；每个子 agent 写自己的固定输出文件，互不共享写入目标。
+- 等同批次所有适用专家完成后，才能执行该批次的 `fix-advisor`；fix 完成后再进入下一批次或报告合成。
+- 若 opencode 当前环境不支持并行任务，则按 `core → framework → reliability → security` 串行降级，输出文件与状态规则保持不变。
 
 ---
 
-## Phase 1：分支选择（主 Agent）
+## 3. 阶段详情
 
-**提问用户：**
-- "请输入要检视的分支名（默认与 master 对比）"
-- "或输入两个分支，格式：`branch1 vs branch2`"
+### Phase 0：初始化
 
-**处理逻辑：**
-```
-用户输入 "feature/my-branch"
-  → branch1 = "feature/my-branch", branch2 = "master"
-
-用户输入 "release/1.0 vs develop"
-  → branch1 = "release/1.0", branch2 = "develop"
-```
-
-**确认后：**
-- 验证分支存在：`git rev-parse --verify "<branch>"`（跨平台，不依赖 grep）
-- 更新 state.json，进入 Phase 2
+若 `.codereview/` 或 `state.json` 不存在，按 `docs/state-structure.md` 创建；`current_phase = "branch_selection"`。
 
 ---
 
-## Phase 2：变动文件分析（Node.js 脚本 + 分批处理）
+### Phase 1：分支与检视选项（主编排 Agent）
 
-**⚠️ 防超时：先用脚本获取文件清单，再分批读取文件内容**
-
-### 2.1 获取变动文件清单
-
-```bash
-node .cursor/skills/ato-code-review-web/scripts/get-diff-files.js \
-  --branch1 <branch1> --branch2 <branch2> \
-  --output .codereview/file-inventory.json
-```
-
-脚本输出变动文件清单（含文件类型、变动行数、文件大小）。
-
-### 2.2 智能分批
-
-```bash
-node .cursor/skills/ato-code-review-web/scripts/batch-processor.js \
-  --inventory .codereview/file-inventory.json \
-  --max-lines 800 \
-  --output .codereview/file-inventory.json
-```
-
-- 按变动行数分批，每批不超过 800 行
-- 超大单文件单独成一批
-- 批次信息写入 `file-inventory.json`
-
-### 2.3 向用户确认
-
-展示变动汇总（文件数、总行数、批次数），询问是否继续。
+1. 确认 `BRANCH1`（被检视分支）、`BRANCH2`（基准，默认 `master`）。支持 `a vs b` 格式。
+2. **检视深度** → `review_options.severity_mode`：`all` | `critical_high_only`。
+3. **是否跳过低风险文件** → `review_options.skip_low_risk_files`：
+   `true` 时 Phase 2 调用 `get-diff-files.js` 追加 `--skip-low-risk true`（排除测试/E2E/Storybook 源文件、`.snap` 等，见清单 `review_scope`）。
+4. 验证分支：`git rev-parse --verify "<branch>"`（**不要**使用 `grep`，Windows PowerShell 无此命令）。
+5. 写入 `state.json`，`current_phase = "diff_analysis"`。
 
 ---
 
-## Phase 3：技术栈分析（Subagent）
+### Phase 2：变动文件与分批（脚本）
 
-**⚠️ 必须在代码检视前完成，避免幻觉**
+**Step 1 清单**（若 `skip_low_risk_files === true`，在下列命令末尾追加 `--skip-low-risk true`）：
 
-启动 Subagent：
+```powershell
+node "{SKILL_ROOT}/scripts/get-diff-files.js" --branch1 {BRANCH1} --branch2 {BRANCH2} --output .codereview/file-inventory.json
+# 跳过低风险时示例：
+# node "{SKILL_ROOT}/scripts/get-diff-files.js" --branch1 {BRANCH1} --branch2 {BRANCH2} --output .codereview/file-inventory.json --skip-low-risk true
 ```
-prompts/tech-stack-analysis.md → subagent_type="generalPurpose"
+
+**Step 2 分批**（前端默认每批约 800 变动行，可按需调整）：
+
+```powershell
+node "{SKILL_ROOT}/scripts/batch-processor.js" --inventory .codereview/file-inventory.json --max-lines 800 --output .codereview/file-inventory.json
 ```
 
-分析：
-- `package.json`：vue 版本、主要依赖
-- 构建配置文件（vue.config.js / vite.config.js）
-- 抽样查看 `.vue` 文件（Options API / Composition API）
-- UI 框架（Element UI / Element Plus / Ant Design Vue 等）
+**Step 3 预计算批次 diff**：
 
-结果写入 `.codereview/tech-stack.json`，加载对应参考文档：
-- Vue 2.x → 读取 `docs/vue2-reference.md`
-- Vue 3.x → 读取 `docs/vue3-reference.md`
-- 其他框架 → 读取 `docs/general-standards.md`
+```powershell
+node "{SKILL_ROOT}/scripts/export-batch-diffs.js" --inventory .codereview/file-inventory.json --output-dir .codereview/diffs
+```
+
+子 agent **优先**读取 `.codereview/diffs/{BATCH_ID}.patch`；缺失再按文件 `git diff`。
+
+**Step 4** 展示批次数、文件数、行数及跳过低风险统计；将 `diff_analysis`（文件数、变动行数、批次数、`completed: true`）写入 `state.json` 后，设 `current_phase = "tech_stack"`。
 
 ---
 
-## Phase 4：任务规划（Subagent）
+### Phase 3：技术栈分析
 
-启动 Subagent：
-```
-prompts/task-planner.md → subagent_type="generalPurpose"
-```
+**子 agent：** `web-codereview-tech-stack`
+**提示词文件：** `{SKILL_ROOT}/prompts/tech-stack-analysis.md`
 
-输入：`file-inventory.json`（含已由脚本划分好的批次）+ `tech-stack.json`
+| 变量 | 值 |
+|------|-----|
+| `PROJECT_ROOT` | 仓库根目录 |
+| `OUTPUT_PATH` | `.codereview/tech-stack.json` |
 
-输出：`.codereview/task-plan.json`（在现有批次基础上补充各批次的 `applicable_experts` 字段）
-
-> **注意**：批次划分已在 Phase 2.2 由 `batch-processor.js` 完成，task-planner 不重新划分批次，只规划每批次应启用哪些专家。
-
----
-
-## Phase 5：多专家代码检视（分批 + 分专家执行）
-
-**检视范围（所有专家必须遵守）**
-
-- 仅针对 `git diff {{BRANCH2}}...{{BRANCH1}}` 中的**变更行**（及理解所需的最小上下文）进行检视。
-- **不得**对未变更代码做问题报告；不得要求通读全文件后罗列历史问题。
-- 各专家 Prompt 中均已写明「检视范围」；主 Agent 启动 Subagent 时勿删减该说明。
-
-**每批文件由以下专家依次或并行检视：**
-
-| 专家 | Prompt 文件 | 检视方向 | 输出文件 |
-|------|------------|---------|---------|
-| 代码扫描专家 | prompts/code-scanner.md | 语法错误、明显 Bug、死代码 | batch-NNN-scanner.json |
-| 规范专家 | prompts/spec-reviewer.md | 命名规范、代码风格、注释 | batch-NNN-spec.json |
-| 性能专家 | prompts/perf-reviewer.md | 渲染性能、内存泄漏、接口优化 | batch-NNN-perf.json |
-| 安全专家 | prompts/security-reviewer.md | XSS、权限、敏感信息泄露 | batch-NNN-security.json |
-| 框架专家 | prompts/framework-reviewer.md | Vue2/Vue3 最佳实践 | batch-NNN-framework.json |
-| 健壮性专家 | prompts/robustness-reviewer.md | 错误处理、边界条件、空值判断 | batch-NNN-robust.json |
-| 样式专家 | prompts/style-reviewer.md | CSS 规范、BEM、响应式 | batch-NNN-style.json |
-
-### 执行策略
-
-```
-对每个批次 (batch-001, batch-002, ...):
-  ├── 并行模式（IDE 支持时）：同时启动 7 个专家 Subagent
-  └── 串行模式（默认/降级）：逐个专家依次执行
-  每个专家完成后立即写入结果文件并更新 state.json
-```
-
-**断点恢复**：读取 state.json 中 `review_progress`，跳过已完成的批次+专家组合。
+完成标志：文件存在且 JSON 合法。完成后 `current_phase = "task_planning"`。
 
 ---
 
-## Phase 6：修复建议（Subagent，每批一次）
+### Phase 4：任务规划
 
-```
-prompts/fix-advisor.md → subagent_type="generalPurpose"
-```
+**子 agent：** `web-codereview-task-plan`
+**提示词文件：** `{SKILL_ROOT}/prompts/task-planner.md`
 
-读取当前批次所有专家结果，生成具体修复建议，写入 `batch-NNN-fix.json`。
+| 变量 | 值 |
+|------|-----|
+| `INVENTORY_PATH` | `.codereview/file-inventory.json` |
+| `TECH_STACK_PATH` | `.codereview/tech-stack.json` |
+| `OUTPUT_PATH` | `.codereview/task-plan.json` |
 
----
-
-## Phase 7：报告合成（Subagent）
-
-```
-prompts/report-synthesizer.md → subagent_type="generalPurpose"
-```
-
-读取所有批次的全部专家结果 + 修复建议，**按 `templates/report-template.md` 全章节**生成最终报告（含：变动文件清单 → 问题清单 → 必改清单及人工填写区）。报告为**唯一交付物**，合成结果中**不得**引导用户再去查阅 `.codereview` 过程文件或本 SKILL 的步骤说明。
-
-```
-codereview/report_<branch1>_<YYYY-MM-DD>.md
-```
+根据 `task-plan.json` 初始化 `review_progress`（每批每专家 `pending`，不适用则 `skipped`）。`current_phase = "reviewing"`。
 
 ---
 
-## 状态管理
+### Phase 5：多专家检视（批次 × 专家）
 
-主 Agent 直接读写 `.codereview/state.json`。
-结构详见 [docs/state-structure.md](docs/state-structure.md)。
+**循环：**
 
-核心字段（完整结构见 [docs/state-structure.md](docs/state-structure.md)）：
-```json
-{
-  "current_phase": "branch_selection|diff_analysis|tech_stack|task_planning|reviewing|fix_advising|synthesizing|completed",
-  "branches": {
-    "branch1": "feature/xxx",
-    "branch2": "master"
-  },
-  "tech_stack": {
-    "framework": "vue2|vue3|other",
-    "vue_version": "2.x.x",
-    "ui_library": "element-ui",
-    "build_tool": "vue-cli"
-  },
-  "diff_analysis": {
-    "total_files": 0,
-    "total_changed_lines": 0,
-    "total_batches": 0,
-    "inventory_path": ".codereview/file-inventory.json",
-    "completed": false
-  },
-  "review_progress": {
-    "batch-001": {
-      "scanner": "pending|in_progress|completed",
-      "spec": "pending",
-      "perf": "pending",
-      "security": "pending",
-      "framework": "pending",
-      "robust": "pending",
-      "style": "pending",
-      "fix": "pending"
-    }
-  },
-  "synthesis": {
-    "status": "pending",
-    "report_path": ""
-  }
-}
+```
+for each batch:
+  for expert in [core, framework, reliability, security]:
+    skip if completed/skipped
+拉起子 agent，写回 state
+  本批专家全部完成后 → Phase 6 fix → 写回
+all batches done → current_phase = "synthesizing"（见 Phase 7）
 ```
 
----
+**四位检视专家**（由原 7 位合并，减少子 agent 数量，与 Java 四专家规模对齐）：
 
-## Subagent 调用速查
+| 专家 | 子 agent | 提示词文件 | 输出 | 合并来源 |
+|------|------------|------------|------|----------|
+| core | `web-codereview-review-core` | `{SKILL_ROOT}/prompts/code-scanner.md` | `{BATCH_ID}-core.json` | 扫描 + 规范 |
+| framework | `web-codereview-review-framework` | `{SKILL_ROOT}/prompts/framework-reviewer.md` | `{BATCH_ID}-framework.json` | Vue + 样式 |
+| reliability | `web-codereview-review-reliability` | `{SKILL_ROOT}/prompts/perf-reviewer.md` | `{BATCH_ID}-reliability.json` | 性能 + 健壮性 |
+| security | `web-codereview-review-security` | `{SKILL_ROOT}/prompts/security-reviewer.md` | `{BATCH_ID}-security.json` | 安全（独立） |
 
-| 阶段 | Prompt | subagent_type | 并行 | 断点粒度 |
-|------|--------|---------------|------|---------|
-| Phase 3 技术栈 | tech-stack-analysis.md | generalPurpose | 否 | 整体 |
-| Phase 4 规划 | task-planner.md | generalPurpose | 否 | 整体 |
-| Phase 5 各专家 | code-scanner/spec/perf/security/framework/robust/style | generalPurpose | 可并行 | 批次×专家 |
-| Phase 6 修复 | fix-advisor.md | generalPurpose | 否 | 单批次 |
-| Phase 7 合成 | report-synthesizer.md | generalPurpose | 否 | 整体 |
+**每次检视子 agent 必传：**
 
----
-
-## Prompt 变量替换规则
-
-各 prompt 文件中含有 `{{变量名}}` 占位符，**主 Agent 在启动 subagent 前必须将其替换为实际值**，再将完整 prompt 文本作为 Task 的 `prompt` 参数传入。
-
-常用变量替换速查：
-
-| 变量 | 来源 |
+| 变量 | 说明 |
 |------|------|
-| `{{PROJECT_ROOT}}` | 当前工作目录（一般为 `.`） |
-| `{{BRANCH1}}` | `state.branches.branch1` |
-| `{{BRANCH2}}` | `state.branches.branch2` |
-| `{{BATCH_ID}}` | 当前批次 ID（如 `batch-001`） |
-| `{{BATCH_FILES}}` | `file-inventory.json` 对应批次的 `files` 数组（JSON 字符串） |
-| `{{TECH_STACK}}` | `.codereview/tech-stack.json` 完整内容（JSON 字符串） |
-| `{{OUTPUT_PATH}}` | 根据阶段和批次构造（如 `.codereview/results/batch-001-scanner.json`） |
-| `{{INVENTORY_PATH}}` | `.codereview/file-inventory.json` |
-| `{{TECH_STACK_PATH}}` | `.codereview/tech-stack.json` |
-| `{{RESULTS_DIR}}` | `.codereview/results/` |
-| `{{STATE_PATH}}` | `.codereview/state.json` |
-| `{{TEMPLATE_PATH}}` | `.cursor/skills/ato-code-review-web/templates/report-template.md` |
-| `{{REPORT_PATH}}` | `codereview/report_<branch1>_<YYYY-MM-DD>.md` |
-| `{{MUST_FIX_SECTION_INTRO}}` / `{{MUST_FIX_TABLE_ROWS}}` | 由报告合成阶段根据 Critical/High 问题生成（见 `report-synthesizer.md`） |
+| `BATCH_ID` | 如 `batch-001` |
+| `BATCH_FILES` | 该批文件列表 JSON |
+| `BRANCH1` / `BRANCH2` | 分支 |
+| `DIFF_PATCH_PATH` | `.codereview/diffs/{BATCH_ID}.patch`（存在则必传） |
+| `SEVERITY_MODE` | `state.json` → `review_options.severity_mode` |
+| `TECH_STACK` | 摘要或路径（子 agent 可读 `tech-stack.json`） |
+| `OUTPUT_PATH` | 结果路径 |
+| `SKILL_ROOT` | 本 Skill 根目录（读 `docs/vue2-reference.md` 等） |
+
+**检视范围（传达给子 agent）：**
+
+> 优先读 `DIFF_PATCH_PATH` 中 unified diff；缺失或为空再 `git --no-pager diff {BRANCH2}...{BRANCH1} -- <file>`。只报变更相关行；`line` **字符串**；每条 issue 必须补充 `symbol`（如 `UserList.vue#fetchUsers`、`useUser.ts#useUser`），报告不得只依赖行号定位。`critical_high_only` 时仅 `critical`/`high`。
+
+**适用性：** 以 `task-plan.json` 的 `applicable_experts` 为准；非适用专家在 `review_progress` 中为 `skipped`。
+
+**opencode 并行派发建议：**
+
+同一 `BATCH_ID` 中，对 `applicable_experts` 取交集后可一次性并行拉起多个子 agent。每个任务必须显式包含：`BATCH_ID`、`BATCH_FILES`、`BRANCH1`、`BRANCH2`、`DIFF_PATCH_PATH`、`SEVERITY_MODE`、`TECH_STACK`、`SKILL_ROOT`、独立 `OUTPUT_PATH`，并强调“完成后只写对应输出文件”。主编排 Agent 等待这一组输出文件全部存在且 JSON 合法后，再将对应状态改为 `completed`。
+
+**框架专家路径变量：**`VUE2_REF_PATH` = `{SKILL_ROOT}/docs/vue2-reference.md`
+`VUE3_REF_PATH` = `{SKILL_ROOT}/docs/vue3-reference.md`
+`GENERAL_STANDARDS_PATH` = `{SKILL_ROOT}/docs/general-standards.md`
 
 ---
 
-## 串行/并行兼容
+### Phase 6：修复建议（每批次一次，嵌在 Phase 5 循环末尾）
 
-- **并行**：IDE 支持单消息多 Task 调用时，Phase 5 同一批次的 7 个专家同时启动
-- **串行（默认）**：逐个专家依次执行，功能完全不受影响
-- **无 Subagent 降级**：主 Agent 直接按 prompt 模板逐步执行，严控上下文大小
+**子 agent：** `web-codereview-fix-advisor`
+**提示词文件：** `{SKILL_ROOT}/prompts/fix-advisor.md`
+
+| 变量 | 值 |
+|------|-----|
+| `BATCH_ID` | 当前批次 |
+| `BATCH_FILES` | 当前批次文件列表 |
+| `BRANCH1` / `BRANCH2` | 分支 |
+| `RESULTS_DIR` | `.codereview/results/` |
+| `SEVERITY_MODE` | 同 Phase 5 |
+| `OUTPUT_PATH` | `.codereview/results/{BATCH_ID}-fix.json` |
+| `DIFF_PATCH_PATH` | `.codereview/diffs/{BATCH_ID}.patch`（可选，与 Phase 5 同批） |
+| `SKILL_ROOT` | Skill 根目录 |
 
 ---
 
-## Shell 命令速查
+### Phase 7：报告合成
 
-> **跨平台说明**：以下命令在 Linux/macOS 和 Windows（Git Bash / WSL）均可用。
-> 所有 `git diff` 命令必须加 `--no-pager`，防止 git 启动交互式 pager（less）导致终端卡在 `:` 提示符。
+进入本阶段前：将 `state.json` 的 `current_phase` 设为 `"synthesizing"`，`synthesis.status` 可为 `"in_progress"`，并写回。
 
-```bash
-# 检查分支是否存在
-git branch -a | grep "branch-name"
+**子 agent：** `web-codereview-report-synthesizer`
+**提示词文件：** `{SKILL_ROOT}/prompts/report-synthesizer.md`
 
-# 获取变动文件列表（备用）
-git --no-pager diff --name-only branch2...branch1
+| 变量 | 值 |
+|------|-----|
+| `STATE_PATH` | `.codereview/state.json` |
+| `RESULTS_DIR` | `.codereview/results/` |
+| `TECH_STACK_PATH` | `.codereview/tech-stack.json` |
+| `INVENTORY_PATH` | `.codereview/file-inventory.json` |
+| `TEMPLATE_PATH` | `{SKILL_ROOT}/templates/report-template.md` |
+| `REPORT_PATH` | `codereview/report_{BRANCH1}_{DATE}.md`（`/` → `_`） |
 
-# 获取变动统计
-git --no-pager diff --stat branch2...branch1
+合成官须读取 `review_options` 与 `review_scope`，填写模板中 `{{SEVERITY_MODE_LABEL}}`、`{{LOW_RISK_SCOPE_LABEL}}`。
 
-# 查看单文件差异
-git --no-pager diff branch2...branch1 -- path/to/file.vue
+**完成后写回 `state.json`：** `synthesis.status = "completed"`，`synthesis.report_path = {REPORT_PATH}`，`current_phase = "completed"`，`updated_at` 更新；向用户输出报告路径与问题摘要。
 
-# 验证分支是否存在（跨平台，不用 2>/dev/null）
+---
+
+## 4. 子 agent / opencode 标识对照表
+
+用户需在 opencode 或其它 AI 编排器中预先创建以下子 agent。系统提示词取自 `{SKILL_ROOT}/prompts/` 对应文件：
+
+| 标识 | 提示词文件 |
+|------|------------|
+| `web-codereview-tech-stack` | `prompts/tech-stack-analysis.md` |
+| `web-codereview-task-plan` | `prompts/task-planner.md` |
+| `web-codereview-review-core` | `prompts/code-scanner.md` |
+| `web-codereview-review-framework` | `prompts/framework-reviewer.md` |
+| `web-codereview-review-reliability` | `prompts/perf-reviewer.md` |
+| `web-codereview-review-security` | `prompts/security-reviewer.md` |
+| `web-codereview-fix-advisor` | `prompts/fix-advisor.md` |
+| `web-codereview-report-synthesizer` | `prompts/report-synthesizer.md` |
+
+兼容说明：`prompts/spec-reviewer.md` 同 core，`prompts/style-reviewer.md` 同 framework，`prompts/robustness-reviewer.md` 同 reliability，保留旧文件名是为了不破坏已有配置；新流程只使用上表 8 个标识。
+
+---
+
+## 5. Git 备忘
+
+```powershell
 git rev-parse --verify "branch-name"
+git --no-pager diff --name-only {BRANCH2}...{BRANCH1}
+git --no-pager diff {BRANCH2}...{BRANCH1} -- path/to/file.vue
 ```
+
+---
+
+## 6. 主编排 Agent 禁令
+
+1. 不要将 `prompts/*.md` 全文读入主对话
+2. 不要将 `docs/*.md` 全文读入主对话
+3. 不要将专家 JSON 全文读入（仅必要时校验存在性）
+4. 不要在主对话中代做代码检视
+5. 上下文将满 → 写 `state.json` → 请用户重启主编排 Agent

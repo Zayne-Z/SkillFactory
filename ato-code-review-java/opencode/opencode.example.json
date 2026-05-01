@@ -1,0 +1,117 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "java-codereview-main": {
+      "mode": "primary",
+      "description": "Java code review orchestrator for ato-code-review-java",
+      "prompt": "{file:./ato-code-review-java/SKILL.md}",
+      "permission": {
+        "task": {
+          "*": "deny",
+          "java-codereview-*": "allow"
+        },
+        "bash": {
+          "*": "ask",
+          "git *": "allow",
+          "node *": "allow"
+        },
+        "edit": "allow"
+      }
+    },
+    "java-codereview-tech-stack": {
+      "mode": "subagent",
+      "description": "Analyze Java project tech stack and write tech-stack.json",
+      "prompt": "{file:./ato-code-review-java/prompts/tech-stack-analysis.md}",
+      "permission": {
+        "bash": {
+          "*": "ask",
+          "git *": "allow"
+        },
+        "edit": "allow"
+      }
+    },
+    "java-codereview-task-plan": {
+      "mode": "subagent",
+      "description": "Plan applicable review experts per batch",
+      "prompt": "{file:./ato-code-review-java/prompts/task-planner.md}",
+      "permission": {
+        "bash": {
+          "*": "ask",
+          "git *": "allow"
+        },
+        "edit": "allow"
+      }
+    },
+    "java-codereview-review-core": {
+      "mode": "subagent",
+      "description": "Review Java diff for core static defects and conventions",
+      "prompt": "{file:./ato-code-review-java/prompts/code-scanner.md}",
+      "permission": {
+        "bash": {
+          "*": "ask",
+          "git *": "allow"
+        },
+        "edit": "allow"
+      }
+    },
+    "java-codereview-review-security": {
+      "mode": "subagent",
+      "description": "Review Java diff for security issues",
+      "prompt": "{file:./ato-code-review-java/prompts/security-reviewer.md}",
+      "permission": {
+        "bash": {
+          "*": "ask",
+          "git *": "allow"
+        },
+        "edit": "allow"
+      }
+    },
+    "java-codereview-review-spring": {
+      "mode": "subagent",
+      "description": "Review Java diff for Spring and reliability issues",
+      "prompt": "{file:./ato-code-review-java/prompts/framework-reviewer.md}",
+      "permission": {
+        "bash": {
+          "*": "ask",
+          "git *": "allow"
+        },
+        "edit": "allow"
+      }
+    },
+    "java-codereview-review-data": {
+      "mode": "subagent",
+      "description": "Review Java diff for SQL, ORM, data, performance, and concurrency issues",
+      "prompt": "{file:./ato-code-review-java/prompts/perf-reviewer.md}",
+      "permission": {
+        "bash": {
+          "*": "ask",
+          "git *": "allow"
+        },
+        "edit": "allow"
+      }
+    },
+    "java-codereview-fix-advisor": {
+      "mode": "subagent",
+      "description": "Generate fix suggestions for reported Java review issues",
+      "prompt": "{file:./ato-code-review-java/prompts/fix-advisor.md}",
+      "permission": {
+        "bash": {
+          "*": "ask",
+          "git *": "allow"
+        },
+        "edit": "allow"
+      }
+    },
+    "java-codereview-report-synthesizer": {
+      "mode": "subagent",
+      "description": "Synthesize final Java code review report",
+      "prompt": "{file:./ato-code-review-java/prompts/report-synthesizer.md}",
+      "permission": {
+        "bash": {
+          "*": "ask"
+        },
+        "edit": "allow"
+      }
+    }
+  }
+}

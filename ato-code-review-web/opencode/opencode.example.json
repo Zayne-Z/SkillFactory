@@ -1,0 +1,118 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "web-codereview-main": {
+      "mode": "primary",
+      "description": "Frontend code review orchestrator for ato-code-review-web",
+      "prompt": "{file:./ato-code-review-web/SKILL.md}",
+      "permission": {
+        "task": {
+          "*": "deny",
+          "web-codereview-*": "allow"
+        },
+        "bash": {
+          "*": "ask",
+          "git *": "allow",
+          "node *": "allow"
+        },
+        "edit": "allow"
+      }
+    },
+    "web-codereview-tech-stack": {
+      "mode": "subagent",
+      "description": "Analyze frontend project tech stack and write tech-stack.json",
+      "prompt": "{file:./ato-code-review-web/prompts/tech-stack-analysis.md}",
+      "permission": {
+        "bash": {
+          "*": "ask",
+          "git *": "allow"
+        },
+        "edit": "allow"
+      }
+    },
+    "web-codereview-task-plan": {
+      "mode": "subagent",
+      "description": "Plan applicable frontend review experts per batch",
+      "prompt": "{file:./ato-code-review-web/prompts/task-planner.md}",
+      "permission": {
+        "bash": {
+          "*": "ask",
+          "git *": "allow"
+        },
+        "edit": "allow"
+      }
+    },
+    "web-codereview-review-core": {
+      "mode": "subagent",
+      "description": "Review frontend diff for core static defects and conventions",
+      "prompt": "{file:./ato-code-review-web/prompts/code-scanner.md}",
+      "permission": {
+        "bash": {
+          "*": "ask",
+          "git *": "allow"
+        },
+        "edit": "allow"
+      }
+    },
+    "web-codereview-review-framework": {
+      "mode": "subagent",
+      "description": "Review frontend diff for Vue/framework/style issues",
+      "prompt": "{file:./ato-code-review-web/prompts/framework-reviewer.md}",
+      "permission": {
+        "bash": {
+          "*": "ask",
+          "git *": "allow"
+        },
+        "edit": "allow"
+      }
+    },
+    "web-codereview-review-reliability": {
+      "mode": "subagent",
+      "description": "Review frontend diff for performance and robustness issues",
+      "prompt": "{file:./ato-code-review-web/prompts/perf-reviewer.md}",
+      "permission": {
+        "bash": {
+          "*": "ask",
+          "git *": "allow"
+        },
+        "edit": "allow"
+      }
+    },
+    "web-codereview-review-security": {
+      "mode": "subagent",
+      "description": "Review frontend diff for security issues",
+      "prompt": "{file:./ato-code-review-web/prompts/security-reviewer.md}",
+      "permission": {
+        "bash": {
+          "*": "ask",
+          "git *": "allow"
+        },
+        "edit": "allow"
+      }
+    },
+    "web-codereview-fix-advisor": {
+      "mode": "subagent",
+      "description": "Generate fix suggestions for reported frontend review issues",
+      "prompt": "{file:./ato-code-review-web/prompts/fix-advisor.md}",
+      "permission": {
+        "bash": {
+          "*": "ask",
+          "git *": "allow"
+        },
+        "edit": "allow"
+      }
+    },
+    "web-codereview-report-synthesizer": {
+      "mode": "subagent",
+      "description": "Synthesize final frontend code review report",
+      "prompt": "{file:./ato-code-review-web/prompts/report-synthesizer.md}",
+      "permission": {
+        "bash": {
+          "*": "ask"
+        },
+        "edit": "allow"
+      }
+    }
+  }
+}
+

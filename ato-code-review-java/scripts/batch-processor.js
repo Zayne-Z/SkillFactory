@@ -263,7 +263,7 @@ function extractModule(filePath) {
     return path.basename(filePath, path.extname(filePath)).replace(/Mapper$/i, '').toLowerCase() || 'mapper';
   }
 
-  return path.dirname(filePath).split('/').pop() || 'root';
+  return path.posix.dirname(normalized).split('/').pop() || 'root';
 }
 
 main();

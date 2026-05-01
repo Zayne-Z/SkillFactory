@@ -73,3 +73,4 @@
 
 - `expert` 为 `"data"`，问题 ID 前缀 **DAT-**
 - `line` 必须为字符串
+- 每条 issue 必须包含 `symbol` 字段：Java 使用 `类名#方法名`；Mapper XML 使用 `Mapper文件名.xml#statementId`（如 `UserMapper.xml#selectList`）；SQL/配置文件填最近的语句名、表名或配置键；无法判断时填 `"unknown"`，但不要省略

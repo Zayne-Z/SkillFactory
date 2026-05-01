@@ -63,7 +63,7 @@
 
 ### Step 5：输出结果
 
-`expert` 为 `"fix"`；`fixes` 中 `issue_id` 与专家报告 ID 对应；`line` 必须为字符串。
+`expert` 为 `"fix"`；`fixes` 中 `issue_id` 与专家报告 ID 对应；`line` 必须为字符串；若专家 issue 中存在 `symbol`，修复建议必须原样带上 `symbol`，用于报告按函数/方法定位。
 
 ## 注意事项
 

@@ -91,3 +91,4 @@ DTO 缺少 Bean Validation 注解、Controller 未触发 `@Valid`（与框架 We
 - `expert` 字段为 `"spring"`
 - 问题 ID 前缀：**SPR-**
 - `line` 必须为字符串
+- 每条 issue 必须包含 `symbol` 字段：Java 使用 `类名#方法名` / `类名#构造方法`；Controller 类级注解问题可填 `类名`；配置文件填最近的配置键/Bean 名；无法判断时填 `"unknown"`，但不要省略

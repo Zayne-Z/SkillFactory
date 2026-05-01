@@ -24,13 +24,14 @@
 
 - 按严重级别；按 **四大领域**：核心静态（core）、框架与样式（framework）、可靠性（reliability）、安全（security）
 - Top 5 文件；合并去重（同文件同行同根因取高严重级）
+- 生成详细问题段落和修复建议时，每条问题的定位必须同时包含 `文件`、`行号`、`函数/方法(symbol)`；旧版结果缺失 `symbol` 时填 `unknown`，不要删除该定位项。
 
 ## Step 3：填模板
 
 - **一、基本信息**：含 `{{SEVERITY_MODE_LABEL}}`、`{{LOW_RISK_SCOPE_LABEL}}`（见 `review_scope`）
 - **三、3.3**：四小节 — `{{CORE_ISSUES_DETAIL}}`、`{{FRAMEWORK_ISSUES_DETAIL}}`、`{{RELIABILITY_ISSUES_DETAIL}}`、`{{SECURITY_ISSUES_DETAIL}}`；无问题则写「本次检视在该领域未发现与变更行相关的问题。」
 - **3.1 按领域表格**：使用 `COUNT_CORE`、`MAX_CORE`、`COUNT_FRAMEWORK`、`COUNT_RELIABILITY`、`COUNT_SECURITY` 等占位符
-- **问题索引表**「领域」列填：核心静态 / 框架与样式 / 可靠性 / 安全
+- **问题索引表**必须包含「函数/方法」列，优先填 issue 的 `symbol`；缺失时填 `unknown`。不要只靠行号定位；「领域」列填：核心静态 / 框架与样式 / 可靠性 / 安全
 - **不得**引导读者再读 `.codereview` 或 SKILL
 
 ## Step 4–6

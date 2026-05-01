@@ -136,7 +136,7 @@ function main() {
 
 function createBatch(index, files, totalLines, oversized = false) {
   const id = `batch-${String(index).padStart(3, '0')}`;
-  const dirs = [...new Set(files.map(f => path.dirname(f.path)))];
+  const dirs = [...new Set(files.map(f => path.posix.dirname(f.path.replace(/\\/g, '/'))))];
   const description = dirs.length === 1 ? dirs[0] : `${dirs[0]} 等 ${dirs.length} 个目录`;
 
   return {

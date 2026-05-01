@@ -107,7 +107,7 @@ description: >-
 
 **Step 1 清单**（若 `skip_low_risk_files === true`，在下列命令末尾追加 `--skip-low-risk true`）：
 
-```bash
+```powershell
 node "{SKILL_ROOT}/scripts/get-diff-files.js" --branch1 {BRANCH1} --branch2 {BRANCH2} --output .codereview/file-inventory.json
 # 跳过低风险时示例：
 # node "{SKILL_ROOT}/scripts/get-diff-files.js" --branch1 {BRANCH1} --branch2 {BRANCH2} --output .codereview/file-inventory.json --skip-low-risk true
@@ -115,13 +115,13 @@ node "{SKILL_ROOT}/scripts/get-diff-files.js" --branch1 {BRANCH1} --branch2 {BRA
 
 **Step 2 分批**（前端默认每批约 800 变动行，可按需调整）：
 
-```bash
+```powershell
 node "{SKILL_ROOT}/scripts/batch-processor.js" --inventory .codereview/file-inventory.json --max-lines 800 --output .codereview/file-inventory.json
 ```
 
 **Step 3 预计算批次 diff**：
 
-```bash
+```powershell
 node "{SKILL_ROOT}/scripts/export-batch-diffs.js" --inventory .codereview/file-inventory.json --output-dir .codereview/diffs
 ```
 
@@ -195,7 +195,7 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 
 **检视范围（传达给子 Builder）：**
 
-> 优先读 `DIFF_PATCH_PATH` 中 unified diff；缺失或为空再 `git --no-pager diff {BRANCH2}...{BRANCH1} -- <file>`。只报变更相关行；`line` **字符串**。`critical_high_only` 时仅 `critical`/`high`。
+> 优先读 `DIFF_PATCH_PATH` 中 unified diff；缺失或为空再 `git --no-pager diff {BRANCH2}...{BRANCH1} -- <file>`。只报变更相关行；`line` **字符串**；每条 issue 必须补充 `symbol`（如 `UserList.vue#fetchUsers`、`useUser.ts#useUser`），报告不得只依赖行号定位。`critical_high_only` 时仅 `critical`/`high`。
 
 **适用性：** 以 `task-plan.json` 的 `applicable_experts` 为准；非适用专家在 `review_progress` 中为 `skipped`。
 
@@ -264,7 +264,7 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 
 ## 5. Git 备忘
 
-```bash
+```powershell
 git rev-parse --verify "branch-name"
 git --no-pager diff --name-only {BRANCH2}...{BRANCH1}
 git --no-pager diff {BRANCH2}...{BRANCH1} -- path/to/file.vue
@@ -279,4 +279,3 @@ git --no-pager diff {BRANCH2}...{BRANCH1} -- path/to/file.vue
 3. 不要将专家 JSON 全文读入（仅必要时校验存在性）  
 4. 不要在主对话中代做代码检视  
 5. 上下文将满 → 写 `state.json` → 请用户重启主 Builder
-

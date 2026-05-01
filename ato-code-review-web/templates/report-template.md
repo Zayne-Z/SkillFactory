@@ -13,6 +13,8 @@
 | 对比基准 | `{{BRANCH2}}` |
 | 检视时间 | {{REVIEW_DATE}} |
 | 检视范围 | 仅 diff 变更行（非全文） |
+| 检视深度 | {{SEVERITY_MODE_LABEL}} |
+| 低风险文件处理 | {{LOW_RISK_SCOPE_LABEL}} |
 | 技术栈 | {{TECH_STACK_SUMMARY}} |
 | 变动文件数 | {{TOTAL_FILES}} 个 |
 | 变动行数 | 新增 {{TOTAL_ADDITIONS}} 行 / 删除 {{TOTAL_DELETIONS}} 行 |
@@ -43,17 +45,14 @@
 | 🔵 低危（Low） | {{COUNT_LOW}} | 可选修复，轻微规范或风格问题 |
 | **合计** | **{{COUNT_TOTAL}}** | |
 
-#### 按检视领域
+#### 按检视领域（四位专家）
 
 | 检视领域 | 问题数 | 最高严重级别 |
 |---------|--------|------------|
-| 代码扫描（语法/Bug/死代码） | {{COUNT_SCANNER}} | {{MAX_SCANNER}} |
-| 规范检查（命名/风格/注释） | {{COUNT_SPEC}} | {{MAX_SPEC}} |
-| 性能检查 | {{COUNT_PERF}} | {{MAX_PERF}} |
-| 安全检查 | {{COUNT_SECURITY}} | {{MAX_SECURITY}} |
-| 框架规范（Vue2/Vue3） | {{COUNT_FRAMEWORK}} | {{MAX_FRAMEWORK}} |
-| 健壮性检查（容错/边界） | {{COUNT_ROBUST}} | {{MAX_ROBUST}} |
-| 样式检查（CSS/作用域） | {{COUNT_STYLE}} | {{MAX_STYLE}} |
+| 核心静态（扫描 + 规范） | {{COUNT_CORE}} | {{MAX_CORE}} |
+| 框架与样式（Vue + CSS） | {{COUNT_FRAMEWORK}} | {{MAX_FRAMEWORK}} |
+| 可靠性（性能 + 健壮性） | {{COUNT_RELIABILITY}} | {{MAX_RELIABILITY}} |
+| 安全 | {{COUNT_SECURITY}} | {{MAX_SECURITY}} |
 
 #### 问题较多的文件 Top 5
 
@@ -73,45 +72,27 @@
 
 ### 3.3 详细检视结果（按领域）
 
-#### 3.3.1 代码扫描（语法/Bug/死代码）
+#### 3.3.1 核心静态（扫描 + 规范）
 
-{{SCANNER_ISSUES_DETAIL}}
-
----
-
-#### 3.3.2 代码规范（命名/风格/注释）
-
-{{SPEC_ISSUES_DETAIL}}
+{{CORE_ISSUES_DETAIL}}
 
 ---
 
-#### 3.3.3 性能问题
-
-{{PERF_ISSUES_DETAIL}}
-
----
-
-#### 3.3.4 安全问题
-
-{{SECURITY_ISSUES_DETAIL}}
-
----
-
-#### 3.3.5 框架规范（{{FRAMEWORK_VERSION}}）
+#### 3.3.2 框架与样式（{{FRAMEWORK_VERSION}}）
 
 {{FRAMEWORK_ISSUES_DETAIL}}
 
 ---
 
-#### 3.3.6 健壮性问题
+#### 3.3.3 可靠性（性能 + 健壮性）
 
-{{ROBUST_ISSUES_DETAIL}}
+{{RELIABILITY_ISSUES_DETAIL}}
 
 ---
 
-#### 3.3.7 样式问题
+#### 3.3.4 安全
 
-{{STYLE_ISSUES_DETAIL}}
+{{SECURITY_ISSUES_DETAIL}}
 
 ---
 
@@ -125,8 +106,8 @@
 
 ### 3.5 问题索引表
 
-| # | 问题ID | 文件 | 行号 | 级别 | 领域 | 问题摘要 |
-|---|--------|------|------|------|------|---------|
+| # | 问题ID | 文件 | 行号 | 函数/方法 | 级别 | 领域 | 问题摘要 |
+|---|--------|------|------|-----------|------|------|---------|
 {{ISSUE_TABLE_ROWS}}
 
 ---
@@ -151,4 +132,4 @@
 
 ---
 
-*报告由 ato-code-review-web skill 自动生成 · {{GENERATED_AT}}*
+*报告由 ato-code-review-web-builder skill 自动生成 · {{GENERATED_AT}}*

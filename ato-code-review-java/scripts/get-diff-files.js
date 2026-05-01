@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * 获取两个分支之间的 Java 项目变动文件清单
- * 用法：node get-diff-files.js --branch1 <branch1> --branch2 <branch2> --output <output.json>
+ * 用法：node get-diff-files.js --branch1 <branch1> --branch2 <branch2> --output <output.json> [--skip-low-risk true]
  *
  * 输出 JSON 格式：
  * {
@@ -24,7 +24,7 @@
  * }
  */
 
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -43,7 +43,7 @@ function parseArgs(args) {
 // 识别 Java 文件类型（用于任务规划专家的优先级判断）
 function getJavaFileType(filePath) {
   const basename = path.basename(filePath, '.java');
-  const lowerPath = filePath.toLowerCase();
+  const lowerPath = filePath.replace(/\\/g, '/').toLowerCase();
   const lowerBase = basename.toLowerCase();
 
   // 按后缀名分类（非 .java 文件）
@@ -73,6 +73,7 @@ function getJavaFileType(filePath) {
     if (lowerBase.endsWith('vo') || lowerBase.endsWith('dto') || lowerBase.endsWith('request') || lowerBase.endsWith('response')) return 'dto';
     if (lowerBase.endsWith('config') || lowerBase.endsWith('configuration')) return 'config-java';
     if (lowerBase.endsWith('util') || lowerBase.endsWith('utils') || lowerBase.endsWith('helper')) return 'util';
+    if (lowerBase.endsWith('tests')) return 'test';
     if (lowerBase.endsWith('test')) return 'test';
     if (lowerBase.endsWith('enum') || lowerBase.endsWith('enums')) return 'enum';
     if (lowerBase.endsWith('exception')) return 'exception';
@@ -83,17 +84,25 @@ function getJavaFileType(filePath) {
   return 'java-other';
 }
 
+/** DTO /实体 / 测试等：用户选择「跳过低风险」时不进入检视清单 */
+const LOW_RISK_TYPES = new Set(['dto', 'entity', 'test']);
+
+function isLowRiskType(fileType) {
+  return LOW_RISK_TYPES.has(fileType);
+}
+
 // 判断是否为需要检视的文件（过滤无关文件）
 function isReviewableFile(filePath) {
+  const normalizedPath = filePath.replace(/\\/g, '/');
   const ignoredPaths = [
     'node_modules/', '.git/', 'target/', 'build/', 'out/',
     '.mvn/', '.gradle/', '__pycache__/', '.idea/', '.vscode/',
     'test-output/', 'generated-sources/',
   ];
-  if (ignoredPaths.some(p => filePath.includes(p))) return false;
+  if (ignoredPaths.some(p => normalizedPath.includes(p))) return false;
 
   // 过滤生成的 MapStruct 实现类
-  if (filePath.includes('/generated/') || path.basename(filePath).includes('MapperImpl')) return false;
+  if (normalizedPath.includes('/generated/') || path.basename(filePath).includes('MapperImpl')) return false;
 
   const reviewableExts = [
     '.java', '.xml', '.yml', '.yaml', '.properties',
@@ -117,9 +126,9 @@ function getFileSize(filePath) {
   }
 }
 
-function exec(cmd) {
+function execGit(args) {
   try {
-    return execSync(cmd, {
+    return execFileSync('git', args, {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, GIT_PAGER: 'cat', GIT_TERMINAL_PROMPT: '0' },
@@ -145,12 +154,13 @@ function main() {
 
   const { branch1, branch2, output } = args;
   const outputPath = output || '.codereview/file-inventory.json';
+  const skipLowRisk = String(args['skip-low-risk'] || '').toLowerCase() === 'true';
 
   console.log(`正在分析分支差异: ${branch1} vs ${branch2} ...`);
 
-  // 验证分支存在（不使用 2>/dev/null，exec 已将 stderr 管道化，跨平台兼容）
-  const b1Exists = exec(`git rev-parse --verify "${branch1}"`);
-  const b2Exists = exec(`git rev-parse --verify "${branch2}"`);
+  // 验证分支存在：使用 execFileSync 传参，不依赖 bash/cmd/PowerShell 的解析规则。
+  const b1Exists = execGit(['rev-parse', '--verify', branch1]);
+  const b2Exists = execGit(['rev-parse', '--verify', branch2]);
 
   if (!b1Exists) {
     console.error(`错误：分支 "${branch1}" 不存在`);
@@ -162,7 +172,8 @@ function main() {
   }
 
   // 获取变动文件列表（含状态）
-  const diffNameStatus = exec(`git diff --name-status "${branch2}"..."${branch1}"`);
+  const revisionRange = `${branch2}...${branch1}`;
+  const diffNameStatus = execGit(['diff', '--name-status', revisionRange]);
   if (!diffNameStatus) {
     console.log('两个分支之间没有差异。');
     const emptyResult = {
@@ -170,7 +181,13 @@ function main() {
       generated_at: new Date().toISOString(),
       total_files: 0,
       total_changed_lines: 0,
-      files: []
+      files: [],
+      review_scope: {
+        skip_low_risk_files: skipLowRisk,
+        low_risk_types_omitted: skipLowRisk ? [...LOW_RISK_TYPES] : [],
+        skipped_low_risk_count: 0,
+        skipped_low_risk_files: [],
+      },
     };
     ensureDir(path.dirname(outputPath));
     fs.writeFileSync(outputPath, JSON.stringify(emptyResult, null, 2), 'utf8');
@@ -179,7 +196,7 @@ function main() {
   }
 
   // 获取变动统计
-  const diffNumStat = exec(`git diff --numstat "${branch2}"..."${branch1}"`);
+  const diffNumStat = execGit(['diff', '--numstat', revisionRange]);
 
   // 解析 numstat
   const numStatMap = {};
@@ -195,6 +212,7 @@ function main() {
 
   // 解析文件列表
   const files = [];
+  const skippedLowRisk = [];
   let totalChangedLines = 0;
 
   diffNameStatus.split('\n').forEach(line => {
@@ -210,13 +228,26 @@ function main() {
     if (!isReviewableFile(filePath)) return;
     if (status === 'D') return; // 跳过删除文件
 
+    const fileType = getJavaFileType(filePath);
+    if (skipLowRisk && isLowRiskType(fileType)) {
+      const stats = numStatMap[filePath] || { additions: 0, deletions: 0 };
+      skippedLowRisk.push({
+        path: filePath,
+        type: fileType,
+        additions: stats.additions,
+        deletions: stats.deletions,
+        changed_lines: stats.additions + stats.deletions,
+      });
+      return;
+    }
+
     const stats = numStatMap[filePath] || { additions: 0, deletions: 0 };
     const changedLines = stats.additions + stats.deletions;
     totalChangedLines += changedLines;
 
     files.push({
       path: filePath,
-      type: getJavaFileType(filePath),
+      type: fileType,
       status: status.charAt(0),
       additions: stats.additions,
       deletions: stats.deletions,
@@ -235,6 +266,12 @@ function main() {
     total_files: files.length,
     total_changed_lines: totalChangedLines,
     files,
+    review_scope: {
+      skip_low_risk_files: skipLowRisk,
+      low_risk_types_omitted: skipLowRisk ? [...LOW_RISK_TYPES] : [],
+      skipped_low_risk_count: skippedLowRisk.length,
+      skipped_low_risk_files: skipLowRisk ? skippedLowRisk : [],
+    },
   };
 
   ensureDir(path.dirname(outputPath));
@@ -243,6 +280,9 @@ function main() {
   console.log(`\n变动文件分析完成：`);
   console.log(`  文件总数: ${files.length}`);
   console.log(`  变动总行数: ${totalChangedLines}`);
+  if (skipLowRisk && skippedLowRisk.length > 0) {
+    console.log(`  已跳过低风险（DTO/Entity/测试等）: ${skippedLowRisk.length} 个文件（仍写入 review_scope 供报告说明）`);
+  }
 
   // 按类型统计
   const typeStat = {};

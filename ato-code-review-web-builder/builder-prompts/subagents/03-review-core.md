@@ -27,6 +27,7 @@
 
 - `{{SEVERITY_MODE}}` 为 `critical_high_only` 时：**仅** `critical` / `high`。
 - `issues[].line` **必须为字符串**（如 `"45"`、`"12-18"`）。
+- `issues[].symbol` **必须为字符串**：Vue 组件填 `组件名#函数/生命周期/模板块`，JS/TS 填 `文件名#函数名` / `类名#方法名`；样式或模块级问题填最近的选择器/导出名；无法判断时填 `"unknown"`，但不要省略。
 
 ## 输入变量
 
@@ -61,6 +62,7 @@
       "id": "COR-001",
       "file": "src/views/Example.vue",
       "line": "12",
+      "symbol": "Example.vue#handleSubmit",
       "severity": "medium",
       "category": "naming",
       "title": "…",

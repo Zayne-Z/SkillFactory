@@ -97,6 +97,7 @@ Log4j、fastjson、Jackson、Spring 等已知严重 CVE 版本。
 
 - `expert` 为 `"security"`，问题 ID 前缀 **SEC-**
 - `line` 必须为字符串
+- 每条 issue 必须包含 `symbol` 字段：Java 使用 `类名#方法名`，配置/依赖文件使用配置键、依赖坐标或最近节点；无法判断时填 `"unknown"`，但不要省略。报告会用它辅助定位，不能只给行号
 
 ## 注意事项
 

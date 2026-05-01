@@ -6,7 +6,7 @@
  * 输出 JSON 格式：数值字段均以字符串存储，避免 AI 在引用行号时生成无效 JSON。
  */
 
-const { execSync } = require('child_process');
+const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 
@@ -85,9 +85,9 @@ function getFileSize(filePath) {
   }
 }
 
-function exec(cmd) {
+function execGit(args) {
   try {
-    return execSync(cmd, {
+    return execFileSync('git', args, {
       encoding: 'utf8',
       stdio: ['pipe', 'pipe', 'pipe'],
       env: {
@@ -121,8 +121,8 @@ function main() {
 
   console.log(`正在分析分支差异: ${branch1} vs ${branch2} ...`);
 
-  const b1Exists = exec(`git rev-parse --verify "${branch1}"`);
-  const b2Exists = exec(`git rev-parse --verify "${branch2}"`);
+  const b1Exists = execGit(['rev-parse', '--verify', branch1]);
+  const b2Exists = execGit(['rev-parse', '--verify', branch2]);
 
   if (!b1Exists) {
     console.error(`错误：分支 "${branch1}" 不存在`);
@@ -133,7 +133,8 @@ function main() {
     process.exit(1);
   }
 
-  const diffNameStatus = exec(`git --no-pager diff --name-status "${branch2}"..."${branch1}"`);
+  const revisionRange = `${branch2}...${branch1}`;
+  const diffNameStatus = execGit(['--no-pager', 'diff', '--name-status', revisionRange]);
   if (!diffNameStatus) {
     console.log('两个分支之间没有差异。');
     const emptyResult = {
@@ -158,7 +159,7 @@ function main() {
     return;
   }
 
-  const diffNumStat = exec(`git --no-pager diff --numstat "${branch2}"..."${branch1}"`);
+  const diffNumStat = execGit(['--no-pager', 'diff', '--numstat', revisionRange]);
 
   const numStatMap = {};
   diffNumStat.split('\n').forEach(line => {

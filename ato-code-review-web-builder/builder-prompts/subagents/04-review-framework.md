@@ -21,6 +21,7 @@
 1. **优先** `{{DIFF_PATCH_PATH}}`；否则按文件 `git --no-pager diff`。
 2. 样式仅检视 diff 中变更的 `<style>`、`.css/.scss/.less` 行或类名变更；**禁止**对未改动样式全文挑错。
 3. `issues[].line` **字符串**；`{{SEVERITY_MODE}}` 为 `critical_high_only` 时仅 `critical`/`high`。
+4. `issues[].symbol` **字符串且必填**：Vue 填 `组件名#生命周期/方法/computed/watch/模板块`；样式问题填最近选择器（如 `.user-card__title`）；无法判断时填 `"unknown"`。
 
 ## 输入变量
 
@@ -55,6 +56,7 @@
       "id": "FRM-001",
       "file": "src/views/X.vue",
       "line": "34",
+      "symbol": "X.vue#created",
       "severity": "high",
       "category": "vue2_reactivity",
       "title": "…",

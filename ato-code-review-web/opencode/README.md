@@ -13,5 +13,9 @@
 - `web-codereview-main` 是 primary agent，负责读写 `.codereview/state.json`、运行脚本、并通过 Task 工具调用子 agent。
 - `web-codereview-review-core`、`web-codereview-review-framework`、`web-codereview-review-reliability`、`web-codereview-review-security` 是 subagent；同一批次内可以并行执行。
 - 每个 subagent 只写自己的 `OUTPUT_PATH`，例如 `.codereview/results/batch-001-core.json`，避免并行写冲突。
-- `fix-advisor` 必须等同批次所有适用检视专家完成后再运行。
+- `issue-curator` 必须等同批次所有适用检视专家完成后再运行，输出 `.codereview/results/batch-001-curated.json`。
+- `fix-advisor` 必须等同批次 `issue-curator` 完成后再运行，并优先消费 curated.json。
 
+## 升级提示
+
+从旧版（无 `issue-curator`）升级时，将 `opencode.example.json` 中新增的 `web-codereview-issue-curator` 合并到现有 opencode 配置，并替换 `fix-advisor` 与 `report-synthesizer` 的 prompt。运行中的 `.codereview/state.json` 会由主编排 Agent 启动时自动补 `curator: "pending"`。

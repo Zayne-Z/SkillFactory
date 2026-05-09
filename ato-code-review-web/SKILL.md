@@ -36,6 +36,7 @@ description: >-
     ├── framework-reviewer.md ← framework：Vue + 样式
     ├── perf-reviewer.md      ← reliability：性能 + 健壮性
     ├── security-reviewer.md
+    ├── issue-curator.md      ← curator：跨专家合并 + 局部误报复核
     ├── fix-advisor.md
     └── report-synthesizer.md
 ```
@@ -71,9 +72,12 @@ description: >-
    - 不存在：Phase 0 初始化
    - 存在：读取 current_phase
      - 若为 completed：告知报告路径；否则跳到对应 Phase
-3. 若缺少 review_options → 补 { severity_mode: "all", skip_low_risk_files: false } 并写回
-4. **reviewing**：按批次、按专家顺序 `core` → `framework` → `reliability` → `security` → `fix`，找到第一个状态为 `pending` 或 `in_progress` 的项（`completed` / `skipped` / **`failed`** 均跳过；`failed` 为终态，除非用户要求人工改回 `pending`）
-   - `in_progress`：按 `docs/state-structure.md`「in_progress 防死锁」校验对应 `*-{expert}.json` 或 `*-fix.json`
+3. 兼容性补丁：
+   - 若缺少 review_options → 补 { severity_mode: "all", skip_low_risk_files: false }
+   - 若 review_progress[*] 缺少 curator → 在 security 与 fix 之间补 `curator: "pending"`
+   - 写回 state.json
+4. **reviewing**：按批次、按专家顺序 `core` → `framework` → `reliability` → `security` → `curator` → `fix`，找到第一个状态为 `pending` 或 `in_progress` 的项（`completed` / `skipped` / **`failed`** 均跳过；`failed` 为终态，除非用户要求人工改回 `pending`）
+   - `in_progress`：按 `docs/state-structure.md`「in_progress 防死锁」校验对应 `*-{expert}.json`、`*-curated.json` 或 `*-fix.json`
 5. **synthesizing**：若 `synthesis.report_path` 已有可读报告 → 可将 `synthesis.status` 与 `current_phase` 置完成；否则重跑报告子 agent
 6. **幂等（可选）**：`tech_stack` 且 `tech-stack.json` 已合法 → 可直接 `task_planning`；`task_planning` 且 `task-plan.json` 已存在 → 补全 `review_progress` 后进入 `reviewing`
 ```
@@ -97,7 +101,7 @@ description: >-
 - Phase 3 技术栈、Phase 4 任务规划存在依赖关系，必须串行。
 - Phase 5 中，同一批次内 `core`、`framework`、`reliability`、`security` 四个专家彼此独立，凡 `task-plan.json` 标记为适用且状态为 `pending` / `failed` 的，可以通过 opencode 并行拉起。
 - 并行启动前，先把这些专家状态统一写为 `in_progress`；每个子 agent 写自己的固定输出文件，互不共享写入目标。
-- 等同批次所有适用专家完成后，才能执行该批次的 `fix-advisor`；fix 完成后再进入下一批次或报告合成。
+- 等同批次所有适用专家完成后，先执行该批次的 `issue-curator`；curator 完成后再执行 `fix-advisor`，fix 完成后再进入下一批次或报告合成。
 - 若 opencode 当前环境不支持并行任务，则按 `core → framework → reliability → security` 串行降级，输出文件与状态规则保持不变。
 
 ---
@@ -174,7 +178,7 @@ node "{SKILL_ROOT}/scripts/export-batch-diffs.js" --inventory .codereview/file-i
 | `TECH_STACK_PATH` | `.codereview/tech-stack.json` |
 | `OUTPUT_PATH` | `.codereview/task-plan.json` |
 
-根据 `task-plan.json` 初始化 `review_progress`（每批每专家 `pending`，不适用则 `skipped`）。`current_phase = "reviewing"`。
+根据 `task-plan.json` 初始化 `review_progress`（core/framework/reliability/security 按适用性设 `pending` 或 `skipped`；每批固定追加 `curator: "pending"` 与 `fix: "pending"`）。`current_phase = "reviewing"`。
 
 ---
 
@@ -187,7 +191,8 @@ for each batch:
   for expert in [core, framework, reliability, security]:
     skip if completed/skipped
 拉起子 agent，写回 state
-  本批专家全部完成后 → Phase 6 fix → 写回
+  本批专家全部完成后 → Phase 5.5 curator → 写回
+  curator 完成后 → Phase 6 fix（输入 curated.json）→ 写回
 all batches done → current_phase = "synthesizing"（见 Phase 7）
 ```
 
@@ -221,11 +226,31 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 
 **opencode 并行派发建议：**
 
-同一 `BATCH_ID` 中，对 `applicable_experts` 取交集后可一次性并行拉起多个子 agent。每个任务必须显式包含：`BATCH_ID`、`BATCH_FILES`、`BRANCH1`、`BRANCH2`、`DIFF_PATCH_PATH`、`SEVERITY_MODE`、`TECH_STACK`、`SKILL_ROOT`、独立 `OUTPUT_PATH`，并强调“完成后只写对应输出文件”。主编排 Agent 等待这一组输出文件全部存在且 JSON 合法后，再将对应状态改为 `completed`。
+同一 `BATCH_ID` 中，对 `applicable_experts` 取交集后可一次性并行拉起多个子 agent。每个任务必须显式包含：`BATCH_ID`、`BATCH_FILES`、`BRANCH1`、`BRANCH2`、`DIFF_PATCH_PATH`、`SEVERITY_MODE`、`TECH_STACK`、`SKILL_ROOT`、独立 `OUTPUT_PATH`，并强调“完成后只写对应输出文件”。主编排 Agent 等待这一组输出文件全部存在且 JSON 合法后，再将对应状态改为 `completed`；随后串行执行 `issue-curator` 与 `fix-advisor`。
 
 **框架专家路径变量：**`VUE2_REF_PATH` = `{SKILL_ROOT}/docs/vue2-reference.md`
 `VUE3_REF_PATH` = `{SKILL_ROOT}/docs/vue3-reference.md`
 `GENERAL_STANDARDS_PATH` = `{SKILL_ROOT}/docs/general-standards.md`
+
+---
+
+### Phase 5.5：问题策展（每批次一次）
+
+**子 agent：** `web-codereview-issue-curator`
+**提示词文件：** `{SKILL_ROOT}/prompts/issue-curator.md`
+
+| 变量 | 值 |
+|------|-----|
+| `BATCH_ID` | 当前批次 |
+| `BATCH_FILES` | 当前批次文件列表 |
+| `BRANCH1` / `BRANCH2` | 分支 |
+| `DIFF_PATCH_PATH` | `.codereview/diffs/{BATCH_ID}.patch`（可选，与 Phase 5 同批） |
+| `RESULTS_DIR` | `.codereview/results/` |
+| `SEVERITY_MODE` | 同 Phase 5 |
+| `OUTPUT_PATH` | `.codereview/results/{BATCH_ID}-curated.json` |
+| `SKILL_ROOT` | Skill 根目录 |
+
+完成标志：`{BATCH_ID}-curated.json` 存在且 JSON 合法，包含 `summary`、`issues[]`、`invalidated[]`。策展输出是 fix-advisor 与 report-synthesizer 的优先输入源。
 
 ---
 
@@ -243,6 +268,7 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 | `SEVERITY_MODE` | 同 Phase 5 |
 | `OUTPUT_PATH` | `.codereview/results/{BATCH_ID}-fix.json` |
 | `DIFF_PATCH_PATH` | `.codereview/diffs/{BATCH_ID}.patch`（可选，与 Phase 5 同批） |
+| `CURATED_PATH` | `.codereview/results/{BATCH_ID}-curated.json` |
 | `SKILL_ROOT` | Skill 根目录 |
 
 ---
@@ -281,10 +307,11 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 | `web-codereview-review-framework` | `prompts/framework-reviewer.md` |
 | `web-codereview-review-reliability` | `prompts/perf-reviewer.md` |
 | `web-codereview-review-security` | `prompts/security-reviewer.md` |
+| `web-codereview-issue-curator` | `prompts/issue-curator.md` |
 | `web-codereview-fix-advisor` | `prompts/fix-advisor.md` |
 | `web-codereview-report-synthesizer` | `prompts/report-synthesizer.md` |
 
-兼容说明：`prompts/spec-reviewer.md` 同 core，`prompts/style-reviewer.md` 同 framework，`prompts/robustness-reviewer.md` 同 reliability，保留旧文件名是为了不破坏已有配置；新流程只使用上表 8 个标识。
+兼容说明：`prompts/spec-reviewer.md` 同 core，`prompts/style-reviewer.md` 同 framework，`prompts/robustness-reviewer.md` 同 reliability，保留旧文件名是为了不破坏已有配置；新流程只使用上表 9 个标识。
 
 ---
 

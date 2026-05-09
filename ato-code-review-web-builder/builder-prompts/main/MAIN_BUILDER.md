@@ -24,7 +24,7 @@
 
 ## 子 Builder
 
-流程中需拉起以下预配置的子 Builder（由用户事先在插件中创建）——**检视专家已合并为 4 位**（core / framework / reliability / security），外加技术栈、任务规划、修复、报告：
+流程中需拉起以下预配置的子 Builder（由用户事先在插件中创建）——**检视专家已合并为 4 位**（core / framework / reliability / security），外加技术栈、任务规划、问题策展、修复、报告：
 
 - `web-codereview-tech-stack`
 - `web-codereview-task-plan`
@@ -32,9 +32,12 @@
 - `web-codereview-review-framework`
 - `web-codereview-review-reliability`
 - `web-codereview-review-security`
+- `web-codereview-issue-curator`
 - `web-codereview-fix-advisor`
 - `web-codereview-report-synthesizer`
 
 何时调用、传递哪些变量，以 `SKILL.md` 为准。
 
-Phase 1 须收集并写入 `state.json` 的 `review_options`（检视深度、是否跳过低风险文件）；Phase 5/6 须向子 Builder 传递 `DIFF_PATCH_PATH` 与 `SEVERITY_MODE`（见 SKILL.md）。
+Phase 1 须收集并写入 `state.json` 的 `review_options`（检视深度、是否跳过低风险文件）；Phase 5/5.5/6 须向子 Builder 传递 `DIFF_PATCH_PATH` 与 `SEVERITY_MODE`（见 SKILL.md）。每批次顺序为 `core/framework/reliability/security → curator → fix`：4 位检视专家完成后由 issue-curator 做跨专家合并 + 局部误报复核，产出 `{BATCH_ID}-curated.json`，再交给 fix-advisor 与最终合成官。
+
+启动时还须执行兼容补丁：若 `state.json` 不含 `review_options` 或 `review_progress[*]` 缺少 `curator` 键，按 `SKILL.md` 第 2.2 节补默认值后写回。

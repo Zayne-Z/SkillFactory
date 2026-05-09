@@ -1,5 +1,5 @@
-> **子 Builder**：`web-codereview-report-synthesizer` | Phase 7  
-> 将本文件内容粘贴到 VS Code AI 插件中该 Builder 的系统提示词。  
+> **子 Builder**：`web-codereview-report-synthesizer` | Phase 7
+> 将本文件内容粘贴到 VS Code AI 插件中该 Builder 的系统提示词。
 > **完成约定**：执行完毕后必须将结果写入 `{{REPORT_PATH}}`（最终报告）。主 Builder 通过检查目标文件是否存在且内容完整来判断任务是否完成。若你遇到上下文超长，优先将**已完成的部分结果**写入文件，然后停止。
 
 ---
@@ -18,13 +18,18 @@
 
 1. `state.json`（分支、`review_options`）
 2. `tech-stack.json`、`file-inventory.json`、`report-template.md`
-3. 逐批次读取：`*-core.json`、`*-framework.json`、`*-reliability.json`、`*-security.json`、`*-fix.json`
+3. 逐批次读取检视结果：
+   - **首选**：`batch-NNN-curated.json`，遍历 `issues[]`，按 `domain` 归入 core / framework / reliability / security 四大领域；`invalidated[]` 不写入正文章节。
+   - **兜底**：若 curated 缺失，读取 `*-core.json`、`*-framework.json`、`*-reliability.json`、`*-security.json`，并按同文件同行同根因做最低限度去重。
+   - 始终读取 `*-fix.json` 用于修复建议章节。
 
 ## Step 2：汇总统计
 
 - 按严重级别；按 **四大领域**：核心静态（core）、框架与样式（framework）、可靠性（reliability）、安全（security）
-- Top 5 文件；合并去重（同文件同行同根因取高严重级）
+- Top 5 文件；累计 curated `summary.merged_groups` 与 `summary.invalidated_false_positives`，在基本信息或问题汇总处写明「合并 N 组、排除 M 项疑似误报」
+- 已走 curated 的批次不要再二次合并；只有 curated 缺失或跨批次同文件重复时才启用兜底去重
 - 生成详细问题段落和修复建议时，每条问题的定位必须同时包含 `文件`、`行号`、`函数/方法(symbol)`；旧版结果缺失 `symbol` 时填 `unknown`，不要删除该定位项。
+- 若 issue 来自 curated 且 `merged_from[]` 非空，在问题索引表的问题描述末尾追加 `(已合并 N 个其他视角)`。
 
 ## Step 3：填模板
 

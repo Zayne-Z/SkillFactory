@@ -73,7 +73,8 @@
   "review_strategy": {
     "parallel_available": true,
     "recommended_mode": "parallel",
-    "note": "串行建议顺序：core → framework → reliability → security"
+    "post_review_pipeline": ["curator", "fix"],
+    "note": "串行建议顺序：core → framework → reliability → security；四位检视专家完成后由主编排 Agent 顺次调用 curator（合并去重 + 局部误报复核）和 fix（修复建议）"
   }
 }
 ```
@@ -90,4 +91,4 @@
 
 - **批次**必须来自 `file-inventory.json` 的 `batches`，**不得**重新分批。
 - 若 `review_scope.skip_low_risk_files` 为 `true`，清单已排除测试/E2E/Storybook 源文件与快照等；规划时不要假设这些文件仍在本轮范围内。
-- `fix` **不要**列入 `applicable_experts`（由主编排 Agent 在每批专家完成后单独调用修复子 agent）。
+- `curator` 与 `fix` **不要**列入 `applicable_experts`（由主编排 Agent 在每批专家完成后顺次调用，curator 在前、fix 在后）。

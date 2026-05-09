@@ -2,7 +2,7 @@
 /**
  * 可选：从 ato-code-review-web/prompts 仅同步「技术栈」子 Builder（01）。
  *
- * 02–08 为 web-builder 手工维护（四位合并专家 + fix + report），运行本脚本不会覆盖它们。
+ * 02–09 为 web-builder 手工维护（四位合并专家 + curator + fix + report），运行本脚本不会覆盖它们。
  */
 const fs = require('fs');
 const path = require('path');
@@ -43,4 +43,4 @@ fs.mkdirSync(OUT, { recursive: true });
 }
 
 console.log('已更新:', path.join(OUT, '01-tech-stack.md'));
-console.log('未改动: 02-task-plan.md … 08-report-synthesizer.md（合并专家版，请直接编辑 repo 内文件）');
+console.log('未改动: 02-task-plan.md … 09-report-synthesizer.md（合并专家版，请直接编辑 repo 内文件）');

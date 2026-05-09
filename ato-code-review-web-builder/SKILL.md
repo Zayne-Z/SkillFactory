@@ -67,9 +67,12 @@ description: >-
    - 不存在：Phase 0 初始化
    - 存在：读取 current_phase
      - 若为 completed：告知报告路径；否则跳到对应 Phase
-3. 若缺少 review_options → 补 { severity_mode: "all", skip_low_risk_files: false } 并写回
-4. **reviewing**：按批次、按专家顺序 `core` → `framework` → `reliability` → `security` → `fix`，找到第一个状态为 `pending` 或 `in_progress` 的项（`completed` / `skipped` / **`failed`** 均跳过；`failed` 为终态，除非用户要求人工改回 `pending`）  
-   - `in_progress`：按 `docs/state-structure.md`「in_progress 防死锁」校验对应 `*-{expert}.json` 或 `*-fix.json`
+3. 兼容性补丁：
+   - 若缺少 review_options → 补 { severity_mode: "all", skip_low_risk_files: false }
+   - 若 review_progress[*] 缺少 curator → 在 security 与 fix 之间补 `curator: "pending"`
+   - 写回 state.json
+4. **reviewing**：按批次、按专家顺序 `core` → `framework` → `reliability` → `security` → `curator` → `fix`，找到第一个状态为 `pending` 或 `in_progress` 的项（`completed` / `skipped` / **`failed`** 均跳过；`failed` 为终态，除非用户要求人工改回 `pending`）
+   - `in_progress`：按 `docs/state-structure.md`「in_progress 防死锁」校验对应 `*-{expert}.json`、`*-curated.json` 或 `*-fix.json`
 5. **synthesizing**：若 `synthesis.report_path` 已有可读报告 → 可将 `synthesis.status` 与 `current_phase` 置完成；否则重跑报告子 Builder
 6. **幂等（可选）**：`tech_stack` 且 `tech-stack.json` 已合法 → 可直接 `task_planning`；`task_planning` 且 `task-plan.json` 已存在 → 补全 `review_progress` 后进入 `reviewing`
 ```
@@ -156,7 +159,7 @@ node "{SKILL_ROOT}/scripts/export-batch-diffs.js" --inventory .codereview/file-i
 | `TECH_STACK_PATH` | `.codereview/tech-stack.json` |
 | `OUTPUT_PATH` | `.codereview/task-plan.json` |
 
-根据 `task-plan.json` 初始化 `review_progress`（每批每专家 `pending`，不适用则 `skipped`）。`current_phase = "reviewing"`。
+根据 `task-plan.json` 初始化 `review_progress`（core/framework/reliability/security 按适用性设 `pending` 或 `skipped`；每批固定追加 `curator: "pending"` 与 `fix: "pending"`）。`current_phase = "reviewing"`。
 
 ---
 
@@ -169,7 +172,8 @@ for each batch:
   for expert in [core, framework, reliability, security]:
     skip if completed/skipped
 拉起子 Builder，写回 state
-  本批专家全部完成后 → Phase 6 fix → 写回
+  本批专家全部完成后 → Phase 5.5 curator → 写回
+  curator 完成后 → Phase 6 fix（输入 curated.json）→ 写回
 all batches done → current_phase = "synthesizing"（见 Phase 7）
 ```
 
@@ -207,6 +211,25 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 
 ---
 
+### Phase 5.5：问题策展（每批次一次）
+
+**子 Builder：** `web-codereview-issue-curator`
+
+| 变量 | 值 |
+|------|-----|
+| `BATCH_ID` | 当前批次 |
+| `BATCH_FILES` | 当前批次文件列表 |
+| `BRANCH1` / `BRANCH2` | 分支 |
+| `DIFF_PATCH_PATH` | `.codereview/diffs/{BATCH_ID}.patch`（可选，与 Phase 5 同批） |
+| `RESULTS_DIR` | `.codereview/results/` |
+| `SEVERITY_MODE` | 同 Phase 5 |
+| `OUTPUT_PATH` | `.codereview/results/{BATCH_ID}-curated.json` |
+| `SKILL_ROOT` | Skill 根目录 |
+
+完成标志：`{BATCH_ID}-curated.json` 存在且 JSON 合法，包含 `summary`、`issues[]`、`invalidated[]`。策展输出是 fix-advisor 与 report-synthesizer 的优先输入源。
+
+---
+
 ### Phase 6：修复建议（每批次一次，嵌在 Phase 5 循环末尾）
 
 **子 Builder：** `web-codereview-fix-advisor`
@@ -220,6 +243,7 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 | `SEVERITY_MODE` | 同 Phase 5 |
 | `OUTPUT_PATH` | `.codereview/results/{BATCH_ID}-fix.json` |
 | `DIFF_PATCH_PATH` | `.codereview/diffs/{BATCH_ID}.patch`（可选，与 Phase 5 同批） |
+| `CURATED_PATH` | `.codereview/results/{BATCH_ID}-curated.json` |
 | `SKILL_ROOT` | Skill 根目录 |
 
 ---
@@ -247,7 +271,7 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 
 ## 4. 子 Builder 标识对照表
 
-将 `{SKILL_ROOT}/builder-prompts/subagents/` 对应文件粘贴为各 Builder 系统提示词（**1 主 + 8 子**）：
+将 `{SKILL_ROOT}/builder-prompts/subagents/` 对应文件粘贴为各 Builder 系统提示词（**1 主 + 9 子**）：
 
 | 标识 | 提示词文件 |
 |------|------------|
@@ -257,8 +281,9 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 | `web-codereview-review-framework` | `04-review-framework.md` |
 | `web-codereview-review-reliability` | `05-review-reliability.md` |
 | `web-codereview-review-security` | `06-review-security.md` |
-| `web-codereview-fix-advisor` | `07-fix-advisor.md` |
-| `web-codereview-report-synthesizer` | `08-report-synthesizer.md` |
+| `web-codereview-issue-curator` | `07-issue-curator.md` |
+| `web-codereview-fix-advisor` | `08-fix-advisor.md` |
+| `web-codereview-report-synthesizer` | `09-report-synthesizer.md` |
 
 主 Builder 系统提示词：`builder-prompts/main/MAIN_BUILDER.md`。
 

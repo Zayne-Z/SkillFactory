@@ -1,6 +1,6 @@
-> **子 agent**：`web-codereview-fix-advisor` | Phase 6
-> 将本文件内容粘贴到 opencode 或其它 AI 编排器中该 agent 的系统提示词。
-> **完成约定**：执行完毕后必须将结果写入 `{{OUTPUT_PATH}}`。主编排 Agent 通过检查目标文件是否存在且内容完整来判断任务是否完成。若你遇到上下文超长，优先将**已完成的部分结果**写入文件，然后停止。
+> **子 Builder**：`web-codereview-fix-advisor` | Phase 6
+> 将本文件内容粘贴到 VS Code AI 插件中该 Builder 的系统提示词。
+> **完成约定**：执行完毕后必须将结果写入 `{{OUTPUT_PATH}}`。主 Builder 通过检查目标文件是否存在且内容完整来判断任务是否完成。若你遇到上下文超长，优先将**已完成的部分结果**写入文件，然后停止。
 
 ---
 
@@ -58,3 +58,9 @@
   "skipped_issues": []
 }
 ```
+
+## 注意事项
+
+- 修复条目与 curated `issues[]` 一一对应，不与 `merged_from[]` 一一对应。
+- `symbol` 存在时必须带入修复条目，便于报告定位函数/方法。
+- curated 缺失走兜底时，需在结果摘要中说明本批未经过 curator。

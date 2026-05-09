@@ -4,7 +4,7 @@
 
 ## 你需要做什么
 
-在 VS Code AI 插件中 **手动创建 9 个 Builder**（**1 个主 + 8 个子**），并将下表中对应文件的内容粘贴为各 Builder 的系统提示词。
+在 VS Code AI 插件中 **手动创建 10 个 Builder**（**1 个主 + 9 个子**），并将下表中对应文件的内容粘贴为各 Builder 的系统提示词。
 
 检视专家已由 7 位合并为 **4 位**：`core`（扫描+规范）、`framework`（Vue/React+样式）、`reliability`（性能+健壮性）、`security`。
 
@@ -14,7 +14,7 @@
 |------------------------|---------------|
 | 主 Builder（如 `web-codereview-main`） | [main/MAIN_BUILDER.md](main/MAIN_BUILDER.md) |
 
-### 子 Builder（8 个）
+### 子 Builder（9 个）
 
 | 建议标识（主 Builder 拉起时用） | 系统提示词来源 |
 |-------------------------------|---------------|
@@ -24,8 +24,11 @@
 | `web-codereview-review-framework` | [subagents/04-review-framework.md](subagents/04-review-framework.md) |
 | `web-codereview-review-reliability` | [subagents/05-review-reliability.md](subagents/05-review-reliability.md) |
 | `web-codereview-review-security` | [subagents/06-review-security.md](subagents/06-review-security.md) |
-| `web-codereview-fix-advisor` | [subagents/07-fix-advisor.md](subagents/07-fix-advisor.md) |
-| `web-codereview-report-synthesizer` | [subagents/08-report-synthesizer.md](subagents/08-report-synthesizer.md) |
+| `web-codereview-issue-curator` | [subagents/07-issue-curator.md](subagents/07-issue-curator.md) |
+| `web-codereview-fix-advisor` | [subagents/08-fix-advisor.md](subagents/08-fix-advisor.md) |
+| `web-codereview-report-synthesizer` | [subagents/09-report-synthesizer.md](subagents/09-report-synthesizer.md) |
+
+> 升级提示：从旧版（无 issue-curator）升级时，仅需新增 `web-codereview-issue-curator` 一个 Builder，并把 `fix-advisor` 与 `report-synthesizer` 的系统提示词替换为 `08-fix-advisor.md` / `09-report-synthesizer.md` 的最新内容。运行中的 `state.json` 由主 Builder 启动时自动补 `curator: "pending"`。
 
 ## 运行方式
 
@@ -38,4 +41,4 @@
 
 若需定制某个子 Builder 的检视规则，编辑 `subagents/` 下对应文件后，重新粘贴到插件配置即可。
 
-可选：运行 `scripts/gen-builder-prompts.js` 仅从 `ato-code-review-web` 同步 **01-tech-stack.md**，不会覆盖 02–08。
+可选：运行 `scripts/gen-builder-prompts.js` 仅从 `ato-code-review-web` 同步 **01-tech-stack.md**，不会覆盖 02–09。

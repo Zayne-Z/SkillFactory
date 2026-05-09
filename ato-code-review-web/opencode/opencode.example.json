@@ -90,6 +90,18 @@
         "edit": "allow"
       }
     },
+    "web-codereview-issue-curator": {
+      "mode": "subagent",
+      "description": "Merge duplicate frontend review issues and invalidate local false positives",
+      "prompt": "{file:./ato-code-review-web/prompts/issue-curator.md}",
+      "permission": {
+        "bash": {
+          "*": "ask",
+          "git *": "allow"
+        },
+        "edit": "allow"
+      }
+    },
     "web-codereview-fix-advisor": {
       "mode": "subagent",
       "description": "Generate fix suggestions for reported frontend review issues",
@@ -115,4 +127,3 @@
     }
   }
 }
-

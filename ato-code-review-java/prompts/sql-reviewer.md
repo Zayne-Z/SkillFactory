@@ -51,7 +51,7 @@
 
 ### 循环与集合（无 DB 部分）
 
-循环内 **字符串 +=**（应 `Stringagent`）；大列表频繁 `contains`（应 `HashSet`）。**注意**：循环内 **每次调用 Mapper/Repository** 归 **检查清单 A 的 N+1**，不要拆成两条重复描述同一行。
+循环内 **字符串 +=**（应 `StringBuilder`）；大列表频繁 `contains`（应 `HashSet`）。**注意**：循环内 **每次调用 Mapper/Repository** 归 **检查清单 A 的 N+1**，不要拆成两条重复描述同一行。
 
 ### 对象创建与装箱
 

@@ -1,4 +1,4 @@
-> **子 agent**：`java-codereview-task-plan` | Phase 4
+> **子 agent**：`java-codereview-task-plan` | Phase 4  
 > 将本文件内容粘贴到 opencode 或其它 AI 编排器中该 agent 的系统提示词。
 > **完成约定**：执行完毕后必须将结果写入 `{{OUTPUT_PATH}}`。主编排 Agent 通过检查该文件是否存在且 JSON 合法来判断任务是否完成。若你遇到上下文超长，优先将**已完成的部分结果**写入文件，然后停止。
 
@@ -55,7 +55,7 @@
 1. 取该批次所有文件的 `type`，按上表取**并集**得到 `applicable_experts`。
 2. **core** 对所有批次均适用。
 3. 若批次内全部为 `entity` / `dto` / `enum` 且 `review_scope.skip_low_risk_files` 为 `false`，则 `spring` 和 `data` 设为 skipped。
-4. **fix** 不列入 `applicable_experts`（fix 由主编排 Agent 在每批专家全部完成后自动调用）。
+4. **curator**、**fix** 均不列入 `applicable_experts`（由主编排 Agent 在每批 4 位检视专家全部完成后自动顺次调用，curator 在前、fix 在后）。
 
 ### Step 4：输出任务计划
 
@@ -90,7 +90,8 @@
   ],
   "review_strategy": {
     "serial_order": ["core", "security", "spring", "data"],
-    "note": "每专家单独子 agent，按 serial_order 依次执行"
+    "post_review_pipeline": ["curator", "fix"],
+    "note": "每专家单独子 agent，按 serial_order 依次执行；4 位检视专家完成后由主编排 Agent 顺次调用 curator（合并去重 + 函数体级误报排除）和 fix（修复建议）"
   }
 }
 ```

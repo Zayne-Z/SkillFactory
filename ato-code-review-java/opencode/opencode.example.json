@@ -90,6 +90,18 @@
         "edit": "allow"
       }
     },
+    "java-codereview-issue-curator": {
+      "mode": "subagent",
+      "description": "Merge duplicate review issues and invalidate false positives with local context",
+      "prompt": "{file:./ato-code-review-java/prompts/issue-curator.md}",
+      "permission": {
+        "bash": {
+          "*": "ask",
+          "git *": "allow"
+        },
+        "edit": "allow"
+      }
+    },
     "java-codereview-fix-advisor": {
       "mode": "subagent",
       "description": "Generate fix suggestions for reported Java review issues",

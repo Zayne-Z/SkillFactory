@@ -32,9 +32,12 @@
 - `java-codereview-review-spring`
 - `java-codereview-review-security`
 - `java-codereview-review-data`
+- `java-codereview-issue-curator`
 - `java-codereview-fix-advisor`
 - `java-codereview-report-synthesizer`
 
 具体何时调用哪个、传什么变量，全部以 `SKILL.md` 为准。
 
-Phase 1 除分支外还须收集并写入 `state.json` 的 `review_options`（检视深度、是否跳过低风险文件）；Phase 5/6 须向子 Builder 传递 `DIFF_PATCH_PATH`、`BRANCH1`、`BRANCH2` 与 `SEVERITY_MODE` 等（完整列表见 `SKILL.md`；修复专家优先用批次 patch 取上下文，减少重复读源文件）。
+Phase 1 除分支外还须收集并写入 `state.json` 的 `review_options`（检视深度、是否跳过低风险文件）；Phase 5 / 5.5 / 6 须向子 Builder 传递 `DIFF_PATCH_PATH`、`BRANCH1`、`BRANCH2` 与 `SEVERITY_MODE` 等（完整列表见 `SKILL.md`）。每批次顺序为 `core → security → spring → data → curator → fix`：4 位检视专家完成后由 issue-curator 做跨专家合并 + 函数体级误报排除，产出 `{BATCH_ID}-curated.json`，再交给 fix-advisor 与最终合成官；修复专家优先用批次 patch 取上下文，减少重复读源文件。
+
+启动时还须执行兼容补丁：若 `state.json` 不含 `review_options` 或 `review_progress[*]` 缺少 `curator` 键，按 `SKILL.md` 第 2.2 节补默认值后写回。

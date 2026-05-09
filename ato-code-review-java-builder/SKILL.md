@@ -72,8 +72,11 @@ description: >-
    └─ 存在   → 读取 current_phase
        ├─ completed     → 告知用户「检视已完成，报告在 codereview/ 下」
        └─ 其它          → 跳转到对应 Phase 继续
-3. 兼容性补丁：若 state.json 不含 review_options 字段
-   → 补入默认值 { "severity_mode": "all", "skip_low_risk_files": false }
+3. 兼容性补丁：
+   a. 若 state.json 不含 review_options 字段
+      → 补入默认值 { "severity_mode": "all", "skip_low_risk_files": false }
+   b. 若 review_progress[*] 缺少 curator 键（升级到含 issue-curator 的版本）
+      → 对每个批次补入 curator: "pending"，position 在 data 与 fix 之间
    → 写回 state.json（保证后续阶段可安全读取）
 4. 对 reviewing 阶段：按批次、按专家顺序（见 Phase 5）扫描 review_progress，
    找到第一个 status 为 pending 或 in_progress 的 {batch}+{expert}（completed / skipped / failed 跳过；
@@ -210,8 +213,11 @@ node "{SKILL_ROOT}/scripts/export-batch-diffs.js" --inventory .codereview/file-i
     if status == "completed" or "skipped" → 跳过
     if status == "pending" or "failed"   → 执行该专家
     执行完成 → 立即写回 state.json
-  该批次所有专家完成后：
-    执行 fix-advisor（Phase 6 单批）
+  该批次 4 位检视专家全部 completed/skipped 后：
+    执行 issue-curator（Phase 5.5 单批，跨专家合并 + 函数体级误报排除）
+    curator 状态设 completed → 写回 state.json
+  curator 完成后：
+    执行 fix-advisor（Phase 6 单批，输入为 curated.json）
     fix 状态设 completed → 写回 state.json
 
 所有批次全部完成 → current_phase = "synthesizing"
@@ -257,6 +263,32 @@ node "{SKILL_ROOT}/scripts/export-batch-diffs.js" --inventory .codereview/file-i
 
 ---
 
+### Phase 5.5：问题策展（每批次一次，嵌入 Phase 5 循环；4 专家完成后执行）
+
+**拉起子 Builder：** `java-codereview-issue-curator`
+
+**目的：**
+1. **跨专家合并**：把同一文件、同一行（区间重叠）、实质相同根因的多条 issue 合并为一条主条目（按主责专家优先级），其余视角并入 `merged_from[]`，避免 fix-advisor 与最终报告对同一行写出多段重复内容
+2. **函数体级关联复核**：对合并后剩余的每条 issue，**仅在其所在函数体（或 XML SQL 节点）范围内**检查是否已通过判空 / try-with-resources / `@Valid` / 工具断言 / 白名单 / 同步原语等手段处理；已处理的移入 `invalidated[]` 不再下发，避免误报
+
+**传入变量：**
+| 变量 | 值 |
+|------|---|
+| `BATCH_ID` | 当前批次 |
+| `BATCH_FILES` | 当前批次文件列表 |
+| `BRANCH1` / `BRANCH2` | 同 Phase 5 |
+| `DIFF_PATCH_PATH` | `.codereview/diffs/{BATCH_ID}.patch`（与 Phase 5 共用） |
+| `SEVERITY_MODE` | 同 Phase 5（`critical_high_only` 时不得保留 medium / low） |
+| `RESULTS_DIR` | `.codereview/results/`（用于读取 4 份原始专家 JSON） |
+| `OUTPUT_PATH` | `.codereview/results/{BATCH_ID}-curated.json` |
+| `SKILL_ROOT` | 本 Skill 根目录 |
+
+**完成标志：** `{BATCH_ID}-curated.json` 文件存在且 JSON 合法（含 `summary` / `issues[]` / `invalidated[]` 三个字段）
+
+**与 fix-advisor 的契约：** 策展输出是 fix-advisor 的**唯一输入源**；fix-advisor 不应再读 4 份原始专家 JSON（仅 curated.json 缺失时兜底）。
+
+---
+
 ### Phase 6：修复建议（每批次一次，嵌入 Phase 5 循环中）
 
 **拉起子 Builder：** `java-codereview-fix-advisor`
@@ -269,7 +301,8 @@ node "{SKILL_ROOT}/scripts/export-batch-diffs.js" --inventory .codereview/file-i
 | `BRANCH1` | 被检视分支（与 Phase 5 相同） |
 | `BRANCH2` | 基准分支（与 Phase 5 相同） |
 | `DIFF_PATCH_PATH` | `.codereview/diffs/{BATCH_ID}.patch`（Phase 2 `export-batch-diffs.js` 已生成；主 Builder 按 `BATCH_ID` 自动拼装路径并传入，**用户无需填写**；与检视专家共用同一份 unified diff） |
-| `RESULTS_DIR` | `.codereview/results/` |
+| `CURATED_PATH` | `.codereview/results/{BATCH_ID}-curated.json`（Phase 5.5 输出，**优先输入**；缺失时 fix-advisor 自动回退读 4 份原始专家 JSON） |
+| `RESULTS_DIR` | `.codereview/results/`（兜底回退路径） |
 | `SEVERITY_MODE` | 同 Phase 5（`critical_high_only` 时仅对 C/H 问题给修复建议） |
 | `OUTPUT_PATH` | `.codereview/results/{BATCH_ID}-fix.json` |
 
@@ -309,8 +342,9 @@ node "{SKILL_ROOT}/scripts/export-batch-diffs.js" --inventory .codereview/file-i
 | `java-codereview-review-spring` | `subagents/04-review-spring.md` | 5 |
 | `java-codereview-review-security` | `subagents/05-review-security.md` | 5 |
 | `java-codereview-review-data` | `subagents/06-review-data.md` | 5 |
-| `java-codereview-fix-advisor` | `subagents/07-fix-advisor.md` | 6 |
-| `java-codereview-report-synthesizer` | `subagents/08-report-synthesizer.md` | 7 |
+| `java-codereview-issue-curator` | `subagents/07-issue-curator.md` | 5.5 |
+| `java-codereview-fix-advisor` | `subagents/08-fix-advisor.md` | 6 |
+| `java-codereview-report-synthesizer` | `subagents/09-report-synthesizer.md` | 7 |
 
 ---
 

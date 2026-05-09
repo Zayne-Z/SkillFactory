@@ -4,7 +4,7 @@
 
 ## 你需要做什么
 
-在 VS Code AI 插件中 **手动创建 9 个 Builder**，并将下表中对应文件的内容粘贴为各 Builder 的系统提示词：
+在 VS Code AI 插件中 **手动创建 10 个 Builder**，并将下表中对应文件的内容粘贴为各 Builder 的系统提示词：
 
 ### 主 Builder（1 个）
 
@@ -12,18 +12,21 @@
 |------------------------|---------------|
 | 主 Builder（如 `java-codereview-main`） | [main/MAIN_BUILDER.md](main/MAIN_BUILDER.md) |
 
-### 子 Builder（8 个）
+### 子 Builder（9 个）
 
-| 建议标识（主 Builder 拉起时用） | 系统提示词来源 |
-|-------------------------------|---------------|
-| `java-codereview-tech-stack` | [subagents/01-tech-stack.md](subagents/01-tech-stack.md) |
-| `java-codereview-task-plan` | [subagents/02-task-plan.md](subagents/02-task-plan.md) |
-| `java-codereview-review-core` | [subagents/03-review-core.md](subagents/03-review-core.md) |
-| `java-codereview-review-spring` | [subagents/04-review-spring.md](subagents/04-review-spring.md) |
-| `java-codereview-review-security` | [subagents/05-review-security.md](subagents/05-review-security.md) |
-| `java-codereview-review-data` | [subagents/06-review-data.md](subagents/06-review-data.md) |
-| `java-codereview-fix-advisor` | [subagents/07-fix-advisor.md](subagents/07-fix-advisor.md) |
-| `java-codereview-report-synthesizer` | [subagents/08-report-synthesizer.md](subagents/08-report-synthesizer.md) |
+| 建议标识（主 Builder 拉起时用） | 系统提示词来源 | Phase |
+|-------------------------------|---------------|-------|
+| `java-codereview-tech-stack` | [subagents/01-tech-stack.md](subagents/01-tech-stack.md) | 3 |
+| `java-codereview-task-plan` | [subagents/02-task-plan.md](subagents/02-task-plan.md) | 4 |
+| `java-codereview-review-core` | [subagents/03-review-core.md](subagents/03-review-core.md) | 5 |
+| `java-codereview-review-spring` | [subagents/04-review-spring.md](subagents/04-review-spring.md) | 5 |
+| `java-codereview-review-security` | [subagents/05-review-security.md](subagents/05-review-security.md) | 5 |
+| `java-codereview-review-data` | [subagents/06-review-data.md](subagents/06-review-data.md) | 5 |
+| `java-codereview-issue-curator` | [subagents/07-issue-curator.md](subagents/07-issue-curator.md) | 5.5 |
+| `java-codereview-fix-advisor` | [subagents/08-fix-advisor.md](subagents/08-fix-advisor.md) | 6 |
+| `java-codereview-report-synthesizer` | [subagents/09-report-synthesizer.md](subagents/09-report-synthesizer.md) | 7 |
+
+> 升级提示：从旧版（无 issue-curator）升级时，仅需新增 `java-codereview-issue-curator` 一个 Builder，并把 `fix-advisor` 与 `report-synthesizer` 的系统提示词替换为 `08-fix-advisor.md` / `09-report-synthesizer.md` 的最新内容（标识不变）。运行中的 `state.json` 由主 Builder 启动时自动补 `curator: "pending"`。
 
 ## 运行方式
 

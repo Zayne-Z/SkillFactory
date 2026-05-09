@@ -10,7 +10,8 @@
 | `java-codereview-review-spring` | [04-review-spring.md](04-review-spring.md) | Phase 5 Spring/可靠性 |
 | `java-codereview-review-security` | [05-review-security.md](05-review-security.md) | Phase 5 安全 |
 | `java-codereview-review-data` | [06-review-data.md](06-review-data.md) | Phase 5 数据与性能 |
-| `java-codereview-fix-advisor` | [07-fix-advisor.md](07-fix-advisor.md) | Phase 6 修复建议 |
-| `java-codereview-report-synthesizer` | [08-report-synthesizer.md](08-report-synthesizer.md) | Phase 7 报告合成 |
+| `java-codereview-issue-curator` | [07-issue-curator.md](07-issue-curator.md) | Phase 5.5 跨专家合并 + 函数体级误报排除 |
+| `java-codereview-fix-advisor` | [08-fix-advisor.md](08-fix-advisor.md) | Phase 6 修复建议 |
+| `java-codereview-report-synthesizer` | [09-report-synthesizer.md](09-report-synthesizer.md) | Phase 7 报告合成 |
 
 **路径约定**：各文件中的 `{SKILL_ROOT}` 表示 Skill 根目录（含 `SKILL.md`、`docs/`、`scripts/`）。

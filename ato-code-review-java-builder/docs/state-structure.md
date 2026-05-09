@@ -84,6 +84,7 @@ Phase 4 完成后，主 Builder 根据 `task-plan.json` 初始化：
     "spring":   "pending",
     "security": "pending",
     "data":     "pending",
+    "curator":  "pending",
     "fix":      "pending"
   },
   "batch-002": {
@@ -92,6 +93,7 @@ Phase 4 完成后，主 Builder 根据 `task-plan.json` 初始化：
     "spring":   "skipped",
     "security": "skipped",
     "data":     "pending",
+    "curator":  "pending",
     "fix":      "pending"
   }
 }
@@ -107,7 +109,9 @@ Phase 4 完成后，主 Builder 根据 `task-plan.json` 初始化：
 | `skipped` | 不适用 | 跳过（如纯 POJO 跳过 data） |
 | `failed` | 执行失败（已重试 2 次） | 跳过，记录到 notes[] |
 
-专家键名：`core` / `spring` / `security` / `data` / `fix`
+专家键名：`core` / `spring` / `security` / `data` / `curator` / `fix`
+
+> `curator`：Phase 5.5 的策展专家（issue-curator），固定在 4 位检视专家全部 `completed`/`skipped` 之后、`fix` 之前执行；不会被 `task-plan` 标为 `skipped`（即便所有检视专家都 skipped，curator 仍需跑一次以输出空 issue 的 curated.json，给 fix-advisor 与合成官提供统一入口）。
 
 ## 断点恢复逻辑（主 Builder 每次启动必执行）
 
@@ -116,7 +120,7 @@ Phase 4 完成后，主 Builder 根据 `task-plan.json` 初始化：
 2. 根据 current_phase 跳转到对应 Phase
 3. 若 current_phase == "reviewing"：
    a. 扫描 review_progress（批次顺序与 task-plan / inventory 一致）
-   b. 对每个批次按专家顺序（core → security → spring → data → fix）查找：**第一个**状态为 `pending` 或 `in_progress` 的专家；`completed` / `skipped` / `failed` 均跳过（`failed` 为终态，不再自动改 pending）
+   b. 对每个批次按专家顺序（core → security → spring → data → curator → fix）查找：**第一个**状态为 `pending` 或 `in_progress` 的专家；`completed` / `skipped` / `failed` 均跳过（`failed` 为终态，不再自动改 pending）
    c. 若选中项为 "in_progress"：按下方「in_progress 防死锁」处理后再继续
    d. 从该处拉起子 Builder 或继续主流程
 4. 若 current_phase == "synthesizing"：
@@ -124,6 +128,7 @@ Phase 4 完成后，主 Builder 根据 `task-plan.json` 初始化：
    否则检查 synthesis.status，非 completed 则重跑报告合成
 5. 幂等（可选优化）：current_phase == "tech_stack" 且 .codereview/tech-stack.json 已存在且合法 → 可直接进入 task_planning；
    current_phase == "task_planning" 且 task-plan.json 已存在 → 可补全 review_progress 后进入 reviewing（避免重复跑子 Builder）
+6. 升级兼容：若 review_progress[*] 缺少 curator 键（旧版 state），主 Builder 在启动时为每个批次补 curator: "pending"，并写回 state.json 后再进入步骤 3
 ```
 
 ## in_progress 防死锁
@@ -132,6 +137,7 @@ Phase 4 完成后，主 Builder 根据 `task-plan.json` 初始化：
 
 - 检查对应结果文件是否存在且 JSON 合法：
   - 检视专家：`.codereview/results/{BATCH_ID}-{core|spring|security|data}.json`
+  - **curator**：`.codereview/results/{BATCH_ID}-curated.json`
   - **fix**：`.codereview/results/{BATCH_ID}-fix.json`
   - 满足 → 标记 `completed`；否则 → 重置为 `pending` 并重新执行
 

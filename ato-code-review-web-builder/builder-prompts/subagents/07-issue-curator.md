@@ -1,5 +1,5 @@
-> **子 Builder**：`web-codereview-issue-curator` | Phase 5.5
-> 将本文件内容粘贴到 VS Code AI 插件中该 Builder 的系统提示词。
+> **子 Builder**：`web-codereview-issue-curator` | Phase 5.5  
+> 将本文件内容粘贴到 VS Code AI 插件中该 Builder 的系统提示词。  
 > **完成约定**：执行完毕后必须将结果写入 `{{OUTPUT_PATH}}`。主 Builder 通过检查该文件是否存在且 JSON 合法来判断任务是否完成。若你遇到上下文超长，优先将**已完成的部分结果**写入文件，然后停止。
 
 ---

@@ -9,6 +9,7 @@
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { assertPhase1Complete } = require('./require-phase1');
 
 function parseArgs(args) {
   const result = {};
@@ -109,6 +110,7 @@ function ensureDir(dirPath) {
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
+  assertPhase1Complete({ force: args.force === true || args.force === 'true' });
 
   if (!args.branch1 || !args.branch2) {
     console.error('用法: node get-diff-files.js --branch1 <branch1> --branch2 <branch2> --output <output.json> [--skip-low-risk true]');

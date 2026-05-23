@@ -1,6 +1,6 @@
 # 子 Builder 提示词
 
-将 `01`–`09` 各 `*.md` 全文粘贴到插件中对应子 Builder 的系统提示词。
+将 `01`–`10` 各 `*.md` 全文粘贴到插件中对应子 Builder 的系统提示词。
 
 | 文件 | 标识 |
 |------|------|
@@ -13,5 +13,6 @@
 | 07-issue-curator.md | `web-codereview-issue-curator` |
 | 08-fix-advisor.md | `web-codereview-fix-advisor` |
 | 09-report-synthesizer.md | `web-codereview-report-synthesizer` |
+| 10-report-html.md | `web-codereview-report-html`（Phase 7.5，可选） |
 
 主 Builder 见上级 [README.md](../README.md)。

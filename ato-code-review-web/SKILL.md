@@ -1,15 +1,46 @@
 ---
 name: ato-code-review-web
 description: >-
-  前端（Vue 等）增量代码检视 Skill。主编排 Agent 读取本文件驱动全流程，可通过 opencode
-  并行拉起子 agent/subagent 分阶段完成检视；中间状态写入 .codereview/state.json，
-  支持断点续跑，适配中等上下文模型。
+  前端（Vue / React 等）增量代码检视 Skill。主编排 Agent 读取本文件驱动全流程；状态持久化到
+  .codereview/state.json，支持断点续跑。Phase 1 须确认分支、检视深度、跳过低风险、是否生成 HTML 四项。
 ---
 
 # 前端代码检视 · 主编排工作流
 
 > **本文件是主编排 Agent 运行时的唯一指令来源。**
 > 主编排 Agent 负责编排、状态管理、并行调度与故障恢复；**不做**深度代码检视。
+> 须用 `scripts/update-state.js` 落盘；Phase 2+ 在 `user_confirmed !== true` 时会报 `PHASE1_REQUIRED`。
+
+---
+
+## 0. 启动清单
+
+### 0.1 读 state
+
+```bash
+node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
+```
+
+### 0.2 Phase 1 四问（`user_confirmed !== true` 时只做本步）
+
+```
+1) 分支 — BRANCH1：___  BRANCH2：（默认 master）
+2) severity_mode — all | critical_high_only
+3) skip_low_risk_files — true | false
+4) generate_html_report — true | false
+```
+
+复述确认后：
+
+```bash
+node "{SKILL_ROOT}/scripts/update-state.js" \
+  --branch1 <BRANCH1> --branch2 <BRANCH2> \
+  --set review_options.severity_mode=<mode> \
+  --set review_options.skip_low_risk_files=<bool> \
+  --set review_options.generate_html_report=<bool> \
+  --set review_options.user_confirmed=true \
+  --phase diff_analysis --checkpoint phase1_done
+```
 
 ---
 
@@ -19,41 +50,29 @@ description: >-
 {SKILL_ROOT}/
 ├── SKILL.md
 ├── docs/
-│   ├── vue2-reference.md
-│   ├── vue3-reference.md
-│   ├── general-standards.md
-│   └── state-structure.md
 ├── scripts/
 │   ├── get-diff-files.js
 │   ├── batch-processor.js
-│   └── export-batch-diffs.js
+│   ├── export-batch-diffs.js
+│   ├── git-line-authors.js
+│   ├── sync-report-signoff.js
+│   ├── update-state.js
+│   └── require-phase1.js
 ├── templates/
-│   └── report-template.md
-└── prompts/                  ← 子 agent 系统提示词（opencode/其它编排器按文件加载）
-    ├── tech-stack-analysis.md
-    ├── task-planner.md
-    ├── code-scanner.md       ← core：核心静态（兼容旧文件名）
-    ├── framework-reviewer.md ← framework：Vue + 样式
-    ├── perf-reviewer.md      ← reliability：性能 + 健壮性
-    ├── security-reviewer.md
-    ├── issue-curator.md      ← curator：跨专家合并 + 局部误报复核
-    ├── fix-advisor.md
-    └── report-synthesizer.md
+│   ├── report-template.md
+│   ├── report-shell.html
+│   └── signoff-payload.example.json
+└── prompts/
+    ├── …（检视子 agent）
+    ├── report-synthesizer.md
+    └── report-html.md
 ```
 
 **运行时生成：**
 
 ```
-{项目根}/
-├── .codereview/
-│   ├── state.json
-│   ├── diffs/ ← 各批次 *.patch（Phase 2 预计算）
-│   ├── file-inventory.json
-│   ├── tech-stack.json
-│   ├── task-plan.json
-│   └── results/
-└── codereview/
-    └── report_<branch>_<date>.md
+.codereview/  ← state、diffs、line-authors.json、results/
+codereview/   ← report_*.md 与 report_*.html（可选）
 ```
 
 ---
@@ -73,12 +92,14 @@ description: >-
    - 存在：读取 current_phase
      - 若为 completed：告知报告路径；否则跳到对应 Phase
 3. 兼容性补丁：
-   - 若缺少 review_options → 补 { severity_mode: "all", skip_low_risk_files: false }
-   - 若 review_progress[*] 缺少 curator → 在 security 与 fix 之间补 `curator: "pending"`
-   - 写回 state.json
+   - 若缺少 review_options → 补 severity_mode / skip_low_risk_files / generate_html_report / user_confirmed
+   - 若 review_progress[*] 缺少 curator → 补 `curator: "pending"`
+   - 若 synthesis 缺少 html_report_path / html_status → 补 "" 与 "skipped"
+   - **`user_confirmed !== true` → 回到 §0.2 Phase 1 四问**
 4. **reviewing**：按批次、按专家顺序 `core` → `framework` → `reliability` → `security` → `curator` → `fix`，找到第一个状态为 `pending` 或 `in_progress` 的项（`completed` / `skipped` / **`failed`** 均跳过；`failed` 为终态，除非用户要求人工改回 `pending`）
    - `in_progress`：按 `docs/state-structure.md`「in_progress 防死锁」校验对应 `*-{expert}.json`、`*-curated.json` 或 `*-fix.json`
-5. **synthesizing**：若 `synthesis.report_path` 已有可读报告 → 可将 `synthesis.status` 与 `current_phase` 置完成；否则重跑报告子 agent
+5. **synthesizing**：若 MD 已存在 → 按 `generate_html_report` 进入 `html_rendering` 或 `completed`；否则 Phase 7
+6. **html_rendering**：按 `state-structure.md` 校验 HTML 完整性；通过则 `completed`，否则重拉 HTML 子 agent（最多 2 次）
 6. **幂等（可选）**：`tech_stack` 且 `tech-stack.json` 已合法 → 可直接 `task_planning`；`task_planning` 且 `task-plan.json` 已存在 → 补全 `review_progress` 后进入 `reviewing`
 ```
 
@@ -116,12 +137,13 @@ description: >-
 
 ### Phase 1：分支与检视选项（主编排 Agent）
 
-1. 确认 `BRANCH1`（被检视分支）、`BRANCH2`（基准，默认 `master`）。支持 `a vs b` 格式。
-2. **检视深度** → `review_options.severity_mode`：`all` | `critical_high_only`。
-3. **是否跳过低风险文件** → `review_options.skip_low_risk_files`：
-   `true` 时 Phase 2 调用 `get-diff-files.js` 追加 `--skip-low-risk true`（排除测试/E2E/Storybook 源文件、`.snap` 等，见清单 `review_scope`）。
-4. 验证分支：`git rev-parse --verify "<branch>"`（**不要**使用 `grep`，Windows PowerShell 无此命令）。
-5. 写入 `state.json`，`current_phase = "diff_analysis"`。
+**须与 §0.2 四问一致**；未 `user_confirmed` 禁止进入 Phase 2。
+
+1. 确认 `BRANCH1`、`BRANCH2`（默认 `master`）
+2. `severity_mode`：`all` | `critical_high_only`
+3. `skip_low_risk_files`：`true` 时 Phase 2 追加 `--skip-low-risk true`
+4. **`generate_html_report`**：`true` | `false`（是否产出 HTML + 签收工作流）
+5. 验证分支后 `update-state.js` 落盘，`current_phase = "diff_analysis"`
 
 ---
 
@@ -196,12 +218,12 @@ for each batch:
 all batches done → current_phase = "synthesizing"（见 Phase 7）
 ```
 
-**四位检视专家**（由原 7 位合并，减少子 agent 数量，与 Java 四专家规模对齐）：
+**四位检视专家**（由原 7 位合并，减少子 agent 数量，与后端四专家规模对齐）：
 
 | 专家 | 子 agent | 提示词文件 | 输出 | 合并来源 |
 |------|------------|------------|------|----------|
 | core | `web-codereview-review-core` | `{SKILL_ROOT}/prompts/code-scanner.md` | `{BATCH_ID}-core.json` | 扫描 + 规范 |
-| framework | `web-codereview-review-framework` | `{SKILL_ROOT}/prompts/framework-reviewer.md` | `{BATCH_ID}-framework.json` | Vue + 样式 |
+| framework | `web-codereview-review-framework` | `{SKILL_ROOT}/prompts/framework-reviewer.md` | `{BATCH_ID}-framework.json` | Vue/React + 样式 |
 | reliability | `web-codereview-review-reliability` | `{SKILL_ROOT}/prompts/perf-reviewer.md` | `{BATCH_ID}-reliability.json` | 性能 + 健壮性 |
 | security | `web-codereview-review-security` | `{SKILL_ROOT}/prompts/security-reviewer.md` | `{BATCH_ID}-security.json` | 安全（独立） |
 
@@ -228,9 +250,9 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 
 同一 `BATCH_ID` 中，对 `applicable_experts` 取交集后可一次性并行拉起多个子 agent。每个任务必须显式包含：`BATCH_ID`、`BATCH_FILES`、`BRANCH1`、`BRANCH2`、`DIFF_PATCH_PATH`、`SEVERITY_MODE`、`TECH_STACK`、`SKILL_ROOT`、独立 `OUTPUT_PATH`，并强调“完成后只写对应输出文件”。主编排 Agent 等待这一组输出文件全部存在且 JSON 合法后，再将对应状态改为 `completed`；随后串行执行 `issue-curator` 与 `fix-advisor`。
 
-**框架专家路径变量：**`VUE2_REF_PATH` = `{SKILL_ROOT}/docs/vue2-reference.md`
-`VUE3_REF_PATH` = `{SKILL_ROOT}/docs/vue3-reference.md`
-`GENERAL_STANDARDS_PATH` = `{SKILL_ROOT}/docs/general-standards.md`
+**框架专家路径变量**（主编排 Agent 仅在与 **framework** 子 agent 通信时传入）：`VUE2_REF_PATH` = `{SKILL_ROOT}/docs/vue2-reference.md`；`VUE3_REF_PATH` = `{SKILL_ROOT}/docs/vue3-reference.md`；`REACT_REF_PATH` = `{SKILL_ROOT}/docs/react-reference.md`；`GENERAL_STANDARDS_PATH` = `{SKILL_ROOT}/docs/general-standards.md`。
+
+**安全专家路径变量**（主编排 Agent 仅在与 **security** 子 agent 通信时传入）：`SECURITY_REF_PATH` = `{SKILL_ROOT}/docs/security-checklist.md`。
 
 ---
 
@@ -275,10 +297,17 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 
 ### Phase 7：报告合成
 
-进入本阶段前：将 `state.json` 的 `current_phase` 设为 `"synthesizing"`，`synthesis.status` 可为 `"in_progress"`，并写回。
+**Phase 7 开始前必须执行：**
 
-**子 agent：** `web-codereview-report-synthesizer`
-**提示词文件：** `{SKILL_ROOT}/prompts/report-synthesizer.md`
+```bash
+node "{SKILL_ROOT}/scripts/git-line-authors.js" \
+  --branch1 <BRANCH1> --branch2 <BRANCH2> \
+  --results .codereview/results/ \
+  --output .codereview/line-authors.json
+```
+
+**子 agent：** `web-codereview-report-synthesizer`  
+**提示词：** `{SKILL_ROOT}/prompts/report-synthesizer.md`
 
 | 变量 | 值 |
 |------|-----|
@@ -287,11 +316,42 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 | `TECH_STACK_PATH` | `.codereview/tech-stack.json` |
 | `INVENTORY_PATH` | `.codereview/file-inventory.json` |
 | `TEMPLATE_PATH` | `{SKILL_ROOT}/templates/report-template.md` |
-| `REPORT_PATH` | `codereview/report_{BRANCH1}_{DATE}.md`（`/` → `_`） |
+| `REPORT_PATH` | `codereview/report_{BRANCH1}_{DATE}.md` |
 
-合成官须读取 `review_options` 与 `review_scope`，填写模板中 `{{SEVERITY_MODE_LABEL}}`、`{{LOW_RISK_SCOPE_LABEL}}`。
+合成官读取 `line-authors.json` 填第六节「提交人」列；contributors → {{CONTRIBUTORS}}（第七节「本次参与开发」）。
 
-**完成后写回 `state.json`：** `synthesis.status = "completed"`，`synthesis.report_path = {REPORT_PATH}`，`current_phase = "completed"`，`updated_at` 更新；向用户输出报告路径与问题摘要。
+**完成后：**
+
+1. `synthesis.report_path = REPORT_PATH`，`synthesis.status = "completed"`
+2. 若 `generate_html_report === true` → `html_status = "pending"`，`current_phase = "html_rendering"`
+3. 否则 → `html_status = "skipped"`，`current_phase = "completed"`
+
+---
+
+### Phase 7.5：HTML 报告渲染（可选）
+
+**子 agent：** `web-codereview-report-html`  
+**提示词：** `{SKILL_ROOT}/prompts/report-html.md`
+
+| 变量 | 值 |
+|------|-----|
+| `REPORT_MD_PATH` | `synthesis.report_path` |
+| `HTML_TEMPLATE_PATH` | `{SKILL_ROOT}/templates/report-shell.html` |
+| `HTML_REPORT_PATH` | 与 MD 同名 `.html` |
+
+**完整性校验：** `<!DOCTYPE html>` + `</html>` + `<!-- ato-codereview-html-end -->`（见 `state-structure.md`）。
+
+**HTML 签收：** 第六节勾选有效/已修（勾选「已修复」自动勾选「有效」）；第七节验证与签收：开发负责人填写结论并提交，**备注**默认「上述问题无需修复」可修改；自动汇总「本次参与开发」。提交后回写 MD 并生成 `【Fix】` 版 HTML；`file://` 下 fetch MD 失败时壳内 JS 会根据页面自动生成 MD。
+
+**完成后：** `html_status = "completed"`，`current_phase = "completed"`。
+
+### completed 输出文案
+
+| `html_status` | 模板 |
+|---|---|
+| `skipped` | `检视完成。MD 报告：{report_path}` |
+| `completed` | `检视完成。MD 报告：{report_path}；HTML 报告：{html_report_path}` |
+| `failed` | `检视完成。MD 报告：{report_path}；HTML 渲染失败（详见 notes），不影响 MD 交付` |
 
 ---
 
@@ -310,8 +370,9 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 | `web-codereview-issue-curator` | `prompts/issue-curator.md` |
 | `web-codereview-fix-advisor` | `prompts/fix-advisor.md` |
 | `web-codereview-report-synthesizer` | `prompts/report-synthesizer.md` |
+| `web-codereview-report-html` | `prompts/report-html.md` |
 
-兼容说明：`prompts/spec-reviewer.md` 同 core，`prompts/style-reviewer.md` 同 framework，`prompts/robustness-reviewer.md` 同 reliability，保留旧文件名是为了不破坏已有配置；新流程只使用上表 9 个标识。
+兼容说明：`prompts/spec-reviewer.md` 同 core，`prompts/style-reviewer.md` 同 framework，`prompts/robustness-reviewer.md` 同 reliability；新流程使用上表 **10** 个标识（HTML 子 agent 可选）。
 
 ---
 

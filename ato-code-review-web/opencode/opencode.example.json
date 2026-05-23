@@ -124,6 +124,17 @@
         },
         "edit": "allow"
       }
+    },
+    "web-codereview-report-html": {
+      "mode": "subagent",
+      "description": "Render Markdown review report to styled HTML (optional Phase 7.5)",
+      "prompt": "{file:./ato-code-review-web/prompts/report-html.md}",
+      "permission": {
+        "bash": {
+          "*": "ask"
+        },
+        "edit": "allow"
+      }
     }
   }
 }

@@ -29,13 +29,32 @@ sample = sample.replace(
 
 for (const [id, meta] of Object.entries(AUTHORS)) {
   sample = sample.replace(
-    new RegExp(`(<details class="issue-row[^"]*" data-issue-id="${id}")`),
+    new RegExp(`(<details class="issue-row[^"]*" data-issue-id="${id}")(?![^>]*\\bdata-author=)`),
     `$1 data-author="${meta.author}" data-domain="${meta.domain}"`
   );
+  if (!sample.includes(`data-issue-id="${id}"`) || sample.includes(`col-author col-clip" title="${meta.author}"`)) continue;
   sample = sample.replace(
-    new RegExp(`(data-issue-id="${id}"[^>]*>[\\s\\S]*?<span class="col-fn">[^<]+</span>\\s*)`),
-    `$1<span class="col-author" title="${meta.author}">${meta.author}</span>\n          `
+    new RegExp(`(data-issue-id="${id}"[^>]*>[\\s\\S]*?<span class="col-fn[^"]*">([^<]+)</span>\\s*)(?!<span class="col-author")`),
+    `$1<span class="col-author col-clip" title="${meta.author}">${meta.author}</span>\n          `
   );
+}
+
+function sanitizeBody(html) {
+  return html
+    .replace(/(\bdata-author="[^"]+"\s+data-domain="[^"]+")(?:\s+\1)+/g, '$1')
+    .replace(/(<span class="col-author col-clip"[^>]*>[^<]+<\/span>)(?:\s*<span class="col-author col-clip"[^>]*>[^<]+<\/span>)*/g, '$1');
+}
+
+function addClipToBody(html) {
+  return html
+    .replace(/\bclass="col-loc"/g, 'class="col-loc col-clip"')
+    .replace(/\bclass="col-fn"/g, 'class="col-fn col-clip"')
+    .replace(/\bclass="col-author"/g, 'class="col-author col-clip"')
+    .replace(/\bclass="col-desc"/g, 'class="col-desc col-clip"')
+    .replace(/<span class="(col-(?:loc|fn|author|desc) col-clip)"(?![^>]*\btitle=)([^>]*)>([^<]+)<\/span>/g,
+      function (_, cls, rest, text) {
+        return '<span class="' + cls + '" title="' + text.replace(/"/g, '&quot;') + '"' + rest + '>' + text + '</span>';
+      });
 }
 
 sample = sample.replace(
@@ -76,7 +95,7 @@ const meta = JSON.stringify({
 const metaCards = `<div class="meta-card"><div class="label">分支</div><div class="value">feature/order-service</div></div>
 <div class="meta-card"><div class="label">基准</div><div class="value">master</div></div>
 <div class="meta-card"><div class="label">问题</div><div class="value">8</div></div>
-<div class="meta-card"><div class="label">必改</div><div class="value">4</div></div>`;
+<div class="meta-card mustfix"><div class="label">必改</div><div class="value">4</div></div>`;
 
 const toc = `<ol>
 <li><a href="#section-meta">基本信息</a></li><li><a href="#section-files">变动文件</a></li>
@@ -89,7 +108,7 @@ const out = shell
   .replace('{{REPORT_TITLE}}', 'Java 后端代码检视报告 · feature/order-service')
   .replace('{{META_SUMMARY}}', metaCards)
   .replace(/<nav class="toc" id="toc">[\s\S]*?<\/nav>/, `<nav class="toc" id="toc">${toc}</nav>`)
-  .replace('{{BODY_HTML}}', bodyMatch[1].trim())
+  .replace('{{BODY_HTML}}', addClipToBody(sanitizeBody(bodyMatch[1].trim())))
   .replace('{{GENERATED_AT}}', '2026-05-20T14:30:00+08:00');
 
 fs.writeFileSync(samplePath, out, 'utf8');

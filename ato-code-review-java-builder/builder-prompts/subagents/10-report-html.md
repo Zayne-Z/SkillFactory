@@ -120,9 +120,9 @@
       <details class="issue-row row-mustfix" data-issue-id="SEC-004" data-author="张三" data-domain="安全">
         <summary>
           <span class="col-id">SEC-004</span>
-          <span class="col-loc">OrderController.java:52</span>
-          <span class="col-fn">create</span>
-          <span class="col-author" title="张三">张三</span>
+          <span class="col-loc col-clip" title="OrderController.java:52">OrderController.java:52</span>
+          <span class="col-fn col-clip" title="create">create</span>
+          <span class="col-author col-clip" title="张三">张三</span>
           <span class="col-sev sev-critical">C</span>
           <span class="col-must yes">必改</span>
           <span class="col-chk"><label class="chk-label"><input type="checkbox" class="cb-valid">有效</label></span>
@@ -137,7 +137,8 @@
 </details>
 ```
 
-- 每条 `details.issue-row` **必须** `data-issue-id="{ID}"`；若有提交人则加 `data-author="{name}"` 与 `<span class="col-author">`（第六节「提交人」列，便于认领与签收汇总）。
+- 每条 `details.issue-row` **必须** `data-issue-id="{ID}"`；若有提交人则加 `data-author="{name}"` 与 `<span class="col-author col-clip" title="...">`（第六节「提交人」列，便于认领与签收汇总）。
+- 可能被截断的列（`.col-loc`、`.col-fn`、`.col-author`、`.col-desc`）须加 class `col-clip`，并设置 `title`（或与 `data-full` 同值的完整文本），悬停可查看省略内容。
 - `.cb-valid` / `.cb-fixed` 勾选会联动第七节统计（壳 JS 已内置）。
 
 ### 第七节（固定 id，壳 JS 依赖）
@@ -203,7 +204,7 @@
 
 1. 以壳模板为骨架，替换：
    - `{{REPORT_TITLE}}`：取自 MD 一级标题（去掉 `#`）
-   - `{{META_SUMMARY}}`：从「一、基本信息」提炼 4–6 个 `meta-card`（分支、日期、合计问题数等）
+   - `{{META_SUMMARY}}`：从「一、基本信息」提炼 4–6 个 `meta-card`（分支、日期、合计问题数、必改项等）；**必改**卡片须加 class `mustfix`（标签与数值标红）
    - `{{REPORT_META_JSON}}`：见「报告元数据」
    - `{{BODY_HTML}}`：按映射表转换的各 `section`
    - `{{GENERATED_AT}}`：与 MD 页脚时间一致

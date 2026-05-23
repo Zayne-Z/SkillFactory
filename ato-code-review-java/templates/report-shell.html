@@ -57,6 +57,9 @@
     }
     .meta-card .label { font-size: 0.62rem; color: var(--muted); letter-spacing: 0.04em; }
     .meta-card .value { font-size: 0.88rem; font-weight: 700; margin-top: 1px; }
+    .meta-card.mustfix .label,
+    .meta-card.mustfix .value { color: var(--critical); }
+    .meta-card.mustfix .label { font-weight: 700; }
 
     nav.toc {
       padding: 8px 12px; border-radius: 10px; margin-bottom: 12px; background: var(--glass);
@@ -164,12 +167,13 @@
     }
 
     /* 六、问题清单（含提交人列） */
-    .issue-list { display: flex; flex-direction: column; gap: 4px; }
+    #section-issues .collapse-body { overflow-x: auto; }
+    .issue-list { display: flex; flex-direction: column; gap: 5px; min-width: 860px; }
     .issue-list-header {
       display: grid;
-      grid-template-columns: 12px 58px minmax(80px,1fr) 48px 52px 22px 26px 34px 34px minmax(48px,1fr) 22px;
-      gap: 4px; padding: 4px 8px; font-size: 0.62rem; font-weight: 600;
-      color: var(--muted); text-transform: uppercase;
+      grid-template-columns: 14px 64px minmax(108px,1.5fr) minmax(56px,1fr) minmax(52px,0.85fr) 24px 28px 38px 38px minmax(88px,1.8fr) 24px;
+      gap: 6px 10px; padding: 6px 10px; font-size: 0.64rem; font-weight: 600;
+      color: var(--muted); text-transform: uppercase; letter-spacing: 0.02em;
     }
     .issue-list-header span:nth-child(1),
     .issue-list-header span:nth-child(11) { visibility: hidden; }
@@ -181,10 +185,10 @@
     details.issue-row.row-valid { box-shadow: inset 3px 0 0 rgba(99,102,241,0.45); }
     details.issue-row.row-fixed { box-shadow: inset 3px 0 0 rgba(34,197,94,0.5); }
     details.issue-row > summary {
-      list-style: none; cursor: pointer; padding: 7px 8px; text-align: left;
+      list-style: none; cursor: pointer; padding: 9px 10px; text-align: left;
       display: grid;
-      grid-template-columns: 12px 58px minmax(80px,1fr) 48px 52px 22px 26px 34px 34px minmax(48px,1fr) 22px;
-      gap: 4px; align-items: center; font-size: 0.74rem;
+      grid-template-columns: 14px 64px minmax(108px,1.5fr) minmax(56px,1fr) minmax(52px,0.85fr) 24px 28px 38px 38px minmax(88px,1.8fr) 24px;
+      gap: 6px 10px; align-items: center; font-size: 0.76rem; line-height: 1.35;
     }
     details.issue-row > summary::-webkit-details-marker { display: none; }
     details.issue-row > summary::before {
@@ -194,20 +198,23 @@
     }
     details.issue-row[open] > summary::before { transform: rotate(45deg); }
     details.issue-row > summary .btn-detail { grid-column: 11; justify-self: end; }
-    .issue-row .col-author { color: var(--text-secondary); font-size: 0.68rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .col-chk { display: flex; align-items: center; justify-content: center; }
+    .col-clip {
+      display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .issue-row .col-author { color: var(--text-secondary); font-size: 0.7rem; }
+    .col-chk { display: flex; align-items: center; justify-content: center; min-width: 0; }
     .chk-label {
       display: inline-flex; align-items: center; gap: 2px; font-size: 0.62rem;
       color: var(--muted); cursor: pointer; white-space: nowrap;
     }
     .chk-label input { width: 12px; height: 12px; margin: 0; cursor: pointer; accent-color: var(--accent); }
-    .issue-row .col-id { font-weight: 700; font-family: ui-monospace, Menlo, monospace; font-size: 0.72rem; }
-    .issue-row .col-loc { color: var(--text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .issue-row .col-fn { color: var(--muted); font-family: ui-monospace, Menlo, monospace; font-size: 0.68rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .issue-row .col-sev { font-weight: 700; font-size: 0.68rem; }
-    .issue-row .col-must { font-size: 0.62rem; color: var(--muted); }
+    .issue-row .col-id { font-weight: 700; font-family: ui-monospace, Menlo, monospace; font-size: 0.74rem; }
+    .issue-row .col-loc { color: var(--text-secondary); }
+    .issue-row .col-fn { color: var(--muted); font-family: ui-monospace, Menlo, monospace; font-size: 0.7rem; }
+    .issue-row .col-sev { font-weight: 700; font-size: 0.7rem; text-align: center; }
+    .issue-row .col-must { font-size: 0.64rem; color: var(--muted); text-align: center; }
     .issue-row .col-must.yes { color: var(--critical); font-weight: 700; }
-    .issue-row .col-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
+    .issue-row .col-desc { color: var(--text-secondary); }
     .issue-row-expand {
       padding: 6px 10px 10px 22px; border-top: 1px solid rgba(148,163,184,0.1);
       background: rgba(255,255,255,0.25);
@@ -277,9 +284,25 @@
       background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.25); color: #166534;
     }
     .signoff-toast.error { background: rgba(220,38,38,0.1); border-color: rgba(220,38,38,0.2); color: #991b1b; }
-    body.signed .signoff-form input:not([readonly]), body.signed .signoff-form select,
-    body.signed .cb-valid, body.signed .cb-fixed { pointer-events: none; opacity: 0.75; }
-    body.signed #signoff-submit { display: none; }
+    /* 签收结果（Fix 版第六、七节） */
+    .result-tag {
+      display: inline-block; font-size: 0.64rem; font-weight: 700; padding: 2px 7px; border-radius: 999px;
+      min-width: 1.6em; text-align: center; line-height: 1.2;
+    }
+    .result-tag.yes { background: rgba(34,197,94,0.16); color: #166534; }
+    .result-tag.no { background: rgba(148,163,184,0.14); color: var(--muted); }
+    table.signoff-result { margin-top: 4px; }
+    table.signoff-result th { width: 36%; white-space: nowrap; }
+    table.signoff-result td { color: var(--text); font-weight: 500; }
+    body.signed .signoff-form,
+    body.signed .signoff-actions,
+    body.signed .signoff-hint,
+    body.signed .signoff-toast,
+    body.signed #signoff-submit { display: none !important; }
+    body.signed .cb-valid, body.signed .cb-fixed,
+    body.signed .chk-label { display: none !important; }
+    body.signed details.issue-row > summary { cursor: default; }
+    body.signed details.issue-row[open] > summary { border-bottom: none; }
     .signed-banner {
       display: none; padding: 8px 12px; margin-bottom: 10px; border-radius: 8px;
       background: rgba(34,197,94,0.15); border: 1px solid rgba(34,197,94,0.3);
@@ -310,10 +333,11 @@
       .stat-grid { grid-template-columns: repeat(2, 1fr); }
       .signoff-grid { grid-template-columns: 1fr; }
       .issue-list-header { display: none; }
+      .issue-list { min-width: 640px; }
       details.issue-row > summary {
-        grid-template-columns: 12px 58px 1fr 36px 36px 24px;
+        grid-template-columns: 14px 58px minmax(88px,1.2fr) 36px 36px 24px;
       }
-      .issue-row .col-fn, .issue-row .col-must, .issue-row .col-desc, .issue-row .col-sev { display: none; }
+      .issue-row .col-fn, .issue-row .col-author, .issue-row .col-must, .issue-row .col-desc, .issue-row .col-sev { display: none; }
       details.issue-row > summary .btn-detail { grid-column: 6; }
     }
   </style>
@@ -370,6 +394,62 @@
             btn.setAttribute('title', btn.getAttribute('title') || btn.dataset.issueId || '详情');
           }
         });
+      }
+
+      function initClipTitles() {
+        document.querySelectorAll('.col-loc, .col-fn, .col-author, .col-desc').forEach(function (el) {
+          if (!el.classList.contains('col-clip')) el.classList.add('col-clip');
+          var full = el.getAttribute('data-full') || el.getAttribute('title') || (el.textContent || '').trim();
+          if (full) el.setAttribute('title', full);
+        });
+      }
+
+      function escHtml(s) {
+        return String(s == null ? '' : s)
+          .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
+
+      function renderSignedSection6() {
+        var issues = collectIssues();
+        var validN = issues.filter(function (i) { return i.valid; }).length;
+        var fixedN = issues.filter(function (i) { return i.fixed; }).length;
+        document.querySelectorAll('details.issue-row[data-issue-id]').forEach(function (row) {
+          row.removeAttribute('open');
+          row.querySelectorAll('.col-chk').forEach(function (chkCol) {
+            var cb = chkCol.querySelector('input');
+            if (!cb) return;
+            var label = cb.classList.contains('cb-valid') ? '有效' : '已修复';
+            var yes = !!cb.checked;
+            chkCol.innerHTML = '<span class="result-tag ' + (yes ? 'yes' : 'no') + '" title="' + label + '：' + (yes ? '是' : '否') + '">' + (yes ? '是' : '否') + '</span>';
+          });
+        });
+        var meta = document.querySelector('#section-issues .collapse-meta');
+        if (meta) meta.textContent = validN + ' 有效 · ' + fixedN + ' 已修';
+      }
+
+      function renderSignedSection7(payload) {
+        var body = document.querySelector('#section-signoff .collapse-body');
+        if (!body) return;
+        var signedAt = (payload.signedAt || '').replace('T', ' ').slice(0, 19);
+        var rows = [
+          ['检视结论', payload.conclusion || '—'],
+          ['开发负责人（签收人）', payload.signer || '—'],
+          ['有效问题个数', String(payload.validCount != null ? payload.validCount : '—')],
+          ['已修复个数', String(payload.fixedCount != null ? payload.fixedCount : '—')],
+          ['是否全部已修复', payload.allFixed || '—'],
+          ['遗留下个版本问题数', String(payload.deferredCount != null ? payload.deferredCount : '—')],
+          ['本次参与开发', payload.contributors || '—'],
+          ['签收时间', signedAt || '—']
+        ];
+        var html = '<div class="signed-banner">已签收 · ' + escHtml(payload.signer) + ' · ' + escHtml(signedAt) + '</div>';
+        html += '<table class="zebra signoff-result"><tbody>';
+        rows.forEach(function (r) {
+          html += '<tr><th>' + escHtml(r[0]) + '</th><td>' + escHtml(r[1]) + '</td></tr>';
+        });
+        html += '</tbody></table>';
+        body.innerHTML = html;
+        var meta = document.querySelector('#section-signoff .collapse-meta');
+        if (meta) meta.textContent = (payload.signer || '—') + ' · ' + (payload.conclusion || '—');
       }
 
       function openIssue(id) {
@@ -638,21 +718,13 @@
         return 'download';
       }
 
-      function buildFixHtml() {
+      function buildFixHtml(payload) {
+        renderSignedSection6();
+        renderSignedSection7(payload || {});
         document.body.classList.add('signed');
         document.body.setAttribute('data-signed', 'true');
         var t = document.querySelector('title');
         if (t && t.textContent.indexOf('【Fix】') !== 0) t.textContent = '【Fix】' + t.textContent;
-        var banner = document.querySelector('.signed-banner');
-        if (!banner) {
-          banner = document.createElement('div');
-          banner.className = 'signed-banner';
-          var form = document.getElementById('signoff-form');
-          if (form) form.insertBefore(banner, form.firstChild);
-        }
-        var signer = (document.getElementById('signoff-signer') || {}).value || '';
-        var time = (document.getElementById('signoff-time') || {}).value || '';
-        banner.textContent = '已签收 · ' + signer + ' · ' + time;
         return '<!DOCTYPE html>\n' + document.documentElement.outerHTML;
       }
 
@@ -733,7 +805,7 @@
         if (mdResult === 'saved') msgs.push('已保存 MD');
         else if (mdResult === 'download') msgs.push(mdText ? '已下载更新后的 MD' : '已根据 HTML 生成并下载 MD');
 
-        payload.fixHtml = buildFixHtml();
+        payload.fixHtml = buildFixHtml(payload);
         var fixName = '【Fix】' + meta.baseName + '.html';
         var htmlResult = await saveFile(fixName, payload.fixHtml, 'text/html');
         if (htmlResult === 'saved') msgs.push('已保存 ' + fixName);
@@ -766,6 +838,7 @@
       if (refresh) refresh.addEventListener('click', function () { updateSignoffStats(); saveDraft(); });
 
       initDetailButtons();
+      initClipTitles();
       loadDraft();
       updateRowStyles();
       updateSignoffStats();

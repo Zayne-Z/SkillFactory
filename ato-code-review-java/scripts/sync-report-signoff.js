@@ -82,9 +82,18 @@ function patchMdSection7(md, signoff) {
     遗留下个版本问题数: String(signoff.deferredCount ?? '—'),
     本次参与开发: signoff.contributors || '—',
     签收时间: (signoff.signedAt || '—').replace('T', ' ').slice(0, 19),
+    备注: (signoff.remarks || '上述问题无需修复').trim() || '上述问题无需修复',
   };
   let out = md;
-  const start = out.indexOf('## 七、检视结论与签收');
+  const headings = ['## 七、验证与签收', '## 七、检视结论与签收', '## 七、备注'];
+  let start = -1;
+  for (const h of headings) {
+    const idx = out.indexOf(h);
+    if (idx >= 0) {
+      start = idx;
+      break;
+    }
+  }
   if (start === -1) return out;
   let end = out.indexOf('\n---', start);
   if (end === -1) end = out.length;

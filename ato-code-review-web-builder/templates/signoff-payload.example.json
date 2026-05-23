@@ -12,6 +12,6 @@
   "signedAt": "2026-05-20T16:00:00+08:00",
   "issues": [
     { "id": "SEC-004", "valid": true, "fixed": true },
-    { "id": "SPR-012", "valid": true, "fixed": false }
+    { "id": "FWK-012", "valid": true, "fixed": false }
   ]
 }

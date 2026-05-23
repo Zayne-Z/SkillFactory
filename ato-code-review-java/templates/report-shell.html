@@ -271,6 +271,13 @@
       background: rgba(255,255,255,0.65); font-size: 0.8rem;
     }
     .signoff-grid input[readonly] { background: rgba(241,245,249,0.8); color: var(--text-secondary); }
+    .signoff-remarks-wrap { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; grid-column: 1 / -1; }
+    .signoff-remarks-label { font-size: 0.68rem; color: var(--muted); font-weight: 600; }
+    .signoff-remarks {
+      width: 100%; min-height: 64px; padding: 10px 12px; border-radius: 8px;
+      border: 1px solid rgba(148,163,184,0.35); background: rgba(255,255,255,0.65);
+      font-size: 0.82rem; line-height: 1.5; resize: vertical; font-family: inherit;
+    }
     .signoff-actions { display: flex; gap: 8px; flex-wrap: wrap; }
     .btn-primary, .btn-secondary {
       padding: 8px 16px; border-radius: 8px; font-size: 0.78rem; font-weight: 600; cursor: pointer; border: none;
@@ -368,6 +375,7 @@
 
   <script>
     (function () {
+      var DEFAULT_REMARKS = '上述问题无需修复';
       var ICON = '<svg viewBox="0 0 24 24"><path d="M15 3h6v6M14 10l6.1-6.1M9 21H3v-6M10 14l-6.1 6.1"/></svg>';
       var modal = document.getElementById('issue-modal');
       var modalBody = document.getElementById('issue-modal-body');
@@ -439,7 +447,8 @@
           ['是否全部已修复', payload.allFixed || '—'],
           ['遗留下个版本问题数', String(payload.deferredCount != null ? payload.deferredCount : '—')],
           ['本次参与开发', payload.contributors || '—'],
-          ['签收时间', signedAt || '—']
+          ['签收时间', signedAt || '—'],
+          ['备注', (payload.remarks || DEFAULT_REMARKS).trim() || DEFAULT_REMARKS]
         ];
         var html = '<div class="signed-banner">已签收 · ' + escHtml(payload.signer) + ' · ' + escHtml(signedAt) + '</div>';
         html += '<table class="zebra signoff-result"><tbody>';
@@ -453,10 +462,29 @@
       }
 
       function openIssue(id) {
+        if (!id) return;
         var el = document.getElementById('issue-' + id);
-        if (!el) return;
+        if (el) {
+          modalTitle.textContent = id;
+          modalBody.innerHTML = el.innerHTML;
+          modal.classList.add('open');
+          modal.setAttribute('aria-hidden', 'false');
+          return;
+        }
+        var row = document.querySelector('details.issue-row[data-issue-id="' + id + '"]');
+        if (!row) return;
+        var expand = row.querySelector('.issue-row-expand');
+        var html = '';
+        if (expand && expand.innerHTML.trim()) {
+          html = expand.innerHTML;
+        } else {
+          var desc = row.querySelector('.col-desc');
+          var loc = row.querySelector('.col-loc');
+          html = '<p class="issue-label">问题描述</p><p>' + escHtml(desc ? desc.textContent.trim() : '暂无详细内容') + '</p>';
+          if (loc) html += '<p class="issue-label">位置</p><p><code>' + escHtml(loc.textContent.trim()) + '</code></p>';
+        }
         modalTitle.textContent = id;
-        modalBody.innerHTML = el.innerHTML;
+        modalBody.innerHTML = html;
         modal.classList.add('open');
         modal.setAttribute('aria-hidden', 'false');
       }
@@ -476,6 +504,12 @@
             fixed: !!row.querySelector('.cb-fixed:checked')
           };
         });
+      }
+
+      function getRemarks() {
+        var el = document.getElementById('signoff-remarks');
+        var v = el ? el.value.trim() : '';
+        return v || DEFAULT_REMARKS;
       }
 
       function collectContributors(issues) {
@@ -563,9 +597,12 @@
           '是否全部已修复': payload.allFixed || '—',
           '遗留下个版本问题数': String(payload.deferredCount != null ? payload.deferredCount : '—'),
           '本次参与开发': payload.contributors || '—',
-          '签收时间': (payload.signedAt || '—').replace('T', ' ').slice(0, 19)
+          '签收时间': (payload.signedAt || '—').replace('T', ' ').slice(0, 19),
+          '备注': (payload.remarks || DEFAULT_REMARKS).trim() || DEFAULT_REMARKS
         };
-        var start = md.indexOf('## 七、检视结论与签收');
+        var start = md.indexOf('## 七、验证与签收');
+        if (start < 0) start = md.indexOf('## 七、检视结论与签收');
+        if (start < 0) start = md.indexOf('## 七、备注');
         if (start < 0) return md;
         var end = md.indexOf('\n---', start);
         if (end < 0) end = md.length;
@@ -677,7 +714,7 @@
           '> Critical / High 在「必改」列标记 **是**。', '',
           issueLines.join('\n'), '',
           '---', '',
-          '## 七、检视结论与签收', '',
+          '## 七、验证与签收', '',
           '| 项目 | 内容 |', '|------|------|',
           '| 检视结论 | ' + (payload.conclusion || '—') + ' |',
           '| 开发负责人（签收人） | ' + (payload.signer || '—') + ' |',
@@ -685,7 +722,8 @@
           '| 是否全部已修复 | ' + (payload.allFixed || '—') + ' |',
           '| 遗留下个版本问题数 | ' + (payload.deferredCount != null ? payload.deferredCount : '—') + ' |',
           '| 本次参与开发 | ' + (payload.contributors || '—') + ' |',
-          '| 签收时间 | ' + signedAt + ' |', '',
+          '| 签收时间 | ' + signedAt + ' |',
+          '| 备注 | ' + ((payload.remarks || DEFAULT_REMARKS).trim() || DEFAULT_REMARKS) + ' |', '',
           '---', '',
           '*报告由 ato-code-review-java skill 根据 HTML 签收生成 · ' + genAt + '*'
         ].join('\n');
@@ -742,6 +780,7 @@
           localStorage.setItem(storageKey(), JSON.stringify({
             signer: (document.getElementById('signoff-signer') || {}).value,
             conclusion: (document.getElementById('signoff-conclusion') || {}).value,
+            remarks: getRemarks(),
             issues: collectIssues()
           }));
         } catch (e) {}
@@ -752,6 +791,7 @@
           if (!d) return;
           if (d.signer && document.getElementById('signoff-signer')) document.getElementById('signoff-signer').value = d.signer;
           if (d.conclusion && document.getElementById('signoff-conclusion')) document.getElementById('signoff-conclusion').value = d.conclusion;
+          if (d.remarks && document.getElementById('signoff-remarks')) document.getElementById('signoff-remarks').value = d.remarks;
           (d.issues || []).forEach(function (rec) {
             var row = document.querySelector('details.issue-row[data-issue-id="' + rec.id + '"]');
             if (!row) return;
@@ -783,6 +823,7 @@
           allFixed: !valid.length ? '—' : (fixed.length === valid.length ? '是' : '否'),
           deferredCount: deferred.length,
           contributors: contributors.length ? contributors.join('、') : '—',
+          remarks: getRemarks(),
           signedAt: signedAt,
           issues: issues
         };
@@ -829,17 +870,19 @@
           updateSignoffStats();
           saveDraft();
         }
+        if (e.target.id === 'signoff-remarks') saveDraft();
       });
       document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeModal(); });
 
       var form = document.getElementById('signoff-form');
       if (form) form.addEventListener('submit', onSignoffSubmit);
-      var refresh = document.getElementById('signoff-refresh');
-      if (refresh) refresh.addEventListener('click', function () { updateSignoffStats(); saveDraft(); });
+      var remarksEl = document.getElementById('signoff-remarks');
+      if (remarksEl && !remarksEl.value.trim()) remarksEl.value = DEFAULT_REMARKS;
 
       initDetailButtons();
       initClipTitles();
       loadDraft();
+      if (remarksEl && !remarksEl.value.trim()) remarksEl.value = DEFAULT_REMARKS;
       updateRowStyles();
       updateSignoffStats();
     })();

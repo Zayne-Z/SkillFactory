@@ -40,7 +40,7 @@
 | 四、技术栈与检视依据 | 段落 | `details.collapse-panel#section-stack` | **默认折叠** |
 | 五、详细检视结果 | 嵌套折叠 | `details.collapse-panel#section-detail` | **默认折叠**；5.1–5.4 各 `collapse-sub` |
 | 六、问题清单（全量） | 可展开行 + 勾选 | `details.collapse-panel#section-issues` | **默认展开**（`open`）；见「问题清单与签收」 |
-| 七、检视结论与签收 | 交互表单 | `details.collapse-panel#section-signoff` | **默认折叠**；须含 `#signoff-form` |
+| 七、验证与签收 | 交互表单 | `details.collapse-panel#section-signoff` | **默认折叠**；须含 `#signoff-form` |
 
 **已删除章节**（MD 中不应再出现）：「六、修复建议汇总」「八、必改项与处置结论」。若 MD 仍含旧章节，**忽略不渲染**。
 
@@ -138,6 +138,7 @@
 ```
 
 - 每条 `details.issue-row` **必须** `data-issue-id="{ID}"`；若有提交人则加 `data-author="{name}"` 与 `<span class="col-author col-clip" title="...">`（第六节「提交人」列，便于认领与签收汇总）。
+- **详情按钮**：`btn-detail` 的 `data-issue-id` 须与第五节 `article#issue-{ID}` 一致；若第五节暂无完整条目，**至少**在行内提供 `.issue-row-expand`（loc-bar + code-snippet），壳 JS 会回退展示该行摘要。
 - 可能被截断的列（`.col-loc`、`.col-fn`、`.col-author`、`.col-desc`）须加 class `col-clip`，并设置 `title`（或与 `data-full` 同值的完整文本），悬停可查看省略内容。
 - `.cb-valid` / `.cb-fixed` 勾选会联动第七节统计（壳 JS 已内置）。
 
@@ -145,7 +146,7 @@
 
 ```html
 <details class="collapse-panel" id="section-signoff">
-  <summary><span>七、检视结论与签收</span><span class="collapse-meta">提交后生成 Fix 版</span></summary>
+  <summary><span>七、验证与签收</span><span class="collapse-meta">提交后生成 Fix 版</span></summary>
   <div class="collapse-body">
     <form id="signoff-form" class="signoff-form">
       <div class="signoff-grid">
@@ -157,6 +158,7 @@
         <label><span>遗留下个版本问题数</span><input type="text" id="signoff-deferred-count" readonly /></label>
         <label><span>本次参与开发</span><input type="text" id="signoff-contributors" readonly placeholder="由问题清单提交人自动汇总" /></label>
         <label><span>签收时间</span><input type="text" id="signoff-time" readonly /></label>
+        <label class="signoff-remarks-wrap"><span class="signoff-remarks-label">备注</span><textarea id="signoff-remarks" class="signoff-remarks" rows="3">上述问题无需修复</textarea></label>
       </div>
       <div class="signoff-actions">
         <button type="button" class="btn-secondary" id="signoff-refresh">刷新统计</button>
@@ -168,6 +170,8 @@
   </div>
 </details>
 ```
+
+备注默认「上述问题无需修复」，可改为「上述问题已全部修复」等；`.cb-valid` / `.cb-fixed` 勾选会联动第七节统计（壳 JS 已内置）。
 
 ### 报告元数据
 

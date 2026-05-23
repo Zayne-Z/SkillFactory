@@ -80,6 +80,8 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 │   ├── get-diff-files.js     ← 生成变动文件清单（可选跳过低风险类型）
 │   ├── batch-processor.js    ← 智能分批
 │   ├── export-batch-diffs.js ← 按批次预计算 unified diff（各专家共用）
+│   ├── git-line-authors.js   ← Phase 7 前：issue 行 git blame + 参与开发者
+│   ├── sync-report-signoff.js← HTML 签收 payload 回写 MD（CLI 兜底）
 │   ├── update-state.js       ← 主 Builder 写 state.json（必用）
 │   └── require-phase1.js     ← Phase 2 脚本门禁（内部引用）
 ├── templates/
@@ -101,6 +103,7 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 │   ├── file-inventory.json
 │   ├── tech-stack.json
 │   ├── task-plan.json
+│   ├── line-authors.json     ← Phase 7 git-line-authors.js 产出（提交人映射）
 │   └── results/              ← 各专家 JSON
 └── codereview/
     ├── report_<branch>_<date>.md
@@ -428,6 +431,17 @@ node "{SKILL_ROOT}/scripts/update-state.js" --init-review-progress --task-plan .
 | `REPORT_PATH` | `codereview/report_{BRANCH1}_{DATE}.md`（`/` → `_`） |
 
 合成官须读取 `state.json` 的 `review_options` 与 `file-inventory.json` 的 `review_scope`，填入报告基本信息（检视深度、是否跳过低风险及跳过文件数）。
+
+**提交人 attribution（多人协作认领）：** Phase 7 **开始前**，主 Builder **必须**执行（不可仅依赖合成官自觉运行）：
+
+```bash
+node "{SKILL_ROOT}/scripts/git-line-authors.js" \
+  --branch1 <BRANCH1> --branch2 <BRANCH2> \
+  --results .codereview/results/ \
+  --output .codereview/line-authors.json
+```
+
+合成官读取 `line-authors.json`：`issue_authors[issue_id]` → 第六节「提交人」列；`contributors` → 模板 `{{CONTRIBUTORS}}`（第七节「本次参与开发」）。
 
 **完成后：**
 

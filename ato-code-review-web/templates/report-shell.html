@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!--
-  ato-code-review-java · HTML 报告壳模板
+  ato-code-review-web · HTML 报告壳模板
   BODY_HTML 章节顺序：一 → 二 → 三 → 四 → 五 → 六 → 七
   每条 issue 须有 id="issue-{ID}"，且含「问题代码」块供弹窗/展开展示。
 -->
@@ -354,12 +354,12 @@
   <div class="page">
     <header class="report-header">
       <h1>{{REPORT_TITLE}}</h1>
-      <p class="subtitle">Java 后端增量代码检视报告</p>
+      <p class="subtitle">前端增量代码检视报告</p>
     </header>
     <div class="meta-cards">{{META_SUMMARY}}</div>
     <nav class="toc" id="toc"><h2>目录</h2><!-- 有序列表 ol --></nav>
     <main class="report-body" id="report-body">{{BODY_HTML}}</main>
-    <footer class="report-footer">报告由 ato-code-review-java skill 自动生成 · {{GENERATED_AT}}</footer>
+    <footer class="report-footer">报告由 ato-code-review-web skill 自动生成 · {{GENERATED_AT}}</footer>
   </div>
 
   <div id="issue-modal" class="modal" aria-hidden="true" role="dialog">
@@ -628,7 +628,7 @@
 
       function generateMdFromHtml(payload) {
         function txt(el) { return el ? (el.textContent || '').trim() : ''; }
-        var title = txt(document.querySelector('h1')) || txt(document.querySelector('.report-title')) || 'Java 后端代码检视报告';
+        var title = txt(document.querySelector('h1')) || txt(document.querySelector('.report-title')) || '前端代码检视报告';
         var footer = txt(document.querySelector('.report-footer'));
         var genAt = footer || new Date().toISOString().slice(0, 19);
         var infoLines = ['| 项目 | 内容 |', '|------|------|'];
@@ -725,7 +725,7 @@
           '| 签收时间 | ' + signedAt + ' |',
           '| 备注 | ' + ((payload.remarks || DEFAULT_REMARKS).trim() || DEFAULT_REMARKS) + ' |', '',
           '---', '',
-          '*报告由 ato-code-review-java skill 根据 HTML 签收生成 · ' + genAt + '*'
+          '*报告由 ato-code-review-web skill 根据 HTML 签收生成 · ' + genAt + '*'
         ].join('\n');
       }
 

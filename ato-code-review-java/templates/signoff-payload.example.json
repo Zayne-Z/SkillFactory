@@ -8,6 +8,7 @@
   "allFixed": "否",
   "deferredCount": 2,
   "contributors": "张三、李四、王五、赵六",
+  "remarks": "上述问题已全部修复",
   "signedAt": "2026-05-20T16:00:00+08:00",
   "issues": [
     { "id": "SEC-004", "valid": true, "fixed": true },

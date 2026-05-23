@@ -73,6 +73,13 @@ function blameAuthor(branch1, file, line, cwd) {
   }
 }
 
+function parseLineNumber(line) {
+  if (line == null || line === '') return NaN;
+  const s = String(line).trim();
+  const m = s.match(/^(\d+)/);
+  return m ? Number(m[1]) : NaN;
+}
+
 function loadIssuesFromResults(resultsDir) {
   const dir = path.resolve(resultsDir);
   if (!fs.existsSync(dir)) return [];
@@ -81,10 +88,11 @@ function loadIssuesFromResults(resultsDir) {
   for (const f of files) {
     const data = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
     for (const issue of data.issues || []) {
+      const id = issue.issue_id || issue.id;
       const file = issue.file || issue.path || issue.file_path;
       const line = issue.line ?? issue.start_line ?? issue.line_number;
-      if (issue.id && file && line != null) {
-        issues.push({ id: issue.id, file, line: Number(line) });
+      if (id && file && line != null) {
+        issues.push({ id, file, line: parseLineNumber(line) });
       }
     }
   }
@@ -103,9 +111,10 @@ function main() {
   const authorSet = new Set();
 
   for (const issue of issues) {
-    const key = `${issue.file}:${issue.line}`;
+    const lineNum = typeof issue.line === 'number' ? issue.line : parseLineNumber(issue.line);
+    const key = `${issue.file}:${lineNum}`;
     if (!lineAuthors[key]) {
-      lineAuthors[key] = blameAuthor(args.branch1, issue.file, issue.line, cwd);
+      lineAuthors[key] = blameAuthor(args.branch1, issue.file, lineNum, cwd);
     }
     const author = lineAuthors[key] || '—';
     issueAuthors[issue.id] = author;

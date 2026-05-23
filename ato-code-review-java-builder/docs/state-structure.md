@@ -55,7 +55,7 @@
 
 | 字段 | 类型 | 说明 |
 |------|------|------|
-| `last_checkpoint` | string | 主 Builder 最近一次写盘检查点；流程推进后仍为 `init` 表示未落盘 |
+| `last_checkpoint` | string | 主 Builder 最近一次写盘时的检查点名称，如 `phase2_done`、`batch-001-core-done`。用于确认 opencode 是否真正落盘；若流程已推进但该字段仍为 `init`，说明 `state.json` 未更新 |
 
 ## review_options
 
@@ -63,10 +63,10 @@
 |------|------|------|
 | `severity_mode` | string | `all`：报告所有严重级别；`critical_high_only`：仅 Critical + High |
 | `skip_low_risk_files` | boolean | `true` 时 Phase 2 对 `get-diff-files.js` 传 `--skip-low-risk true`，排除 DTO/Entity/测试等（详见清单 `review_scope`） |
-| `generate_html_report` | boolean | `true` 时 Phase 7 完成后进入 `html_rendering`，拉起 HTML 专家产出同名 `.html`；`false` 时跳过 |
-| `user_confirmed` | boolean | Phase 1 四项已向用户询问并复述确认后为 `true`；为 `false` 时**禁止 Phase 2** |
+| `generate_html_report` | boolean | `true` 时 Phase 7 完成后进入 `html_rendering`，拉起 HTML 子 Builder 产出同名 `.html`；`false` 时跳过 |
+| `user_confirmed` | boolean | Phase 1 四项清单已向用户询问并复述确认后为 `true`；**为 `false` 时禁止进入 Phase 2**（兼容性补丁填 `false` 不能代替用户确认） |
 
-Phase 1 收齐分支 + 三项选项并复述后设 `user_confirmed: true`。断点续跑时子 Builder 通过主 Builder 传入的 `SEVERITY_MODE` 等变量读取此配置。
+Phase 1 须收齐分支 + 上表三项选项并向用户复述后，设 `user_confirmed: true` 再进入 `diff_analysis`。断点续跑时子 Builder 通过主 Builder 传入的 `SEVERITY_MODE` 等变量读取此配置。
 
 ## synthesis
 
@@ -85,7 +85,7 @@ Phase 1 收齐分支 + 三项选项并复述后设 `user_confirmed: true`。断�
 2. 文件末尾 16KB 内含 `</html>`
 3. 文件末尾 16KB 内含哨兵注释 `<!-- ato-codereview-html-end -->`
 
-任一缺失：判定失败，**整文件重写**重拉 HTML 专家（不复用既有半成品）。跨子 Builder 调用（重试）一律从空白重写。
+任一缺失：判定失败，**整文件重写**重拉 `java-codereview-report-html`（不复用既有半成品）。跨子 Builder 调用（重试）一律从空白重写。
 
 ## file-inventory.json 补充字段（非 state.json）
 
@@ -155,7 +155,7 @@ Phase 4 完成后，主 Builder 根据 `task-plan.json` 初始化：
    a. 扫描 review_progress（批次顺序与 task-plan / inventory 一致）
    b. 对每个批次按专家顺序（core → security → spring → data → curator → fix）查找：**第一个**状态为 `pending` 或 `in_progress` 的专家；`completed` / `skipped` / `failed` 均跳过（`failed` 为终态，不再自动改 pending）
    c. 若选中项为 "in_progress"：按下方「in_progress 防死锁」处理后再继续
-   d. 从该处拉起子 Builder 或继续主流程
+   d. 从该处拉起子 agent 或继续主流程
 4. 若 current_phase == "synthesizing"：
    若 synthesis.report_path 指向的 MD 已存在且非空：
      - 若 review_options.generate_html_report === true → current_phase = "html_rendering"，进入步骤 4b
@@ -166,11 +166,11 @@ Phase 4 完成后，主 Builder 根据 `task-plan.json` 初始化：
      - 通过 → html_status = completed，synthesis.status = completed，current_phase = completed
      - 不通过 → 整文件重写，重拉 java-codereview-report-html（最多 2 次；仍失败 → html_status = failed，current_phase = completed，MD 仍交付）
 5. 幂等（可选优化）：current_phase == "tech_stack" 且 .codereview/tech-stack.json 已存在且合法 → 可直接进入 task_planning；
-   current_phase == "task_planning" 且 task-plan.json 已存在 → 可补全 review_progress 后进入 reviewing（避免重复跑子 Builder）
+   current_phase == "task_planning" 且 task-plan.json 已存在 → 可补全 review_progress 后进入 reviewing（避免重复跑子 agent）
 6. 升级兼容：
    a. 若 review_progress[*] 缺少 curator 键 → 每批次补 curator: "pending"
    b. 若 review_options 缺少 generate_html_report → 补 false
-   c. 若 review_options 缺少 user_confirmed → 补 false（仍须执行 Phase 1 清单）
+   c. 若 review_options 缺少 user_confirmed → 补 false（补完后仍须执行 Phase 1 清单）
    d. 若 synthesis 缺少 html_report_path / html_status → 补 "" 与 "skipped"
    → 写回 state.json 后再进入步骤 3/4/4b
 ```

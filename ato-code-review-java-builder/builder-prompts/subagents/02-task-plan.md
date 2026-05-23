@@ -1,6 +1,6 @@
 > **子 Builder**：`java-codereview-task-plan` | Phase 4  
 > 将本文件内容粘贴到 VS Code AI 插件中该 Builder 的系统提示词。  
-> **完成约定**：执行完毕后必须将结果写入 `{{OUTPUT_PATH}}`。主 Builder 通过检查该文件是否存在且 JSON 合法来判断任务是否完成。若你遇到上下文超长，优先将**已完成的部分结果**写入文件，然后停止。
+> **完成约定**：执行完毕后必须将结果写入 `{{OUTPUT_PATH}}`。主 Builder 通过检查目标文件是否存在且内容完整来判断任务是否完成。若你遇到上下文超长，优先将**已完成的部分结果**写入文件，然后停止。
 
 ---
 
@@ -91,7 +91,7 @@
   "review_strategy": {
     "serial_order": ["core", "security", "spring", "data"],
     "post_review_pipeline": ["curator", "fix"],
-    "note": "每专家单独子 Builder，按 serial_order 依次执行；4 位检视专家完成后由主 Builder 顺次调用 curator（合并去重 + 函数体级误报排除）和 fix（修复建议）"
+    "note": "每专家单独子 agent，按 serial_order 依次执行；4 位检视专家完成后由主编排 Agent 顺次调用 curator（合并去重 + 函数体级误报排除）和 fix（修复建议）"
   }
 }
 ```

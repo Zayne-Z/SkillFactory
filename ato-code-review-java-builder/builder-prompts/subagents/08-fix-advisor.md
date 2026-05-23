@@ -1,6 +1,6 @@
 > **子 Builder**：`java-codereview-fix-advisor` | Phase 6  
 > 将本文件内容粘贴到 VS Code AI 插件中该 Builder 的系统提示词。  
-> **完成约定**：执行完毕后必须将结果写入 `{{OUTPUT_PATH}}`。主 Builder 通过检查该文件是否存在且 JSON 合法来判断任务是否完成。若你遇到上下文超长，优先将**已完成的部分结果**写入文件，然后停止。
+> **完成约定**：执行完毕后必须将结果写入 `{{OUTPUT_PATH}}`。主 Builder 通过检查目标文件是否存在且内容完整来判断任务是否完成。若你遇到上下文超长，优先将**已完成的部分结果**写入文件，然后停止。
 
 ---
 
@@ -26,6 +26,7 @@
 - `{{BRANCH1}}`：被检视分支
 - `{{BRANCH2}}`：基准分支
 - `{{DIFF_PATCH_PATH}}`：本批次预计算 unified diff（与 Phase 5 共用；**优先**据此取代码上下文）
+- `{{CURATED_PATH}}`：策展结果路径（默认 `.codereview/results/{{BATCH_ID}}-curated.json`，存在时作为唯一问题清单）
 - `{{RESULTS_DIR}}`：当前批次所有专家结果目录（`.codereview/results/`）
 - `{{SEVERITY_MODE}}`：若为 `critical_high_only`，仅对专家 JSON 中的 critical/high 问题生成修复项（不得为 medium/low 扩写修复）
 - `{{OUTPUT_PATH}}`：结果输出路径（`.codereview/results/{{BATCH_ID}}-fix.json`）
@@ -34,7 +35,7 @@
 
 ### Step 1：读取问题清单
 
-**优先读取策展结果（默认路径）：**
+**优先读取策展结果（`{{CURATED_PATH}}`，未传则使用默认路径）：**
 
 - `.codereview/results/{{BATCH_ID}}-curated.json`
 

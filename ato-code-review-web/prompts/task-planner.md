@@ -29,15 +29,15 @@
 | 专家键名 | 职责 | 典型适用 |
 |----------|------|----------|
 | `core` | 扫描 + 规范（语法/死代码/命名/import） | 几乎所有含 `.js`/`.ts`/`.vue`/`.html` 的批次 |
-| `framework` | Vue 最佳实践 + **样式**（scoped/CSS/BEM） | `.vue`、`.css`/`.scss`/`.less`；纯样式批可仅 `framework` |
+| `framework` | Vue/React 最佳实践 + **样式**（scoped/CSS Modules/BEM） | `.vue`、`.tsx`/`.jsx`、`.css`/`.scss`/`.less`；纯样式批可仅 `framework` |
 | `reliability` | 性能 + 健壮性（key、泄漏、async、空值、防抖） | `.vue`、API、工具模块 |
 | `security` | XSS、密钥、权限、开放重定向等 | API、路由、表单、含 `v-html`/请求头的文件 |
 
 判断规则：
 - **core**：批次内有任意前端源码即适用（纯配置文件可视情况保留或跳过）
-- **framework**：有 `.vue` /样式表，或 `review_mode` 为 vue2/vue3；`framework === "other"` 且无样式时可 **skipped**
-- **reliability**：有 `.vue` 或 `.js`/`.ts` 业务逻辑；纯常量样式批可 **skipped**
-- **security**：有 `api/`、`router/`、`views/` 含交互、或 `.vue` 含用户输入/路由守卫；纯 `variables.scss` 且无敏感逻辑可 **skipped**
+- **framework**：有 `.vue` / `.tsx` / `.jsx` / 样式表，或 `review_mode` 为 `vue2` / `vue3` / `react`；`review_mode === "other"` 且批次内无 `.vue`/`.tsx`/`.jsx` 且无样式文件时可 **skipped**
+- **reliability**：有 `.vue` / `.tsx`/`.jsx` 或 `.js`/`.ts` 业务逻辑；纯常量样式批可 **skipped**
+- **security**：有 `api/`、`router/`、`pages/`、`app/`、`views/` 含交互、或含 `v-html` / `dangerouslySetInnerHTML` / 路由守卫；纯 `variables.scss` 且无敏感逻辑可 **skipped**
 
 ### Step 3：输出任务计划
 

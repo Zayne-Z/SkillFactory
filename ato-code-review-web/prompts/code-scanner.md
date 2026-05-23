@@ -13,7 +13,7 @@
 ## 职责边界（避免与其它专家重复）
 
 - **不报告**：XSS、`v-html` 用户输入、硬编码密钥、权限绕过等 —— 由 **security** 专家负责。
-- **不报告**：Vue2/3 响应式、`$set`、Pinia 误用、`<script setup>` 约定等 —— 由 **framework** 专家负责。
+- **不报告**：Vue2/3 响应式、`$set`、Pinia 误用、`<script setup>` 约定；React hooks/组件边界约定等 —— 由 **framework** 专家负责。
 - **不报告**：`v-for` key、列表虚拟滚动、定时器未清理、接口防抖节流、可选链缺失导致的运行时崩溃、async 缺少 try/catch 等 —— 由 **reliability** 专家负责。
 - **不报告**：`<style scoped>`、BEM、CSS 变量、选择器深度等 —— 由 **framework** 专家负责（含样式块）。
 

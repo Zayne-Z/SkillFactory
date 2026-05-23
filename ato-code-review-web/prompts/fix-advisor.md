@@ -58,3 +58,9 @@
   "skipped_issues": []
 }
 ```
+
+## 注意事项
+
+- 修复条目与 curated `issues[]` 一一对应，不与 `merged_from[]` 一一对应。
+- `symbol` 存在时必须带入修复条目，便于报告定位函数/方法。
+- curated 缺失走兜底时，需在结果摘要中说明本批未经过 curator。

@@ -74,7 +74,7 @@
     "parallel_available": true,
     "recommended_mode": "parallel",
     "post_review_pipeline": ["curator", "fix"],
-    "note": "串行建议顺序：core → framework → reliability → security；四位检视专家完成后由主 Builder 顺次调用 curator（合并去重 + 局部误报复核）和 fix（修复建议）"
+    "note": "串行建议顺序：core → framework → reliability → security；四位检视专家完成后由主编排 Agent 顺次调用 curator（合并去重 + 局部误报复核）和 fix（修复建议）"
   }
 }
 ```
@@ -82,7 +82,7 @@
 ## 注意事项
 
 - **不要重新划分批次**，批次 ID、文件列表、行数均来自 `file-inventory.json`，原样保留
-- `applicable_experts` 只包含该批次确实需要执行的专家，跳过无关专家可减少不必要的 subagent 启动
+- `applicable_experts` 只包含该批次确实需要执行的专家，跳过无关专家可减少不必要的 子 Builder 启动
 - 纯样式文件批次可只保留 `["framework"]`（样式归框架专家）
 - `total_files`、`total_changed_lines`、`total_batches` 从 `file-inventory.json` 顶层字段直接复制
 

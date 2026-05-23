@@ -12,6 +12,7 @@
 | `java-codereview-review-data` | [06-review-data.md](06-review-data.md) | Phase 5 数据与性能 |
 | `java-codereview-issue-curator` | [07-issue-curator.md](07-issue-curator.md) | Phase 5.5 跨专家合并 + 函数体级误报排除 |
 | `java-codereview-fix-advisor` | [08-fix-advisor.md](08-fix-advisor.md) | Phase 6 修复建议 |
-| `java-codereview-report-synthesizer` | [09-report-synthesizer.md](09-report-synthesizer.md) | Phase 7 报告合成 |
+| `java-codereview-report-synthesizer` | [09-report-synthesizer.md](09-report-synthesizer.md) | Phase 7 报告合成（MD） |
+| `java-codereview-report-html` | [10-report-html.md](10-report-html.md) | Phase 7.5 HTML 渲染（可选，仅读 MD） |
 
 **路径约定**：各文件中的 `{SKILL_ROOT}` 表示 Skill 根目录（含 `SKILL.md`、`docs/`、`scripts/`）。

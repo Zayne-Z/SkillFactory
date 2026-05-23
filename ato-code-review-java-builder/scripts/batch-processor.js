@@ -18,6 +18,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { assertPhase1Complete } = require('./require-phase1');
 
 function parseArgs(args) {
   const result = {};
@@ -84,6 +85,8 @@ function findMapperPair(files) {
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
+
+  assertPhase1Complete({ force: args.force === true || args.force === 'true' });
 
   const inventoryPath = args.inventory || '.codereview/file-inventory.json';
   const maxLines = parseInt(args['max-lines']) || 600;

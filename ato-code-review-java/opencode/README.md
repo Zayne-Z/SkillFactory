@@ -8,14 +8,28 @@
 2. 若 skill 安装路径不是 `./ato-code-review-java`，请调整每个 `prompt` 的 `{file:...}` 路径。
 3. 在 opencode 中使用 `java-codereview-main` 作为主编排 agent。
 
+**主编排 prompt 即整份 `SKILL.md`**（唯一引导文件，不再拆 `java-codereview-main.md`）。启动规则集中在 `SKILL.md` 开头的 **§0 主编排启动清单**；子 agent 仍用 `prompts/*.md`。
+
+改 `SKILL.md` 或 `opencode.json` 后请**新开一轮 opencode 对话**（同一会话不会自动刷新 system prompt）。
+
+## Phase 1 四问 + 脚本门禁
+
+- 主编排须按 `SKILL.md` §0.2 **一次问齐**分支、检视深度、跳过低风险、是否 HTML。
+- 未完成 Phase 1 时，`get-diff-files.js` 等会报 `PHASE1_REQUIRED` 并 exit 2（硬拦截，不依赖模型自觉）。
+- 复述确认后：`update-state.js` 设 `review_options.user_confirmed=true`，再跑 Phase 2。
+
+若上次只问了分支：删除或重置 `.codereview/state.json`（`user_confirmed=false`，`current_phase=branch_selection`），新开对话重跑。
+
+## state.json 落盘
+
+主编排 **必须**用 `scripts/update-state.js` 写 state（见 `SKILL.md` §2.6）。子 agent 只写各自 `OUTPUT_PATH`。
+
 ## 并行执行约定
 
-- `java-codereview-main` 是 primary agent，负责读写 `.codereview/state.json`、运行脚本、并通过 Task 工具调用子 agent。
-- `java-codereview-review-core`、`java-codereview-review-security`、`java-codereview-review-spring`、`java-codereview-review-data` 是检视 subagent；同一批次内可以并行执行。
-- 每个 subagent 只写自己的 `OUTPUT_PATH`，例如 `.codereview/results/batch-001-core.json`，避免并行写冲突。
-- `issue-curator` 必须等同批次所有适用检视专家完成后再运行，输出 `.codereview/results/batch-001-curated.json`。
-- `fix-advisor` 必须等同批次 `issue-curator` 完成后再运行，并优先消费 curated.json。
+- `java-codereview-main`：读写 state、跑脚本、派发子 agent。
+- 同批次 `core` / `security` / `spring` / `data` 可并行；`issue-curator` → `fix-advisor` 须串行。
+- `report-html`：仅 `generate_html_report=true` 且 MD 已生成后。
 
 ## 升级提示
 
-从旧版（无 `issue-curator`）升级时，将 `opencode.example.json` 中新增的 `java-codereview-issue-curator` 合并到现有 opencode 配置，并替换 `fix-advisor` 与 `report-synthesizer` 的 prompt。运行中的 `.codereview/state.json` 会由主编排 Agent 启动时自动补 `curator: "pending"`。
+合并 `opencode.example.json` 中新增子 agent（`issue-curator`、`report-html` 等）到现有配置；旧 `state.json` 由主编排启动时自动补字段。

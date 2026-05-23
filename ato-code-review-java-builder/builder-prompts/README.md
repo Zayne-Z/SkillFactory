@@ -4,15 +4,15 @@
 
 ## 你需要做什么
 
-在 VS Code AI 插件中 **手动创建 10 个 Builder**，并将下表中对应文件的内容粘贴为各 Builder 的系统提示词：
+在 VS Code AI 插件中 **手动创建 1 个主 Builder + 10 个子 Builder**，并将下表中对应文件的内容粘贴为各 Builder 的系统提示词：
 
 ### 主 Builder（1 个）
 
 | Builder 名称（自定义） | 系统提示词来源 |
 |------------------------|---------------|
-| 主 Builder（如 `java-codereview-main`） | [main/MAIN_BUILDER.md](main/MAIN_BUILDER.md) |
+| 主 Builder（如 `java-codereview-main`） | [main/MAIN_BUILDER.md](main/MAIN_BUILDER.md)（短引导；完整流程在 **`SKILL.md` §0 起**） |
 
-### 子 Builder（9 个）
+### 子 Builder（10 个）
 
 | 建议标识（主 Builder 拉起时用） | 系统提示词来源 | Phase |
 |-------------------------------|---------------|-------|
@@ -25,13 +25,14 @@
 | `java-codereview-issue-curator` | [subagents/07-issue-curator.md](subagents/07-issue-curator.md) | 5.5 |
 | `java-codereview-fix-advisor` | [subagents/08-fix-advisor.md](subagents/08-fix-advisor.md) | 6 |
 | `java-codereview-report-synthesizer` | [subagents/09-report-synthesizer.md](subagents/09-report-synthesizer.md) | 7 |
+| `java-codereview-report-html` | [subagents/10-report-html.md](subagents/10-report-html.md) | 7.5（可选） |
 
-> 升级提示：从旧版（无 issue-curator）升级时，仅需新增 `java-codereview-issue-curator` 一个 Builder，并把 `fix-advisor` 与 `report-synthesizer` 的系统提示词替换为 `08-fix-advisor.md` / `09-report-synthesizer.md` 的最新内容（标识不变）。运行中的 `state.json` 由主 Builder 启动时自动补 `curator: "pending"`。
+> 升级提示：新增 `issue-curator`、`report-html`（可选）时按上表创建 Builder；主 Builder 须用 `update-state.js` 落盘（见 `SKILL.md` §0、§2.5）。Phase 1 须一次问齐四项，`user_confirmed=true` 后才可跑 Phase 2 脚本。
 
 ## 运行方式
 
 1. 创建好上述 Builder 后，**启动主 Builder**。
-2. 主 Builder 会读取 **`SKILL.md`**（与本目录同级）获取完整工作流。
+2. 主 Builder 会读取 **`SKILL.md`**（与本目录同级）获取完整工作流；**每次对话先执行 §0 启动清单**（Phase 1 四问、`update-state.js` 落盘）。
 3. 主 Builder 按流程自动拉起子 Builder，传入变量。
 4. 子 Builder 超时/上下文超长 → 主 Builder 自动重拉。
 5. 主 Builder 自身上下文超长 → 用户重新启动主 Builder → 自动从 `state.json` 断点继续。

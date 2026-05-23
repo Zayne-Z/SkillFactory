@@ -14,6 +14,7 @@
   "updated_at": "2026-04-06T10:00:00.000Z",
 
   "current_phase": "branch_selection",
+  "last_checkpoint": "init",
 
   "branches": {
     "branch1": "",
@@ -22,7 +23,9 @@
 
   "review_options": {
     "severity_mode": "all",
-    "skip_low_risk_files": false
+    "skip_low_risk_files": false,
+    "generate_html_report": false,
+    "user_confirmed": false
   },
 
   "tech_stack": {},
@@ -39,12 +42,20 @@
 
   "synthesis": {
     "status": "pending",
-    "report_path": ""
+    "report_path": "",
+    "html_report_path": "",
+    "html_status": "skipped"
   },
 
   "notes": []
 }
 ```
+
+## last_checkpoint
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `last_checkpoint` | string | 主编排 Agent 最近一次写盘时的检查点名称，如 `phase2_done`、`batch-001-core-done`。用于确认 opencode 是否真正落盘；若流程已推进但该字段仍为 `init`，说明 `state.json` 未更新 |
 
 ## review_options
 
@@ -52,8 +63,29 @@
 |------|------|------|
 | `severity_mode` | string | `all`：报告所有严重级别；`critical_high_only`：仅 Critical + High |
 | `skip_low_risk_files` | boolean | `true` 时 Phase 2 对 `get-diff-files.js` 传 `--skip-low-risk true`，排除 DTO/Entity/测试等（详见清单 `review_scope`） |
+| `generate_html_report` | boolean | `true` 时 Phase 7 完成后进入 `html_rendering`，拉起 HTML 子 agent 产出同名 `.html`；`false` 时跳过 |
+| `user_confirmed` | boolean | Phase 1 四项清单已向用户询问并复述确认后为 `true`；**为 `false` 时禁止进入 Phase 2**（兼容性补丁填 `false` 不能代替用户确认） |
 
-Phase 1 用户确认分支后必须与分支一并写入；断点续跑时子 agent 通过主编排 Agent 传入的 `SEVERITY_MODE` 等变量读取此配置。
+Phase 1 须收齐分支 + 上表三项选项并向用户复述后，设 `user_confirmed: true` 再进入 `diff_analysis`。断点续跑时子 agent 通过主编排 Agent 传入的 `SEVERITY_MODE` 等变量读取此配置。
+
+## synthesis
+
+| 字段 | 类型 | 说明 |
+|------|------|------|
+| `status` | string | 报告合成整体状态（`pending` / `completed` 等） |
+| `report_path` | string | Phase 7 产出的 `.md` 路径 |
+| `html_report_path` | string | Phase 7.5 产出的 `.html` 路径（与 MD 同名，扩展名不同） |
+| `html_status` | string | `skipped`：未开启 HTML；`pending` / `in_progress` / `completed` / `failed` |
+
+### HTML 完整性校验（主编排 Agent 判定 Phase 7.5 是否成功）
+
+通过条件（**三者必须同时满足**）：
+
+1. 文件首部含 `<!DOCTYPE html>`
+2. 文件末尾 16KB 内含 `</html>`
+3. 文件末尾 16KB 内含哨兵注释 `<!-- ato-codereview-html-end -->`
+
+任一缺失：判定失败，**整文件重写**重拉 `java-codereview-report-html`（不复用既有半成品）。跨子 agent 调用（重试）一律从空白重写。
 
 ## file-inventory.json 补充字段（非 state.json）
 
@@ -70,7 +102,8 @@ Phase 1 用户确认分支后必须与分支一并写入；断点续跑时子 ag
 | `task_planning` | 任务规划 | Phase 3 完成后 |
 | `reviewing` | 多专家检视（含每批次的修复建议） | Phase 4 完成后 |
 | `synthesizing` | 报告合成 | 所有批次完成后 |
-| `completed` | 全部结束 | Phase 7 完成后 |
+| `html_rendering` | HTML 报告渲染 | Phase 7 MD 已就绪且 `generate_html_report === true` |
+| `completed` | 全部结束 | Phase 7 完成（无 HTML）或 Phase 7.5 完成/跳过/失败后 |
 
 ## review_progress 结构
 
@@ -124,11 +157,22 @@ Phase 4 完成后，主编排 Agent 根据 `task-plan.json` 初始化：
    c. 若选中项为 "in_progress"：按下方「in_progress 防死锁」处理后再继续
    d. 从该处拉起子 agent 或继续主流程
 4. 若 current_phase == "synthesizing"：
-   若 synthesis.report_path 指向的报告文件已存在且非空 → 可将 synthesis.status 置 completed、current_phase 置 completed；
-   否则检查 synthesis.status，非 completed 则重跑报告合成
+   若 synthesis.report_path 指向的 MD 已存在且非空：
+     - 若 review_options.generate_html_report === true → current_phase = "html_rendering"，进入步骤 4b
+     - 否则 → synthesis.html_status = "skipped"，synthesis.status = completed，current_phase = "completed"
+   否则 → 重跑报告合成（Phase 7）
+4b. 若 current_phase == "html_rendering"：
+   按「HTML 完整性校验」检查 synthesis.html_report_path：
+     - 通过 → html_status = completed，synthesis.status = completed，current_phase = completed
+     - 不通过 → 整文件重写，重拉 java-codereview-report-html（最多 2 次；仍失败 → html_status = failed，current_phase = completed，MD 仍交付）
 5. 幂等（可选优化）：current_phase == "tech_stack" 且 .codereview/tech-stack.json 已存在且合法 → 可直接进入 task_planning；
    current_phase == "task_planning" 且 task-plan.json 已存在 → 可补全 review_progress 后进入 reviewing（避免重复跑子 agent）
-6. 升级兼容：若 review_progress[*] 缺少 curator 键（旧版 state），主编排 Agent 在启动时为每个批次补 curator: "pending"，并写回 state.json 后再进入步骤 3
+6. 升级兼容：
+   a. 若 review_progress[*] 缺少 curator 键 → 每批次补 curator: "pending"
+   b. 若 review_options 缺少 generate_html_report → 补 false
+   c. 若 review_options 缺少 user_confirmed → 补 false（补完后仍须执行 Phase 1 清单）
+   d. 若 synthesis 缺少 html_report_path / html_status → 补 "" 与 "skipped"
+   → 写回 state.json 后再进入步骤 3/4/4b
 ```
 
 ## in_progress 防死锁

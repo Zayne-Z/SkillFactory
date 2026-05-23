@@ -15,6 +15,7 @@
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { assertPhase1Complete } = require('./require-phase1');
 
 function parseArgs(args) {
   const result = {};
@@ -82,6 +83,9 @@ function execGitDiff(branch2, branch1, paths) {
 
 function main() {
   const args = parseArgs(process.argv.slice(2));
+
+  assertPhase1Complete({ force: args.force === true || args.force === 'true' });
+
   const inventoryPath = args.inventory || '.codereview/file-inventory.json';
   const outputDir = args['output-dir'] || '.codereview/diffs';
 

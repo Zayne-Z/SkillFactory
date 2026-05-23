@@ -41,4 +41,10 @@
 
 若需定制某个子 Builder 的检视规则，编辑 `subagents/` 下对应文件后，重新粘贴到插件配置即可。
 
-可选：运行 `scripts/gen-builder-prompts.js` 仅从 `ato-code-review-web` 同步 **01-tech-stack.md**，不会覆盖 02–09。
+从 `ato-code-review-web` 同步 builder 侧重内容时：
+
+1. **检查**：`node scripts/sync-skill-pairs.js --pair web`（或仓库根目录，见 `docs/SKILL-SYNC.md`）
+2. **LLM/人工审阅** 列出的 diff
+3. **确认后写入**：`node scripts/sync-skill-pairs.js --apply --pair web`
+
+`gen-builder-prompts.js` 仅为兼容入口，**默认只检查、不写入**。

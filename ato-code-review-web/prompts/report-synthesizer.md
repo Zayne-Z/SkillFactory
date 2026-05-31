@@ -29,9 +29,9 @@
 4. 读取报告模板 `report-template.md`（**必须逐节对齐**，不得省略章节）；填写 `{{SEVERITY_MODE_LABEL}}`（如「全部级别」/「仅 Critical + High」）、`{{LOW_RISK_SCOPE_LABEL}}`（如「已检视全部变动文件」或「已跳过 N 个低风险文件，详见清单 review_scope」）
 5. 逐批次读取检视结果（**优先策展输出**）：
    - **首选**：`batch-NNN-curated.json`（issue-curator 产出，已完成跨专家合并 + 函数体级误报排除）
-     - 遍历 `issues[]` 时按 `domain` 字段路由到 5.1（`core`）/ 5.2（`spring`）/ 5.3（`security`）/ 5.4（`data`）章节
+     - 遍历 `issues[]` 时按 `domain` 字段路由到 5.1（`core`）/ 5.2（`framework`）/ 5.3（`reliability`）/ 5.4（`security`）章节
      - `invalidated[]` **不写入正文章节**，仅在「3.1 按严重级别」之上的「策展统计」小段写明该批次排除数量
-   - **断点兜底**：若某批次 curated.json 缺失，回退读 `batch-NNN-{core,spring,security,data}.json`，并在该批次内自行执行最小去重（同 file + 同 line 区间重叠 → 取最高严重级保留一条；旧版三类硬规则见 Step 2 末尾）
+   - **断点兜底**：若某批次 curated.json 缺失，回退读 `batch-NNN-{core,framework,reliability,security}.json`，并在该批次内自行执行最小去重（同 file + 同 line 区间重叠 → 取最高严重级保留一条；旧版三类硬规则见 Step 2 末尾）
    - **修复**：`batch-NNN-fix.json`（无论是否走策展兜底都需读取；**修复建议写入第五节对应 issue 块内**，不再单独成章）
 
 **旧版结果兼容映射**（若仍存在历史文件，并入对应章节，避免遗漏）：
@@ -71,7 +71,7 @@
 4. **第五节**：每条 issue 使用「单条 issue 块」格式（见下方）；锚点 `<a id="issue-{ISSUE_ID}"></a>` 与问题 ID 一致，供第六节跳转。
 5. **第六节**：全量问题表，列：序号、问题 ID、文件、行号、函数/方法、**提交人**（来自 `git-line-authors.js` / `line-authors.json` 的 `issue_authors`，便于多人项目认领）、级别、**必改**（Critical/High 填 **是**，Medium/Low 填 **否**）、**领域**、问题描述、**有效** / **已修复**（HTML 签收后回写，初始留空或填「否」）、**详情**（Markdown 链接 `[查看](#issue-{ISSUE_ID})`）。`symbol` 缺失时填 `unknown`，不得省略列。
 6. **不再有**独立的「修复建议汇总」章节，**不再有**「必改项与处置结论」章节（必改标记已在第六节体现）。
-7. 模板中所有 `{{...}}` 必须替换；**3.2 领域统计**使用 `COUNT_CORE`、`COUNT_SPRING`、`COUNT_SECURITY`、`COUNT_DATA` 及对应 `MAX_*`。
+7. 模板中所有 `{{...}}` 必须替换；**3.2 领域统计**使用 `COUNT_CORE`、`COUNT_FRAMEWORK`、`COUNT_RELIABILITY`、`COUNT_SECURITY` 及对应 `MAX_*`。
 8. 若某批次某专家为 `skipped`，对应小节写「本批次无相关类型文件，已跳过。」
 
 #### 单条 issue 块格式（第五节内重复）
@@ -83,19 +83,19 @@
 
 | 定位项 | 值 |
 |--------|-----|
-| 文件 | `src/.../OrderController.java` |
+| 文件 | `src/views/.../OrderList.vue` |
 | 行号 | 52 |
-| 函数/方法 | `OrderController#create` |
+| 函数/方法 | `loadOrders` |
 
 **问题描述**：……
 
 **问题代码**：
-```java
+```js
 // 来自 issue.code_snippet 或 diff 变更片段
 ```
 
 **修复建议**：
-```java
+```js
 // 来自 fix.json 对应 issue_id；若无代码片段则写文字说明
 ```
 

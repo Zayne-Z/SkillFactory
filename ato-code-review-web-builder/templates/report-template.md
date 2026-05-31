@@ -139,19 +139,19 @@
 
 | 定位项 | 值 |
 |--------|-----|
-| 文件 | `src/.../OrderController.java` |
+| 文件 | `src/views/.../OrderList.vue` |
 | 行号 | 52 |
-| 函数/方法 | `OrderController#create` |
+| 函数/方法 | `loadOrders` |
 
 **问题描述**：……
 
 **问题代码**：
-```java
+```js
 // diff 变更片段或 issue.code_snippet
 ```
 
 **修复建议**：
-```java
+```js
 // 来自 fix.json 对应条目
 ```
 

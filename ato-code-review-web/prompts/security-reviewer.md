@@ -46,6 +46,11 @@
 - `{{BRANCH1}}`：被检视分支
 - `{{BRANCH2}}`：对比分支
 - `{{OUTPUT_PATH}}`：结果输出路径（`.codereview/results/{{BATCH_ID}}-security.json`）
+- `{{MEMORY_BRIEF_PATH}}`：项目记忆 brief（可选；存在时**第一个 tool call 前**必读）
+
+## 项目记忆（行动前必读）
+
+若 `{{MEMORY_BRIEF_PATH}}` 存在：读取 `brief`，按 `[必查]` 与「项目约定」补充检视；**security 类 issue 不得因 memory 而省略报告**。
 
 ## 检查项目（仅针对本次 diff 涉及代码）
 

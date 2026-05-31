@@ -1,6 +1,6 @@
 # opencode 配置说明
 
-本目录提供 `ato-code-review-java` 在 opencode 中使用的示例配置。
+本目录提供 `ato-code-review-java` 在 opencode 中使用示例配置。
 
 ## 使用方式
 
@@ -12,13 +12,25 @@
 
 改 `SKILL.md` 或 `opencode.json` 后请**新开一轮 opencode 对话**（同一会话不会自动刷新 system prompt）。
 
-## Phase 1 四问 + 脚本门禁
+## 续跑 / 重新检视
 
-- 主编排须按 `SKILL.md` §0.2 **一次问齐**分支、检视深度、跳过低风险、是否 HTML。
+- 启动时**仅**检测 `.codereview/state.json`（不探测 `codereview/` 历史报告）
+- 存在则问：续跑 / 重新检视
+- 重新检视：`node scripts/reset-run.js`（保留 `memory.json`，清除过程文件）
+
+## Phase 1 五问 + 脚本门禁
+
+- 主编排须按 `SKILL.md` §0.2 **一次问齐**分支、检视深度、跳过低风险、是否 HTML、每批最大行数（默认 900）。
 - 未完成 Phase 1 时，`get-diff-files.js` 等会报 `PHASE1_REQUIRED` 并 exit 2（硬拦截，不依赖模型自觉）。
 - 复述确认后：`update-state.js` 设 `review_options.user_confirmed=true`，再跑 Phase 2。
 
-若上次只问了分支：删除或重置 `.codereview/state.json`（`user_confirmed=false`，`current_phase=branch_selection`），新开对话重跑。
+若上次只问了分支：选「重新检视」或 `reset-run.js`，新开对话重跑。
+
+## 项目记忆
+
+- `.codereview/memory.json`：用户手动维护的项目规则
+- Phase 5 拉起专家前：`build-memory-context.js` 生成 brief
+- 详见 `docs/memory-system.md`
 
 ## state.json 落盘
 
@@ -32,4 +44,4 @@
 
 ## 升级提示
 
-合并 `opencode.example.json` 中新增子 agent（`issue-curator`、`report-html` 等）到现有配置；旧 `state.json` 由主编排启动时自动补字段。
+合并 `opencode.example.json` 中新增子 agent（`issue-curator`、`report-html` 等）到现有配置；旧 `state.json` 由主编排启动时自动补字段（含 `max_lines_per_batch: 900`）。

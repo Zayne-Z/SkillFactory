@@ -660,7 +660,7 @@
             var label = txt(lbl);
             var next = lbl.nextElementSibling;
             if (next && next.tagName === 'P') detailParts.push('', '**' + label + '**：' + txt(next));
-            else if (next && next.tagName === 'PRE') detailParts.push('', '**' + label + '**：', '```java', next.textContent.replace(/\n$/, ''), '```');
+            else if (next && next.tagName === 'PRE') detailParts.push('', '**' + label + '**：', '```js', next.textContent.replace(/\n$/, ''), '```');
           });
           detailParts.push('', '---', '');
         });

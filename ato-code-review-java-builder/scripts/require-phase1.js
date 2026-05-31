@@ -1,27 +1,29 @@
 /**
- * Phase 2+ 脚本入口门禁：Phase 1 四项须已确认（review_options.user_confirmed === true）
+ * Phase 2+ 脚本入口门禁：Phase 1 五项须已确认（review_options.user_confirmed === true）
  */
 const fs = require('fs');
 const path = require('path');
 
 const PHASE1_MESSAGE = `
-PHASE1_REQUIRED: 尚未完成 Phase 1 四项确认，禁止执行检视脚本。
+PHASE1_REQUIRED: 尚未完成 Phase 1 五项确认，禁止执行检视脚本。
 
 主编排 Agent 必须向用户一次收齐并复述确认：
   1) BRANCH1 / BRANCH2
   2) severity_mode (all | critical_high_only)
   3) skip_low_risk_files (true | false)
   4) generate_html_report (true | false)
+  5) max_lines_per_batch (默认 900)
 
 确认后执行：
   node "{SKILL_ROOT}/scripts/update-state.js" --branch1 <b1> --branch2 <b2> \\
     --set review_options.severity_mode=<mode> \\
     --set review_options.skip_low_risk_files=<bool> \\
     --set review_options.generate_html_report=<bool> \\
+    --set review_options.max_lines_per_batch=<n> \\
     --set review_options.user_confirmed=true \\
     --phase diff_analysis --checkpoint phase1_done
 
-若只问了分支就开始检视，说明未执行 `SKILL.md` §0.2；Phase 2 脚本会报 `PHASE1_REQUIRED`。
+若只问了分支就开始检视，说明未执行 SKILL.md §0.2；Phase 2 脚本会报 PHASE1_REQUIRED。
 `.trim();
 
 function assertPhase1Complete(options = {}) {

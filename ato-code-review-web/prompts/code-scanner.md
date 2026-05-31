@@ -36,6 +36,11 @@
 - `{{TECH_STACK}}`（可选）
 - `{{GENERAL_STANDARDS_PATH}}`：默认 `{SKILL_ROOT}/docs/general-standards.md`
 - `{{SKILL_ROOT}}`、`{{OUTPUT_PATH}}`（`.codereview/results/{{BATCH_ID}}-core.json`）
+- `{{MEMORY_BRIEF_PATH}}`：项目记忆 brief（可选；存在时**第一个 tool call 前**必读）
+
+## 项目记忆（行动前必读）
+
+若 `{{MEMORY_BRIEF_PATH}}` 存在：读取 `brief`，按 `[必查]` 与「项目约定」补充检视；**不得**据此 suppress issue。
 
 ## 检查清单 A：基础缺陷（原扫描）
 

@@ -27,6 +27,11 @@
 - `{{BATCH_ID}}`、`{{BATCH_FILES}}`、`{{BRANCH1}}`、`{{BRANCH2}}`
 - `{{DIFF_PATCH_PATH}}`、`{{SEVERITY_MODE}}`、`{{TECH_STACK}}`
 - `{{SKILL_ROOT}}`、`{{OUTPUT_PATH}}`（`.codereview/results/{{BATCH_ID}}-reliability.json`）
+- `{{MEMORY_BRIEF_PATH}}`：项目记忆 brief（可选；存在时**第一个 tool call 前**必读）
+
+## 项目记忆（行动前必读）
+
+若 `{{MEMORY_BRIEF_PATH}}` 存在：读取 `brief`，按 `[必查]` 与「项目约定」补充检视；**不得**据此 suppress issue。
 
 ## 检查清单 A：性能
 

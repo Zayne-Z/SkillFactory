@@ -3,8 +3,9 @@ name: ato-code-review-java
 description: >-
   Java 后端增量代码检视 Skill。主编排 Agent 读取本文件驱动全流程，可通过 opencode
   并行拉起子 agent/subagent 逐阶段完成检视，所有中间状态持久化到 .codereview/state.json，
-  支持任意环节断点续跑。启动后 Phase 1 必须向用户逐项确认分支、检视深度、跳过低风险、是否生成 HTML，
-  四项全部收齐并复述确认前禁止进入 Phase 2。opencode 主编排 Agent 必须通过 scripts/update-state.js 落盘 state.json，禁止仅在对话中更新进度。
+  支持任意环节断点续跑。启动后若 .codereview/state.json 存在则询问续跑或重新检视；
+  Phase 1 必须向用户逐项确认分支、检视深度、跳过低风险、是否生成 HTML、每批最大行数，
+  五项全部收齐并复述确认前禁止进入 Phase 2。opencode 主编排 Agent 必须通过 scripts/update-state.js 落盘 state.json，禁止仅在对话中更新进度。
 ---
 
 # Java 后端代码检视 · 主编排工作流
@@ -17,31 +18,58 @@ description: >-
 
 ## 0. 主编排启动清单（每次对话最先执行，优先于下文所有章节）
 
-### 0.1 读 state
+### 0.0 续跑 vs 重新检视（**仅**探测 `.codereview/state.json`）
+
+**不探测** `codereview/`（该目录会累积多版本历史报告，与当前 run 无关）。
+
+若 `.codereview/state.json` **存在**，在 §0.2 Phase 1 五问**之前**向用户提问（一条消息）：
+
+```
+检测到已有检视状态（.codereview/state.json），请选择：
+1) 续跑 — 按 state.json 的 current_phase / review_progress 继续
+2) 重新检视 — 清除过程文件（保留 memory.json），从头开始
+```
+
+- 选 **续跑** → 读 state，按 §2.2 跳转；`current_phase === completed` 时输出 `synthesis.report_path`，**不**自动重跑
+- 选 **重新检视** → **必须**执行：
 
 ```bash
-# 不存在则：
+node "{SKILL_ROOT}/scripts/reset-run.js"
+```
+
+然后进入 §0.1（`state.json` 已重建）。
+
+若 `state.json` **不存在** → 直接进入 §0.1。
+
+### 0.1 读 state / 初始化
+
+```bash
+node "{SKILL_ROOT}/scripts/init-memory.js"
+# state 不存在时：
 node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
 ```
 
-### 0.2 Phase 1 四问（`user_confirmed !== true` 时**只做本步**）
+`init-memory.js` 确保 `.codereview/memory.json` 存在（用户可手动编辑项目规则，详见 `{SKILL_ROOT}/docs/memory-system.md`）。
+
+### 0.2 Phase 1 五问（`user_confirmed !== true` 时**只做本步**）
 
 **禁止**：只问分支就跑脚本 / 拉子 agent；用补丁默认值代替用户选择。
 
-**必须**向用户**一次性**发送（四项同一条消息，不要分多轮只问第 1 项）：
+**必须**向用户**一次性**发送（五项同一条消息，不要分多轮只问第 1 项）：
 
 ```
-请确认本次 Java 增量检视配置（四项均需回复，缺一不可）：
+请确认本次 Java 增量检视配置（五项均需回复，缺一不可）：
 
 1) 分支 — BRANCH1：___  BRANCH2：（默认 master）
 2) 检视深度 severity_mode — all | critical_high_only
 3) 跳过低风险 skip_low_risk_files — true | false
 4) 生成 HTML generate_html_report — true | false
+5) 每批最大变动行数 max_lines_per_batch — 默认 900（大 MR 可 1200，小 MR 可 600）
 ```
 
-用户只答分支 → 说明还需 2/3/4，**不得**继续。
+用户只答分支 → 说明还需 2/3/4/5，**不得**继续。
 
-复述四项无异议后**必须**执行：
+复述五项无异议后**必须**执行：
 
 ```bash
 node "{SKILL_ROOT}/scripts/update-state.js" \
@@ -49,6 +77,7 @@ node "{SKILL_ROOT}/scripts/update-state.js" \
   --set review_options.severity_mode=<all|critical_high_only> \
   --set review_options.skip_low_risk_files=<true|false> \
   --set review_options.generate_html_report=<true|false> \
+  --set review_options.max_lines_per_batch=<N> \
   --set review_options.user_confirmed=true \
   --phase diff_analysis --checkpoint phase1_done
 ```
@@ -64,6 +93,12 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 
 读 `current_phase` / `review_progress` 继续；**但 `user_confirmed !== true` 一律回到 §0.2**。
 
+### 0.5 项目记忆
+
+- 规则文件：`.codereview/memory.json`（`reset-run.js` **保留**；用户手动维护）
+- Phase 5 每批次、每专家拉起**前**运行 `build-memory-context.js`，将 `MEMORY_BRIEF_PATH` 传给子 agent
+- 用户说「记住 xxx」→ 主编排 Agent 建议 JSON 条目，由用户确认后写入 `memory.json`
+
 ---
 
 ## 1. Skill 目录（`{SKILL_ROOT}` = SKILL.md 所在目录）
@@ -75,18 +110,24 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 │   ├── java-standards.md
 │   ├── spring-boot-reference.md
 │   ├── mybatis-reference.md
+│   ├── memory-system.md      ← .codereview/memory.json 说明
 │   └── state-structure.md    ← state.json 字段说明
 ├── scripts/
 │   ├── get-diff-files.js     ← 生成变动文件清单（可选跳过低风险类型）
 │   ├── batch-processor.js    ← 智能分批
 │   ├── export-batch-diffs.js ← 按批次预计算 unified diff（各专家共用）
 │   ├── git-line-authors.js   ← Phase 7 前：issue 行 git blame + 参与开发者
+│   ├── render-report-html.js ← Phase 7.5：MD → HTML（机械填充，优先于子 agent）
 │   ├── sync-report-signoff.js← HTML 签收 payload 回写 MD（CLI 兜底）
+│   ├── init-memory.js        ← 初始化 .codereview/memory.json
+│   ├── reset-run.js          ← 重新检视（保留 memory.json）
+│   ├── build-memory-context.js ← Phase 5 前：按专家生成 memory brief
 │   ├── update-state.js       ← 主编排 Agent 写 state.json（必用）
 │   └── require-phase1.js     ← Phase 2 脚本门禁（内部引用）
 ├── templates/
 │   ├── report-template.md    ← 最终 MD 报告模板
-│   └── report-shell.html     ← HTML 报告壳模板（Phase 7.5）
+│   ├── report-shell.html     ← HTML 报告壳模板（Phase 7.5）
+│   └── memory.json.example   ← memory.json 示例
 └── prompts/                  ← 子 agent 系统提示词（opencode/其它编排器按文件加载）
     ├── tech-stack-analysis.md
     ├── task-planner.md
@@ -104,15 +145,17 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 
 ```
 {项目根}/
-├── .codereview/
-│   ├── state.json            ← 全程状态（断点核心）
-│   ├── diffs/                ← 各批次 *.patch（预计算 diff，Phase 2 生成）
+├── .codereview/                    ← 持久化（含项目记忆）
+│   ├── memory.json                 ← ★ 项目规则（reset-run 保留）
+│   ├── state.json                  ← 全程状态（断点核心）
+│   ├── memory-brief-*.json         ← Phase 5 运行时 brief（reset 清除）
+│   ├── diffs/                      ← 各批次 *.patch（预计算 diff，Phase 2 生成）
 │   ├── file-inventory.json
 │   ├── tech-stack.json
 │   ├── task-plan.json
-│   ├── line-authors.json     ← Phase 7 git-line-authors.js 产出（提交人映射）
-│   └── results/              ← 各专家 JSON
-└── codereview/
+│   ├── line-authors.json           ← Phase 7 git-line-authors.js 产出（提交人映射）
+│   └── results/                    ← 各专家 JSON
+└── codereview/                     ← 多版本交付物归档（不参与启动探测）
     ├── report_<branch>_<date>.md
     └── report_<branch>_<date>.html   ← 仅当 generate_html_report 为 true
 ```
@@ -135,32 +178,34 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 
 ```
 1. 确认 {SKILL_ROOT} 绝对路径（读取本 SKILL.md 的目录）
-2. 读取 .codereview/state.json
+2. 若 .codereview/state.json 存在 → 执行 §0.0（续跑 / 重新检视）；不存在 → §0.1 init
+3. 读取 .codereview/state.json
    ├─ 不存在 → 进入 Phase 0（初始化）
    └─ 存在   → 读取 current_phase
        ├─ completed     → 按 synthesis.html_status 三态输出报告路径（见 Phase 7 / 7.5 完成后说明）
        └─ 其它          → 跳转到对应 Phase 继续
-3. 兼容性补丁：
+4. 兼容性补丁：
    a. 若 state.json 不含 review_options 字段
-      → 补入默认值 { "severity_mode": "all", "skip_low_risk_files": false, "generate_html_report": false }
+      → 补入默认值 { "severity_mode": "all", "skip_low_risk_files": false, "generate_html_report": false, "max_lines_per_batch": 900 }
    b. 若 review_options 缺少 generate_html_report → 补 false（**仅字段占位**；不得据此跳过 Phase 1 向用户提问）
-   c. 若 review_options 缺少 user_confirmed → 补 false（为 false 时必须执行完整 Phase 1 清单）
-   d. 若 synthesis 缺少 html_report_path / html_status → 补 "" 与 "skipped"
-   e. 若 review_progress[*] 缺少 curator 键（升级到含 issue-curator 的版本）
+   c. 若 review_options 缺少 max_lines_per_batch → 补 900
+   d. 若 review_options 缺少 user_confirmed → 补 false（为 false 时必须执行完整 Phase 1 清单）
+   e. 若 synthesis 缺少 html_report_path / html_status → 补 "" 与 "skipped"
+   f. 若 review_progress[*] 缺少 curator 键（升级到含 issue-curator 的版本）
       → 对每个批次补入 curator: "pending"，position 在 data 与 fix 之间
    → 写回 state.json（保证后续阶段可安全读取）
-3b. 若 current_phase == "branch_selection" 或 review_options.user_confirmed !== true：
+5. 若 current_phase == "branch_selection" 或 review_options.user_confirmed !== true：
    → **不得**进入 Phase 2；执行 Phase 1 清单（见 §3 Phase 1），收齐并复述后再写 state
-4. 对 reviewing 阶段：按批次、按专家顺序（见 Phase 5）扫描 review_progress，
+6. 对 reviewing 阶段：按批次、按专家顺序（见 Phase 5）扫描 review_progress，
    找到第一个 status 为 pending 或 in_progress 的 {batch}+{expert}（completed / skipped / failed 跳过；
    in_progress 时先按 docs/state-structure.md「in_progress 防死锁」校验结果 JSON，再决定 completed 或改 pending 重跑）
-5. 对 synthesizing 阶段：若 synthesis.report_path 的 MD 已存在且非空
+7. 对 synthesizing 阶段：若 synthesis.report_path 的 MD 已存在且非空
    ├─ generate_html_report === true  → current_phase = "html_rendering"，进入步骤 5b
    └─ 否则 → synthesis.html_status = "skipped"，current_phase = "completed"
    若 MD 不存在 → 重跑 Phase 7 报告合成
-5b. 对 html_rendering 阶段：按 docs/state-structure.md「HTML 完整性校验」检查 html_report_path
+5b. 对 html_rendering 阶段：先跑 render-report-html.js，再按 docs/state-structure.md「HTML 完整性校验」检查 html_report_path
    ├─ 通过 → html_status = completed，current_phase = completed
-   └─ 不通过 → 整文件重写，重拉 java-codereview-report-html（最多 2 次；仍失败 → html_status = failed，current_phase = completed，MD 仍交付）
+   └─ 不通过 → 重跑脚本或重拉 java-codereview-report-html（最多 2 次；仍失败 → html_status = failed，current_phase = completed，MD 仍交付）
 6. 幂等（可选）：tech_stack 且 tech-stack.json 已合法 → 可直接进入 task_planning；task_planning 且 task-plan.json 已存在 → 补全 review_progress 后进入 reviewing
 ```
 
@@ -213,7 +258,7 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 | 时机 | 命令示例 |
 |------|----------|
 | 启动 / Phase 0 | `node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init` |
-| Phase 1 复述确认后 | `node .../update-state.js --branch1 {B1} --branch2 {B2} --set review_options.severity_mode=all --set review_options.skip_low_risk_files=false --set review_options.generate_html_report=true --set review_options.user_confirmed=true --phase diff_analysis --checkpoint phase1_done` |
+| Phase 1 复述确认后 | `node .../update-state.js --branch1 {B1} --branch2 {B2} --set review_options.severity_mode=all --set review_options.skip_low_risk_files=false --set review_options.generate_html_report=true --set review_options.max_lines_per_batch=900 --set review_options.user_confirmed=true --phase diff_analysis --checkpoint phase1_done` |
 | Phase 2 脚本跑完 | `node .../update-state.js --phase tech_stack --checkpoint phase2_diff_done`（可从 inventory 读 total 写入 `--set diff_analysis.total_files=N` 等） |
 | Phase 3 完成 | `node .../update-state.js --phase task_planning --checkpoint phase3_tech_stack_done` |
 | Phase 4 完成 | `node .../update-state.js --init-review-progress --task-plan .codereview/task-plan.json --phase reviewing --checkpoint phase4_task_plan_done` |
@@ -236,15 +281,17 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 ```
 若 .codereview/ 目录不存在 → 创建
 执行（必须）：
+  node "{SKILL_ROOT}/scripts/init-memory.js"
   node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
 确认 .codereview/state.json 已创建，current_phase = branch_selection
+确认 .codereview/memory.json 已存在（空结构亦可）
 ```
 
 ---
 
 ### Phase 1：分支与检视选项（主编排 Agent 本地执行）
 
-**与 §0.2 相同**（四问模板、`update-state.js` 命令、复述确认流程见 §0.2）。进入 Phase 2 条件：`review_options.user_confirmed === true`。
+**与 §0.2 相同**（五问模板、`update-state.js` 命令、复述确认流程见 §0.2）。进入 Phase 2 条件：`review_options.user_confirmed === true`。
 
 **字段说明（写入 `review_options`）：**
 
@@ -253,6 +300,7 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 | `severity_mode` | `all` \| `critical_high_only` |
 | `skip_low_risk_files` | `true` \| `false` |
 | `generate_html_report` | `true` \| `false`（须用户明确选择，不得静默默认） |
+| `max_lines_per_batch` | 正整数，默认 `900`（Phase 2 传给 `batch-processor.js --max-lines`） |
 | `user_confirmed` | Phase 1 复述确认后为 `true` |
 
 ---
@@ -266,9 +314,9 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 node "{SKILL_ROOT}/scripts/get-diff-files.js" --branch1 {BRANCH1} --branch2 {BRANCH2} --output .codereview/file-inventory.json
 ```
 
-**Step 2：分批**
+**Step 2：分批**（`max-lines` 取自 `state.review_options.max_lines_per_batch`，默认 900）
 ```powershell
-node "{SKILL_ROOT}/scripts/batch-processor.js" --inventory .codereview/file-inventory.json --max-lines 600 --output .codereview/file-inventory.json
+node "{SKILL_ROOT}/scripts/batch-processor.js" --inventory .codereview/file-inventory.json --max-lines {MAX_LINES} --output .codereview/file-inventory.json
 ```
 
 **Step 3：预计算批次 diff（默认执行）**
@@ -357,6 +405,16 @@ node "{SKILL_ROOT}/scripts/update-state.js" --init-review-progress --task-plan .
 
 **每个专家的子 agent 调用：**
 
+**拉起前（必做）** — 生成项目记忆 brief：
+
+```bash
+node "{SKILL_ROOT}/scripts/build-memory-context.js" \
+  --memory .codereview/memory.json \
+  --batch-id {BATCH_ID} \
+  --expert {core|spring|security|data} \
+  --output .codereview/memory-brief-{BATCH_ID}-{expert}.json
+```
+
 | 专家 | 子 agent 标识 | 提示词文件 | 输出文件 |
 |------|----------------|------------|---------|
 | core | `java-codereview-review-core` | `{SKILL_ROOT}/prompts/code-scanner.md` | `.codereview/results/{BATCH_ID}-core.json` |
@@ -374,6 +432,7 @@ node "{SKILL_ROOT}/scripts/update-state.js" --init-review-progress --task-plan .
 | `BRANCH2` | 基准分支 |
 | `DIFF_PATCH_PATH` | `.codereview/diffs/{BATCH_ID}.patch`（Phase 2 已导出则必传；不存在则子 agent 仅用 git） |
 | `SEVERITY_MODE` | `state.json` → `review_options.severity_mode`（`all` 或 `critical_high_only`） |
+| `MEMORY_BRIEF_PATH` | `.codereview/memory-brief-{BATCH_ID}-{expert}.json`（Phase 5 拉起前由 `build-memory-context.js` 生成） |
 | `TECH_STACK` | tech-stack.json 内容摘要（或路径，让子 agent 自读） |
 | `OUTPUT_PATH` | 结果文件路径 |
 | `SKILL_ROOT` | 本 Skill 根目录（子 agent 需读取 docs/ 下参考文档） |
@@ -387,7 +446,7 @@ node "{SKILL_ROOT}/scripts/update-state.js" --init-review-progress --task-plan .
 
 **opencode 并行派发建议：**
 
-同一 `BATCH_ID` 中，对 `applicable_experts` 取交集后可一次性并行拉起多个子 agent。每个任务必须显式包含：`BATCH_ID`、`BATCH_FILES`、`BRANCH1`、`BRANCH2`、`DIFF_PATCH_PATH`、`SEVERITY_MODE`、`TECH_STACK`、`SKILL_ROOT`、独立 `OUTPUT_PATH`，并强调“完成后只写对应输出文件”。主编排 Agent 等待这一组输出文件全部存在且 JSON 合法后，再将对应状态改为 `completed`；随后串行执行 `issue-curator` 和 `fix-advisor`。
+同一 `BATCH_ID` 中，对 `applicable_experts` 取交集后可一次性并行拉起多个子 agent。每个任务必须显式包含：`BATCH_ID`、`BATCH_FILES`、`BRANCH1`、`BRANCH2`、`DIFF_PATCH_PATH`、`SEVERITY_MODE`、`MEMORY_BRIEF_PATH`、`TECH_STACK`、`SKILL_ROOT`、独立 `OUTPUT_PATH`，并强调“完成后只写对应输出文件”。主编排 Agent 等待这一组输出文件全部存在且 JSON 合法后，再将对应状态改为 `completed`；随后串行执行 `issue-curator` 和 `fix-advisor`。
 
 **适用性剪枝（来自 task-plan.json 的 `applicable_experts`）：**
 
@@ -404,6 +463,16 @@ node "{SKILL_ROOT}/scripts/update-state.js" --init-review-progress --task-plan .
 **拉起子 agent：** `java-codereview-issue-curator`
 **提示词文件：** `{SKILL_ROOT}/prompts/issue-curator.md`
 
+**拉起前（必做）：**
+
+```bash
+node "{SKILL_ROOT}/scripts/build-memory-context.js" \
+  --memory .codereview/memory.json \
+  --batch-id {BATCH_ID} \
+  --expert curator \
+  --output .codereview/memory-brief-{BATCH_ID}-curator.json
+```
+
 **目的：**
 1. **跨专家合并**：把同一文件、同一行（区间重叠）、实质相同根因的多条 issue 合并为一条主条目（按主责专家优先级），其余视角并入 `merged_from[]`，避免 fix-advisor 与最终报告对同一行写出多段重复内容
 2. **函数体级关联复核**：对合并后剩余的每条 issue，**仅在其所在函数体（或 XML SQL 节点）范围内**检查是否已通过判空 / try-with-resources / `@Valid` / 工具断言 / 白名单 / 同步原语等手段处理；已处理的移入 `invalidated[]` 不再下发，避免误报
@@ -416,6 +485,7 @@ node "{SKILL_ROOT}/scripts/update-state.js" --init-review-progress --task-plan .
 | `BRANCH1` / `BRANCH2` | 同 Phase 5 |
 | `DIFF_PATCH_PATH` | `.codereview/diffs/{BATCH_ID}.patch`（与 Phase 5 共用） |
 | `SEVERITY_MODE` | 同 Phase 5（`critical_high_only` 时不得保留 medium / low） |
+| `MEMORY_BRIEF_PATH` | `.codereview/memory-brief-{BATCH_ID}-curator.json` |
 | `RESULTS_DIR` | `.codereview/results/`（用于读取 4 份原始专家 JSON） |
 | `OUTPUT_PATH` | `.codereview/results/{BATCH_ID}-curated.json` |
 | `SKILL_ROOT` | 本 Skill 根目录 |
@@ -491,26 +561,33 @@ node "{SKILL_ROOT}/scripts/git-line-authors.js" \
 
 ### Phase 7.5：HTML 报告渲染（可选，仅 `generate_html_report === true`）
 
-**拉起子 agent：** `java-codereview-report-html`
-**提示词文件：** `{SKILL_ROOT}/prompts/report-html.md`
-
 **前置条件：** Phase 7 的 MD 报告已存在且非空。
 
-**传入变量：**
+**Step 1（必做，优先于子 agent）：** 在业务仓库根目录执行机械渲染（将 MD 全文填入 HTML 各章节，**禁止**「请查看同名 .md」类占位）：
+
+```bash
+node "{SKILL_ROOT}/scripts/render-report-html.js" \
+  --md "{REPORT_MD_PATH}" \
+  --shell "{SKILL_ROOT}/templates/report-shell.html" \
+  --out "{HTML_REPORT_PATH}" \
+  --state ".codereview/state.json"
+```
 
 | 变量 | 值 |
-|------|---|
-| `REPORT_MD_PATH` | `synthesis.report_path`（Phase 7 产出） |
+|------|-----|
+| `REPORT_MD_PATH` | `synthesis.report_path` |
 | `HTML_TEMPLATE_PATH` | `{SKILL_ROOT}/templates/report-shell.html` |
-| `HTML_REPORT_PATH` | 与 MD 同名，扩展名 `.html`（`/` → `_`） |
+| `HTML_REPORT_PATH` | 与 MD 同名 `.html`（`/` → `_`） |
 
-**完成标志（主编排 Agent 校验，三者缺一不可）：**
+脚本 stdout 为 JSON：`ok: true` 且 `placeholdersOk: true` 表示写出成功（HTML 中无残留 `{{...}}`）。若 `unresolvedPlaceholders` 非空，说明 MD 仍有未替换模板变量，须回到 Phase 7 补全 MD 后再渲染。
+
+**Step 2（主编排校验，三者缺一不可）：**
 
 1. 文件首部含 `<!DOCTYPE html>`
 2. 文件末尾 16KB 内含 `</html>`
 3. 文件末尾 16KB 内含 `<!-- ato-codereview-html-end -->`
 
-校验不通过 → **整文件重写**重拉子 agent（最多 2 次）；仍失败 → `synthesis.html_status = "failed"`，记录 `notes[]`，`current_phase = "completed"`（**MD 仍交付**）。
+**Step 3（仅当 Step 1/2 失败时）：** 拉起子 agent `java-codereview-report-html`（`prompts/report-html.md`），传入 `REPORT_MD_PATH`、`HTML_TEMPLATE_PATH`、`HTML_REPORT_PATH`；**禁止**使用 Step 4 降级占位，须从 MD 机械转换全文。最多 2 次；仍失败 → `synthesis.html_status = "failed"`，记录 `notes[]`，`current_phase = "completed"`（**MD 仍交付**）。
 
 **完成后：** `synthesis.html_status = "completed"`，`current_phase = "completed"`，按下文「completed 输出文案」输出。
 

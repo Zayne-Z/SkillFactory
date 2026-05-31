@@ -33,6 +33,15 @@
 - `{{RESULTS_DIR}}`：本批次专家结果目录（`.codereview/results/`）
 - `{{OUTPUT_PATH}}`：策展结果输出路径（`.codereview/results/{{BATCH_ID}}-curated.json`）
 - `{{SKILL_ROOT}}`：本 Skill 根目录（如需查参考文档时用）
+- `{{MEMORY_BRIEF_PATH}}`：项目记忆 brief（`.codereview/memory-brief-{{BATCH_ID}}-curator.json`；可选）
+
+## 项目记忆（Step 1 之前）
+
+若 `{{MEMORY_BRIEF_PATH}}` 存在，读取 `brief`：
+
+- 对高匹配的 `[误检提示]`：可在函数体复核后移入 `invalidated[]`，`reason` 须引用 memory 条目 id
+- **禁止**对 security / IDOR / SSRF / 鉴权类 issue **仅凭** memory 排除
+- `[必查]` 条目**不得**用于 suppress issue
 
 ## 执行步骤
 

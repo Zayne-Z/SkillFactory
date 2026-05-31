@@ -43,6 +43,15 @@
 - `{{TECH_STACK}}`：技术栈信息（JSON，可选）
 - `{{STANDARDS_PATH}}`：Java 规范参考，默认 `{SKILL_ROOT}/docs/java-standards.md`（`{SKILL_ROOT}` 由主 Builder 在交接时给出绝对路径）
 - `{{OUTPUT_PATH}}`：结果输出路径（`.codereview/results/{{BATCH_ID}}-core.json`）
+- `{{MEMORY_BRIEF_PATH}}`：项目记忆 brief（`.codereview/memory-brief-{{BATCH_ID}}-core.json`；可选，存在时**第一个 tool call 前**必读）
+
+## 项目记忆（行动前必读）
+
+若 `{{MEMORY_BRIEF_PATH}}` 存在：
+
+1. **在第一个 tool call 之前**读取该文件中的 `brief` 字段
+2. 按 `[必查]` 与「项目约定」**补充**检视关注点
+3. **不得**据此删除或降级你已发现的 issue（误检提示由 curator 处理）
 
 ## 检查清单 A：基础缺陷（原扫描专家）
 

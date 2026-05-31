@@ -99,6 +99,7 @@ function defaultState() {
       severity_mode: 'all',
       skip_low_risk_files: false,
       generate_html_report: false,
+      max_lines_per_batch: 900,
       user_confirmed: false,
     },
     tech_stack: {},
@@ -139,6 +140,17 @@ function setByPath(obj, keypath, value) {
   cur[parts[parts.length - 1]] = value;
 }
 
+function isExpertApplicable(applicable, key) {
+  if (applicable == null) return true;
+  if (Array.isArray(applicable)) return applicable.includes(key);
+  if (typeof applicable === 'object') {
+    if (!Object.prototype.hasOwnProperty.call(applicable, key)) return true;
+    const value = applicable[key];
+    return !(value === false || value === 'false' || value === 'skip' || value === 'skipped');
+  }
+  return true;
+}
+
 function ensureReviewProgressBatch(state, batchId) {
   if (!state.review_progress[batchId]) {
     state.review_progress[batchId] = {
@@ -177,8 +189,7 @@ function initReviewProgressFromTaskPlan(state, taskPlanPath) {
       fix: 'pending',
     };
     for (const key of ['core', 'spring', 'security', 'data']) {
-      const v = applicable[key];
-      if (v === false || v === 'skip' || v === 'skipped') entry[key] = 'skipped';
+      if (!isExpertApplicable(applicable, key)) entry[key] = 'skipped';
     }
     state.review_progress[id] = entry;
   }

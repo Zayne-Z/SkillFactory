@@ -25,6 +25,7 @@
     "severity_mode": "all",
     "skip_low_risk_files": false,
     "generate_html_report": false,
+    "max_lines_per_batch": 900,
     "user_confirmed": false
   },
 
@@ -64,9 +65,10 @@
 | `severity_mode` | string | `all`：报告所有严重级别；`critical_high_only`：仅 Critical + High |
 | `skip_low_risk_files` | boolean | `true` 时 Phase 2 对 `get-diff-files.js` 传 `--skip-low-risk true`，排除 DTO/Entity/测试等（详见清单 `review_scope`） |
 | `generate_html_report` | boolean | `true` 时 Phase 7 完成后进入 `html_rendering`，拉起 HTML 子 agent 产出同名 `.html`；`false` 时跳过 |
-| `user_confirmed` | boolean | Phase 1 四项清单已向用户询问并复述确认后为 `true`；**为 `false` 时禁止进入 Phase 2**（兼容性补丁填 `false` 不能代替用户确认） |
+| `max_lines_per_batch` | number | Phase 2 `batch-processor.js --max-lines`；默认 **900** |
+| `user_confirmed` | boolean | Phase 1 五项清单已向用户询问并复述确认后为 `true`；**为 `false` 时禁止进入 Phase 2**（兼容性补丁填 `false` 不能代替用户确认） |
 
-Phase 1 须收齐分支 + 上表三项选项并向用户复述后，设 `user_confirmed: true` 再进入 `diff_analysis`。断点续跑时子 agent 通过主编排 Agent 传入的 `SEVERITY_MODE` 等变量读取此配置。
+Phase 1 须收齐分支 + 上表各项选项（含 `max_lines_per_batch`）并向用户复述后，设 `user_confirmed: true` 再进入 `diff_analysis`。断点续跑时子 agent 通过主编排 Agent 传入的 `SEVERITY_MODE` 等变量读取此配置。
 
 ## synthesis
 
@@ -85,7 +87,11 @@ Phase 1 须收齐分支 + 上表三项选项并向用户复述后，设 `user_co
 2. 文件末尾 16KB 内含 `</html>`
 3. 文件末尾 16KB 内含哨兵注释 `<!-- ato-codereview-html-end -->`
 
-任一缺失：判定失败，**整文件重写**重拉 `java-codereview-report-html`（不复用既有半成品）。跨子 agent 调用（重试）一律从空白重写。
+任一缺失：判定失败。主编排应**先**重跑 `node "{SKILL_ROOT}/scripts/render-report-html.js" --md … --shell … --out …`（覆盖写出）；脚本仍失败时再重拉 `java-codereview-report-html`（不复用既有半成品）。跨子 agent 调用（重试）一律从空白重写。
+
+**禁止** HTML 正文中出现 `section.truncated` 或「请查看同名 .md」占位（除非 MD 本身缺失对应 `##` 章节且脚本与子 agent 均已报错）。
+
+`render-report-html.js` 会替换壳内 `{{REPORT_TITLE}}`、`{{META_SUMMARY}}`、`{{BODY_HTML}}` 等，并校验**最终 HTML 不得残留** `{{PLACEHOLDER}}`。脚本可选用 `--state .codereview/state.json` 从 state/inventory/tech-stack 补全 MD 中尚未替换的基础变量；统计类占位（如 `{{COUNT_*}}`）须由 Phase 7 合成官在 MD 中写实。
 
 ## file-inventory.json 补充字段（非 state.json）
 
@@ -148,9 +154,20 @@ Phase 4 完成后，主编排 Agent 根据 `task-plan.json` 初始化：
 
 ## 断点恢复逻辑（主编排 Agent 每次启动必执行）
 
+### Run 生命周期（续跑 / 重新检视）
+
+**唯一探测信号**：`.codereview/state.json` 是否存在（**不**探测 `codereview/` 历史报告目录）。
+
+| 用户选择 | 动作 |
+|----------|------|
+| 续跑 | 读 state，`current_phase` 跳转；`completed` 时交付 `synthesis.report_path` |
+| 重新检视 | `reset-run.js`：删 state/diffs/results 等，**保留** `memory.json`，再 `--init` state |
+
+`.codereview/memory.json`：项目规则，用户手动维护；详见 `docs/memory-system.md`。
+
 ```
-1. 读取 state.json
-2. 根据 current_phase 跳转到对应 Phase
+1. 若 state.json 存在 → §0.0 问续跑 / 重新检视
+2. 读取 state.json，根据 current_phase 跳转到对应 Phase
 3. 若 current_phase == "reviewing"：
    a. 扫描 review_progress（批次顺序与 task-plan / inventory 一致）
    b. 对每个批次按专家顺序（core → security → spring → data → curator → fix）查找：**第一个**状态为 `pending` 或 `in_progress` 的专家；`completed` / `skipped` / `failed` 均跳过（`failed` 为终态，不再自动改 pending）
@@ -164,13 +181,14 @@ Phase 4 完成后，主编排 Agent 根据 `task-plan.json` 初始化：
 4b. 若 current_phase == "html_rendering"：
    按「HTML 完整性校验」检查 synthesis.html_report_path：
      - 通过 → html_status = completed，synthesis.status = completed，current_phase = completed
-     - 不通过 → 整文件重写，重拉 java-codereview-report-html（最多 2 次；仍失败 → html_status = failed，current_phase = completed，MD 仍交付）
+     - 不通过 → 重跑 render-report-html.js 或重拉 java-codereview-report-html（最多 2 次；仍失败 → html_status = failed，current_phase = completed，MD 仍交付）
 5. 幂等（可选优化）：current_phase == "tech_stack" 且 .codereview/tech-stack.json 已存在且合法 → 可直接进入 task_planning；
    current_phase == "task_planning" 且 task-plan.json 已存在 → 可补全 review_progress 后进入 reviewing（避免重复跑子 agent）
 6. 升级兼容：
    a. 若 review_progress[*] 缺少 curator 键 → 每批次补 curator: "pending"
    b. 若 review_options 缺少 generate_html_report → 补 false
-   c. 若 review_options 缺少 user_confirmed → 补 false（补完后仍须执行 Phase 1 清单）
+   c. 若 review_options 缺少 max_lines_per_batch → 补 900
+   d. 若 review_options 缺少 user_confirmed → 补 false（补完后仍须执行 Phase 1 清单）
    d. 若 synthesis 缺少 html_report_path / html_status → 补 "" 与 "skipped"
    → 写回 state.json 后再进入步骤 3/4/4b
 ```

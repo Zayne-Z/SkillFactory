@@ -1,63 +1,69 @@
 ---
 name: ato-code-review-web-builder
 description: >-
-  前端（Vue / React 等）增量代码检视 Skill（Builder 模式）。主 Builder 读取本文件驱动全流程，通过预配置的子 Builder
-  分阶段完成检视；中间状态写入 .codereview/state.json，支持断点续跑。Phase 1 须确认分支、检视深度、跳过低风险、是否生成 HTML 四项。
+  前端（Vue / React 等）增量代码检视 Skill（Builder 模式）。主 Builder 读取本文件驱动全流程；
+  状态持久化到 .codereview/state.json，支持断点续跑。启动后若 state.json 存在则询问续跑或重新检视；
+  Phase 1 须确认分支、检视深度、跳过低风险、是否生成 HTML、每批最大行数五项。
 ---
-
 # 前端代码检视 · 主 Builder 工作流
 
 > **本文件是主 Builder 运行时的唯一指令来源**（VS Code AI 插件主 Builder 读取本 `SKILL.md`；`MAIN_BUILDER.md` 仅为粘贴用短引导）。
-> 主 Builder 负责编排、状态管理与故障恢复；**不做**深度代码检视。
+> 主 Builder 负责编排、状态管理、并行调度与故障恢复；**不做**深度代码检视。
 > 须用 `scripts/update-state.js` 落盘；Phase 2+ 在 `user_confirmed !== true` 时会报 `PHASE1_REQUIRED`。
 
 ---
 
-## 0. 主 Builder 启动清单（每次对话最先执行，优先于下文所有章节）
+## 0. 启动清单
 
-### 0.1 读 state
+### 0.0 续跑 vs 重新检视（**仅**探测 `.codereview/state.json`）
+
+**不探测** `codereview/`（多版本历史报告目录）。
+
+若 `.codereview/state.json` **存在**，在 §0.2 **之前**问用户：
+
+```
+检测到已有检视状态（.codereview/state.json），请选择：
+1) 续跑 — 按 state.json 继续
+2) 重新检视 — 清除过程文件（保留 memory.json），从头开始
+```
+
+- **续跑** → 读 state；`completed` 时输出报告路径，不自动重跑
+- **重新检视** → `node "{SKILL_ROOT}/scripts/reset-run.js"`，再 §0.1
+
+### 0.1 读 state / 初始化
 
 ```bash
-# 不存在则：
+node "{SKILL_ROOT}/scripts/init-memory.js"
 node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
 ```
 
-### 0.2 Phase 1 四问（`user_confirmed !== true` 时**只做本步**）
-
-**禁止**：只问分支就跑脚本 / 拉子 Builder；用补丁默认值代替用户选择。
-
-**必须**向用户**一次性**发送（四项同一条消息）：
+### 0.2 Phase 1 五问（`user_confirmed !== true` 时只做本步）
 
 ```
-请确认本次前端增量检视配置（四项均需回复，缺一不可）：
-
 1) 分支 — BRANCH1：___  BRANCH2：（默认 master）
-2) 检视深度 severity_mode — all | critical_high_only
-3) 跳过低风险 skip_low_risk_files — true | false
-4) 生成 HTML generate_html_report — true | false
+2) severity_mode — all | critical_high_only
+3) skip_low_risk_files — true | false
+4) generate_html_report — true | false
+5) max_lines_per_batch — 默认 900（大 MR 可 1200，小 MR 可 600）
 ```
 
-复述四项无异议后**必须**执行：
+复述确认后：
 
 ```bash
 node "{SKILL_ROOT}/scripts/update-state.js" \
   --branch1 <BRANCH1> --branch2 <BRANCH2> \
-  --set review_options.severity_mode=<all|critical_high_only> \
-  --set review_options.skip_low_risk_files=<true|false> \
-  --set review_options.generate_html_report=<true|false> \
+  --set review_options.severity_mode=<mode> \
+  --set review_options.skip_low_risk_files=<bool> \
+  --set review_options.generate_html_report=<bool> \
+  --set review_options.max_lines_per_batch=<N> \
   --set review_options.user_confirmed=true \
   --phase diff_analysis --checkpoint phase1_done
 ```
 
-确认 `user_confirmed===true` 后，才进入 Phase 2。
+### 0.3 项目记忆
 
-### 0.3 落盘 state（全程）
-
-每个操作后用 `update-state.js` 写 `.codereview/state.json`（禁止只在聊天里说进度）。子 Builder **不写** state。
-
-### 0.4 断点续跑
-
-读 `current_phase` / `review_progress` 继续；**但 `user_confirmed !== true` 一律回到 §0.2**。
+- `.codereview/memory.json`：用户手动维护（`reset-run.js` 保留）；见 `{SKILL_ROOT}/docs/memory-system.md`
+- Phase 5 每专家拉起前：`build-memory-context.js` → `MEMORY_BRIEF_PATH`
 
 ---
 
@@ -72,18 +78,24 @@ node "{SKILL_ROOT}/scripts/update-state.js" \
 │   ├── react-reference.md
 │   ├── general-standards.md
 │   ├── security-checklist.md
+│   ├── memory-system.md
 │   └── state-structure.md
 ├── scripts/
 │   ├── get-diff-files.js
 │   ├── batch-processor.js
 │   ├── export-batch-diffs.js
 │   ├── git-line-authors.js
+│   ├── render-report-html.js   ← Phase 7.5：MD → HTML（机械填充，优先于子 Builder）
 │   ├── sync-report-signoff.js
+│   ├── init-memory.js
+│   ├── reset-run.js
+│   ├── build-memory-context.js
 │   ├── update-state.js
 │   └── require-phase1.js
 ├── templates/
 │   ├── report-template.md
 │   ├── report-shell.html
+│   ├── memory.json.example
 │   └── signoff-payload.example.json
 └── builder-prompts/
     ├── README.md
@@ -94,17 +106,8 @@ node "{SKILL_ROOT}/scripts/update-state.js" \
 **运行时生成：**
 
 ```
-{项目根}/
-├── .codereview/
-│   ├── state.json
-│   ├── diffs/ ← 各批次 *.patch（Phase 2 预计算）
-│   ├── file-inventory.json
-│   ├── tech-stack.json
-│   ├── task-plan.json
-│   └── results/
-└── codereview/
-    ├── report_<branch>_<date>.md
-    └── report_<branch>_<date>.html
+.codereview/  ← state、memory.json、memory-brief-*.json、diffs、results/（reset 保留 memory）
+codereview/   ← 多版本 report_*.md / *.html（不参与启动探测）
 ```
 
 ---
@@ -115,26 +118,25 @@ node "{SKILL_ROOT}/scripts/update-state.js" \
 
 每个操作前读 `state.json`，操作后立即写回。字段见 `{SKILL_ROOT}/docs/state-structure.md`。
 
-### 2.2 主 Builder 启动逻辑（每次对话开头必执行）
+### 2.2 主 Builder 启动（每次对话开头）
 
 ```
 1. 确认 {SKILL_ROOT} 绝对路径
-2. 读取 .codereview/state.json
-   ├─ 不存在 → Phase 0 初始化
-   └─ 存在   → 读 current_phase；completed 则按 html_status 输出 MD/HTML 路径
-3. 兼容性补丁：
-   a. 缺 review_options → 补 severity_mode / skip_low_risk_files / generate_html_report / user_confirmed
-   b. 缺 synthesis.html_report_path / html_status → 补 "" 与 "skipped"
-   c. review_progress[*] 缺 curator → 补 curator: "pending"
-   → 写回 state.json
-3b. user_confirmed !== true → **只做 §0.2 四问**，不得 Phase 2+
-4. reviewing：按批次顺序 core → framework → reliability → security → curator → fix，找首个 pending/in_progress
-5. synthesizing：MD 已存在
-   ├─ generate_html_report === true → html_rendering
-   └─ 否则 → html_status = skipped，completed
-   MD 不存在 → Phase 7
-5b. html_rendering：按 state-structure.md「HTML 完整性校验」；失败则重拉 web-codereview-report-html（最多 2 次）
-6. 幂等（可选）：tech_stack / task_planning 阶段可跳过已完成的子步骤
+2. 若 .codereview/state.json 存在 → §0.0 续跑/重新检视；否则 §0.1 init
+3. 读取 .codereview/state.json
+   - 不存在：Phase 0 初始化
+   - 存在：读取 current_phase
+     - 若为 completed：告知报告路径；否则跳到对应 Phase
+4. 兼容性补丁：
+   - 若缺少 review_options → 补 severity_mode / skip_low_risk_files / generate_html_report / max_lines_per_batch(900) / user_confirmed
+   - 若 review_progress[*] 缺少 curator → 补 `curator: "pending"`
+   - 若 synthesis 缺少 html_report_path / html_status → 补 "" 与 "skipped"
+   - **`user_confirmed !== true` → 回到 §0.2 Phase 1 五问**
+4. **reviewing**：按批次、按专家顺序 `core` → `framework` → `reliability` → `security` → `curator` → `fix`，找到第一个状态为 `pending` 或 `in_progress` 的项（`completed` / `skipped` / **`failed`** 均跳过；`failed` 为终态，除非用户要求人工改回 `pending`）
+   - `in_progress`：按 `docs/state-structure.md`「in_progress 防死锁」校验对应 `*-{expert}.json`、`*-curated.json` 或 `*-fix.json`
+5. **synthesizing**：若 MD 已存在 → 按 `generate_html_report` 进入 `html_rendering` 或 `completed`；否则 Phase 7
+6. **html_rendering**：按 `state-structure.md` 校验 HTML 完整性；通过则 `completed`，否则重拉 HTML 子 Builder（最多 2 次）
+6. **幂等（可选）**：`tech_stack` 且 `tech-stack.json` 已合法 → 可直接 `task_planning`；`task_planning` 且 `task-plan.json` 已存在 → 补全 `review_progress` 后进入 `reviewing`
 ```
 
 ### 2.3 子 Builder 调用与故障恢复
@@ -147,21 +149,43 @@ node "{SKILL_ROOT}/scripts/update-state.js" \
 
 禁止将子 Builder 提示词全文、`docs/` 全文、结果 JSON 全量读入主对话；只传变量与路径。上下文将满时写 `state.json` 并请用户重启主 Builder。
 
+### 2.5 opencode 并行执行约定
+
+本 Skill 可通过 opencode 执行。主 Builder 应将 `builder-prompts/subagents/*.md` 作为子 Builder 的系统提示词来源，并通过任务描述传入变量。每个子 Builder 的唯一交付物是写入约定的 `OUTPUT_PATH` JSON/报告文件；主 Builder 只检查文件，不依赖对话内容合并结果。
+
+**并行原则：**
+
+- Phase 3 技术栈、Phase 4 任务规划存在依赖关系，必须串行。
+- Phase 5 中，同一批次内 `core`、`framework`、`reliability`、`security` 四个专家彼此独立，凡 `task-plan.json` 标记为适用且状态为 `pending` / `failed` 的，可以通过 opencode 并行拉起。
+- 并行启动前，先把这些专家状态统一写为 `in_progress`；每个子 Builder 写自己的固定输出文件，互不共享写入目标。
+- 等同批次所有适用专家完成后，先执行该批次的 `issue-curator`；curator 完成后再执行 `fix-advisor`，fix 完成后再进入下一批次或报告合成。
+- 若 opencode 当前环境不支持并行任务，则按 `core → framework → reliability → security` 串行降级，输出文件与状态规则保持不变。
+
 ---
 
 ## 3. 阶段详情
 
 ### Phase 0：初始化
 
-若 `.codereview/` 或 `state.json` 不存在，按 `docs/state-structure.md` 创建；`current_phase = "branch_selection"`。
+```bash
+node "{SKILL_ROOT}/scripts/init-memory.js"
+node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
+```
+
+`current_phase = "branch_selection"`；确认 `memory.json` 存在。
 
 ---
 
-### Phase 1：分支与检视选项
+### Phase 1：分支与检视选项（主 Builder）
 
-**与 §0.2 相同**（四问模板、`update-state.js` 命令、复述确认）。进入 Phase 2 条件：`review_options.user_confirmed === true`。
+**须与 §0.2 五问一致**；未 `user_confirmed` 禁止进入 Phase 2。
 
-验证分支：`git rev-parse --verify "<branch>"`（Windows 勿用 `grep`）。
+1. 确认 `BRANCH1`、`BRANCH2`（默认 `master`）
+2. `severity_mode`：`all` | `critical_high_only`
+3. `skip_low_risk_files`：`true` 时 Phase 2 追加 `--skip-low-risk true`
+4. **`generate_html_report`**：`true` | `false`
+5. **`max_lines_per_batch`**：默认 `900`（Phase 2 传给 `batch-processor.js`）
+6. 验证分支后 `update-state.js` 落盘，`current_phase = "diff_analysis"`
 
 ---
 
@@ -175,10 +199,10 @@ node "{SKILL_ROOT}/scripts/get-diff-files.js" --branch1 {BRANCH1} --branch2 {BRA
 # node "{SKILL_ROOT}/scripts/get-diff-files.js" --branch1 {BRANCH1} --branch2 {BRANCH2} --output .codereview/file-inventory.json --skip-low-risk true
 ```
 
-**Step 2 分批**（前端默认每批约 800 变动行，可按需调整）：
+**Step 2 分批**（`max-lines` 取自 `review_options.max_lines_per_batch`，默认 900）：
 
 ```powershell
-node "{SKILL_ROOT}/scripts/batch-processor.js" --inventory .codereview/file-inventory.json --max-lines 800 --output .codereview/file-inventory.json
+node "{SKILL_ROOT}/scripts/batch-processor.js" --inventory .codereview/file-inventory.json --max-lines {MAX_LINES} --output .codereview/file-inventory.json
 ```
 
 **Step 3 预计算批次 diff**：
@@ -196,6 +220,7 @@ node "{SKILL_ROOT}/scripts/export-batch-diffs.js" --inventory .codereview/file-i
 ### Phase 3：技术栈分析
 
 **子 Builder：** `web-codereview-tech-stack`
+**提示词文件：** `{SKILL_ROOT}/builder-prompts/subagents/01-tech-stack.md`
 
 | 变量 | 值 |
 |------|-----|
@@ -209,6 +234,7 @@ node "{SKILL_ROOT}/scripts/export-batch-diffs.js" --inventory .codereview/file-i
 ### Phase 4：任务规划
 
 **子 Builder：** `web-codereview-task-plan`
+**提示词文件：** `{SKILL_ROOT}/builder-prompts/subagents/02-task-plan.md`
 
 | 变量 | 值 |
 |------|-----|
@@ -234,14 +260,22 @@ for each batch:
 all batches done → current_phase = "synthesizing"（见 Phase 7）
 ```
 
-**四位检视专家**（由原 7 位合并，减少子 Builder 数量，与 java-builder 四专家规模对齐）：
+**四位检视专家**（拉起**前**必运行 `build-memory-context.js`，传入 `MEMORY_BRIEF_PATH`）：
 
-| 专家 | 子 Builder | 输出 | 合并来源 |
-|------|------------|------|----------|
-| core | `web-codereview-review-core` | `{BATCH_ID}-core.json` | 扫描 + 规范 |
-| framework | `web-codereview-review-framework` | `{BATCH_ID}-framework.json` | Vue/React + 样式 |
-| reliability | `web-codereview-review-reliability` | `{BATCH_ID}-reliability.json` | 性能 + 健壮性 |
-| security | `web-codereview-review-security` | `{BATCH_ID}-security.json` | 安全（独立） |
+```bash
+node "{SKILL_ROOT}/scripts/build-memory-context.js" \
+  --memory .codereview/memory.json \
+  --batch-id {BATCH_ID} \
+  --expert {core|framework|reliability|security} \
+  --output .codereview/memory-brief-{BATCH_ID}-{expert}.json
+```
+
+| 专家 | 子 Builder | 提示词文件 | 输出 | 合并来源 |
+|------|------------|------------|------|----------|
+| core | `web-codereview-review-core` | `{SKILL_ROOT}/builder-prompts/subagents/03-review-core.md` | `{BATCH_ID}-core.json` | 扫描 + 规范 |
+| framework | `web-codereview-review-framework` | `{SKILL_ROOT}/builder-prompts/subagents/04-review-framework.md` | `{BATCH_ID}-framework.json` | Vue/React + 样式 |
+| reliability | `web-codereview-review-reliability` | `{SKILL_ROOT}/builder-prompts/subagents/05-review-reliability.md` | `{BATCH_ID}-reliability.json` | 性能 + 健壮性 |
+| security | `web-codereview-review-security` | `{SKILL_ROOT}/builder-prompts/subagents/06-review-security.md` | `{BATCH_ID}-security.json` | 安全（独立） |
 
 **每次检视子 Builder 必传：**
 
@@ -252,15 +286,20 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 | `BRANCH1` / `BRANCH2` | 分支 |
 | `DIFF_PATCH_PATH` | `.codereview/diffs/{BATCH_ID}.patch`（存在则必传） |
 | `SEVERITY_MODE` | `state.json` → `review_options.severity_mode` |
+| `MEMORY_BRIEF_PATH` | `.codereview/memory-brief-{BATCH_ID}-{expert}.json` |
 | `TECH_STACK` | 摘要或路径（子 Builder 可读 `tech-stack.json`） |
 | `OUTPUT_PATH` | 结果路径 |
-| `SKILL_ROOT` | 本 Skill 根目录（子 Builder 按需读 `docs/` 下参考文档） |
+| `SKILL_ROOT` | 本 Skill 根目录（读 `docs/vue2-reference.md` 等） |
 
 **检视范围（传达给子 Builder）：**
 
 > 优先读 `DIFF_PATCH_PATH` 中 unified diff；缺失或为空再 `git --no-pager diff {BRANCH2}...{BRANCH1} -- <file>`。只报变更相关行；`line` **字符串**；每条 issue 必须补充 `symbol`（如 `UserList.vue#fetchUsers`、`useUser.ts#useUser`），报告不得只依赖行号定位。`critical_high_only` 时仅 `critical`/`high`。
 
 **适用性：** 以 `task-plan.json` 的 `applicable_experts` 为准；非适用专家在 `review_progress` 中为 `skipped`。
+
+**opencode 并行派发建议：**
+
+同一 `BATCH_ID` 中，对 `applicable_experts` 取交集后可一次性并行拉起多个子 Builder。每个任务必须显式包含：`BATCH_ID`、`BATCH_FILES`、`BRANCH1`、`BRANCH2`、`DIFF_PATCH_PATH`、`SEVERITY_MODE`、`MEMORY_BRIEF_PATH`、`TECH_STACK`、`SKILL_ROOT`、独立 `OUTPUT_PATH`，并强调“完成后只写对应输出文件”。主 Builder 等待这一组输出文件全部存在且 JSON 合法后，再将对应状态改为 `completed`；随后串行执行 `issue-curator` 与 `fix-advisor`。
 
 **框架专家路径变量**（主 Builder 仅在与 **framework** 子 Builder 通信时传入）：`VUE2_REF_PATH` = `{SKILL_ROOT}/docs/vue2-reference.md`；`VUE3_REF_PATH` = `{SKILL_ROOT}/docs/vue3-reference.md`；`REACT_REF_PATH` = `{SKILL_ROOT}/docs/react-reference.md`；`GENERAL_STANDARDS_PATH` = `{SKILL_ROOT}/docs/general-standards.md`。
 
@@ -270,7 +309,18 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 
 ### Phase 5.5：问题策展（每批次一次）
 
+**拉起前：**
+
+```bash
+node "{SKILL_ROOT}/scripts/build-memory-context.js" \
+  --memory .codereview/memory.json \
+  --batch-id {BATCH_ID} \
+  --expert curator \
+  --output .codereview/memory-brief-{BATCH_ID}-curator.json
+```
+
 **子 Builder：** `web-codereview-issue-curator`
+**提示词文件：** `{SKILL_ROOT}/builder-prompts/subagents/07-issue-curator.md`
 
 | 变量 | 值 |
 |------|-----|
@@ -280,6 +330,7 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 | `DIFF_PATCH_PATH` | `.codereview/diffs/{BATCH_ID}.patch`（可选，与 Phase 5 同批） |
 | `RESULTS_DIR` | `.codereview/results/` |
 | `SEVERITY_MODE` | 同 Phase 5 |
+| `MEMORY_BRIEF_PATH` | `.codereview/memory-brief-{BATCH_ID}-curator.json` |
 | `OUTPUT_PATH` | `.codereview/results/{BATCH_ID}-curated.json` |
 | `SKILL_ROOT` | Skill 根目录 |
 
@@ -290,6 +341,7 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 ### Phase 6：修复建议（每批次一次，嵌在 Phase 5 循环末尾）
 
 **子 Builder：** `web-codereview-fix-advisor`
+**提示词文件：** `{SKILL_ROOT}/builder-prompts/subagents/08-fix-advisor.md`
 
 | 变量 | 值 |
 |------|-----|
@@ -316,7 +368,8 @@ node "{SKILL_ROOT}/scripts/git-line-authors.js" \
   --output .codereview/line-authors.json
 ```
 
-**子 Builder：** `web-codereview-report-synthesizer`（`builder-prompts/subagents/09-report-synthesizer.md`）
+**子 Builder：** `web-codereview-report-synthesizer`  
+**提示词：** `{SKILL_ROOT}/builder-prompts/subagents/09-report-synthesizer.md`
 
 | 变量 | 值 |
 |------|-----|
@@ -326,6 +379,8 @@ node "{SKILL_ROOT}/scripts/git-line-authors.js" \
 | `INVENTORY_PATH` | `.codereview/file-inventory.json` |
 | `TEMPLATE_PATH` | `{SKILL_ROOT}/templates/report-template.md` |
 | `REPORT_PATH` | `codereview/report_{BRANCH1}_{DATE}.md` |
+
+合成官读取 `line-authors.json` 填第六节「提交人」列；contributors → {{CONTRIBUTORS}}（第七节「本次参与开发」）。
 
 **完成后：**
 
@@ -337,7 +392,7 @@ node "{SKILL_ROOT}/scripts/git-line-authors.js" \
 
 ### Phase 7.5：HTML 报告渲染（可选）
 
-**子 Builder：** `web-codereview-report-html`（`builder-prompts/subagents/10-report-html.md`）
+**Step 1（必做）：** `node "{SKILL_ROOT}/scripts/render-report-html.js" --md "{REPORT_MD_PATH}" --shell "{HTML_TEMPLATE_PATH}" --out "{HTML_REPORT_PATH}" --state ".codereview/state.json"`（禁止「请查看同名 .md」占位；须 `placeholdersOk: true`）。
 
 | 变量 | 值 |
 |------|-----|
@@ -345,30 +400,38 @@ node "{SKILL_ROOT}/scripts/git-line-authors.js" \
 | `HTML_TEMPLATE_PATH` | `{SKILL_ROOT}/templates/report-shell.html` |
 | `HTML_REPORT_PATH` | 与 MD 同名 `.html` |
 
-完整性校验与 HTML 签收流程见 `{SKILL_ROOT}/docs/state-structure.md` 与 `report-shell.html` 内脚本。
+**Step 2：** 完整性校验：`<!DOCTYPE html>` + `</html>` + `<!-- ato-codereview-html-end -->`（见 `state-structure.md`）。
+
+**Step 3（仅当失败）：** 子 Builder `web-codereview-report-html`（`builder-prompts/subagents/10-report-html.md`），最多 2 次。
+
+**HTML 签收：** 第六节勾选有效/已修（勾选「已修复」自动勾选「有效」）；第七节验证与签收：开发负责人填写结论并提交，**备注**默认「上述问题无需修复」可修改；自动汇总「本次参与开发」。提交后回写 MD 并生成 `【Fix】` 版 HTML；`file://` 下 fetch MD 失败时壳内 JS 会根据页面自动生成 MD。
 
 **完成后：** `html_status = "completed"`，`current_phase = "completed"`。
+
+### completed 输出文案
+
+| `html_status` | 模板 |
+|---|---|
+| `skipped` | `检视完成。MD 报告：{report_path}` |
+| `completed` | `检视完成。MD 报告：{report_path}；HTML 报告：{html_report_path}` |
+| `failed` | `检视完成。MD 报告：{report_path}；HTML 渲染失败（详见 notes），不影响 MD 交付` |
 
 ---
 
 ## 4. 子 Builder 标识对照表
 
-将 `{SKILL_ROOT}/builder-prompts/subagents/` 对应文件粘贴为各 Builder 系统提示词（**1 主 + 10 子**）：
-
-| 标识 | 提示词文件 |
+| 标识 | 提示词来源 |
 |------|------------|
-| `web-codereview-tech-stack` | `01-tech-stack.md` |
-| `web-codereview-task-plan` | `02-task-plan.md` |
-| `web-codereview-review-core` | `03-review-core.md` |
-| `web-codereview-review-framework` | `04-review-framework.md` |
-| `web-codereview-review-reliability` | `05-review-reliability.md` |
-| `web-codereview-review-security` | `06-review-security.md` |
-| `web-codereview-issue-curator` | `07-issue-curator.md` |
-| `web-codereview-fix-advisor` | `08-fix-advisor.md` |
-| `web-codereview-report-synthesizer` | `09-report-synthesizer.md` |
-| `web-codereview-report-html` | `10-report-html.md` |
-
-主 Builder 系统提示词：`builder-prompts/main/MAIN_BUILDER.md`（**1 主 + 10 子**）。
+| `web-codereview-tech-stack` | `builder-prompts/subagents/01-tech-stack.md` |
+| `web-codereview-task-plan` | `builder-prompts/subagents/02-task-plan.md` |
+| `web-codereview-review-core` | `builder-prompts/subagents/03-review-core.md` |
+| `web-codereview-review-framework` | `builder-prompts/subagents/04-review-framework.md` |
+| `web-codereview-review-reliability` | `builder-prompts/subagents/05-review-reliability.md` |
+| `web-codereview-review-security` | `builder-prompts/subagents/06-review-security.md` |
+| `web-codereview-issue-curator` | `builder-prompts/subagents/07-issue-curator.md` |
+| `web-codereview-fix-advisor` | `builder-prompts/subagents/08-fix-advisor.md` |
+| `web-codereview-report-synthesizer` | `builder-prompts/subagents/09-report-synthesizer.md` |
+| `web-codereview-report-html` | `builder-prompts/subagents/10-report-html.md` |
 
 ---
 
@@ -384,8 +447,8 @@ git --no-pager diff {BRANCH2}...{BRANCH1} -- path/to/file.vue
 
 ## 6. 主 Builder 禁令
 
-1. 不要将 `builder-prompts/subagents/*.md` 全文读入主对话  
-2. 不要将 `docs/*.md` 全文读入主对话  
-3. 不要将专家 JSON 全文读入（仅必要时校验存在性）  
-4. 不要在主对话中代做代码检视  
+1. 不要将 `builder-prompts/subagents/*.md` 全文读入主对话
+2. 不要将 `docs/*.md` 全文读入主对话
+3. 不要将专家 JSON 全文读入（仅必要时校验存在性）
+4. 不要在主对话中代做代码检视
 5. 上下文将满 → 写 `state.json` → 请用户重启主 Builder

@@ -33,6 +33,11 @@
 - `{{RESULTS_DIR}}`：专家结果目录（`.codereview/results/`）
 - `{{OUTPUT_PATH}}`：策展结果输出路径（`.codereview/results/{{BATCH_ID}}-curated.json`）
 - `{{SKILL_ROOT}}`：本 Skill 根目录
+- `{{MEMORY_BRIEF_PATH}}`：项目记忆 brief（可选）
+
+## 项目记忆（Step 1 之前）
+
+若 `{{MEMORY_BRIEF_PATH}}` 存在：对高匹配 `[误检提示]` 可移入 `invalidated[]`（须引用 memory id）；**security 类禁止仅凭 memory 排除**。
 
 ## 执行步骤
 

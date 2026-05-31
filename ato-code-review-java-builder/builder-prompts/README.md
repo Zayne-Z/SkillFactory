@@ -27,12 +27,12 @@
 | `java-codereview-report-synthesizer` | [subagents/09-report-synthesizer.md](subagents/09-report-synthesizer.md) | 7 |
 | `java-codereview-report-html` | [subagents/10-report-html.md](subagents/10-report-html.md) | 7.5（可选） |
 
-> 升级提示：新增 `issue-curator`、`report-html`（可选）时按上表创建 Builder；主 Builder 须用 `update-state.js` 落盘（见 `SKILL.md` §0、§2.5）。Phase 1 须一次问齐四项，`user_confirmed=true` 后才可跑 Phase 2 脚本。
+> 升级提示：新增 `issue-curator`、`report-html`（可选）时按上表创建 Builder；主 Builder 须用 `update-state.js` 落盘（见 `SKILL.md` §0、§2.5）。Phase 1 须一次问齐五项，`user_confirmed=true` 后才可跑 Phase 2 脚本。
 
 ## 运行方式
 
 1. 创建好上述 Builder 后，**启动主 Builder**。
-2. 主 Builder 会读取 **`SKILL.md`**（与本目录同级）获取完整工作流；**每次对话先执行 §0 启动清单**（Phase 1 四问、`update-state.js` 落盘）。
+2. 主 Builder 会读取 **`SKILL.md`**（与本目录同级）获取完整工作流；**每次对话先执行 §0 启动清单**（§0.0 续跑/重新检视、Phase 1 五问、`update-state.js` 落盘）。
 3. 主 Builder 按流程自动拉起子 Builder，传入变量。
 4. 子 Builder 超时/上下文超长 → 主 Builder 自动重拉。
 5. 主 Builder 自身上下文超长 → 用户重新启动主 Builder → 自动从 `state.json` 断点继续。

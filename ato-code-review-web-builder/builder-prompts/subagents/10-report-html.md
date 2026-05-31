@@ -120,8 +120,8 @@
       <details class="issue-row row-mustfix" data-issue-id="SEC-004" data-author="张三" data-domain="安全">
         <summary>
           <span class="col-id">SEC-004</span>
-          <span class="col-loc col-clip" title="OrderController.java:52">OrderController.java:52</span>
-          <span class="col-fn col-clip" title="create">create</span>
+          <span class="col-loc col-clip" title="OrderList.vue:52">OrderList.vue:52</span>
+          <span class="col-fn col-clip" title="loadOrders">loadOrders</span>
           <span class="col-author col-clip" title="张三">张三</span>
           <span class="col-sev sev-critical">C</span>
           <span class="col-must yes">必改</span>
@@ -224,18 +224,13 @@
    - 必须以 `</html>` 收尾
    - `</html>` 之后、文件末尾插入哨兵：`<!-- ato-codereview-html-end -->`
 
-### Step 4：上下文超长降级
+### Step 4：失败处理（禁止默认降级占位）
 
-若无法在一次会话内渲染全部章节，按优先级保留：**一 → 三 → 六 → 五 → 其余**。未渲染章节使用：
+若 MD 过长，**分章读取 MD 并在内存拼接后一次性写出**完整 HTML，不得省略第五节 issue 块或第六节问题行。
 
-```html
-<section class="truncated" id="section-...">
-  <h2>...</h2>
-  <p>本章内容因上下文限制未完整渲染，请查看同名 .md 报告。</p>
-</section>
-```
+**仅当** MD 缺少某个 `##` 章节时，方可对该章使用 `section.truncated` 占位。**禁止**因省 token 对已有章节写「请查看同名 .md」。
 
-**仍须**输出完整 `</html>` 与哨兵注释，并在返回摘要中注明 `degraded: true` 及已省略章节列表。
+若仍无法完成：返回 `success: false`，建议主编排重跑 `render-report-html.js`。
 
 ### Step 5：向主 Builder 返回摘要
 

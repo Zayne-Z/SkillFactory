@@ -8,14 +8,30 @@
 2. 若 skill 安装路径不是 `./ato-code-review-web`，请调整每个 `prompt` 的 `{file:...}` 路径。
 3. 在 opencode 中使用 `web-codereview-main` 作为主编排 agent。
 
+**主编排 prompt 即整份 `SKILL.md`**。启动规则见 **§0**；子 agent 仍用 `prompts/*.md`。
+
+## 续跑 / 重新检视
+
+- 启动时**仅**检测 `.codereview/state.json`（不探测 `codereview/` 历史报告）
+- 存在则问：续跑 / 重新检视
+- 重新检视：`node scripts/reset-run.js`（保留 `memory.json`）
+
+## Phase 1 五问
+
+分支、检视深度、跳过低风险、是否 HTML、**每批最大行数**（默认 900）。详见 `SKILL.md` §0.2。
+
+## 项目记忆
+
+- `.codereview/memory.json`：用户手动维护
+- Phase 5 拉起专家前：`build-memory-context.js` → `MEMORY_BRIEF_PATH`
+- 详见 `docs/memory-system.md`
+
 ## 并行执行约定
 
-- `web-codereview-main` 是 primary agent，负责读写 `.codereview/state.json`、运行脚本、并通过 Task 工具调用子 agent。
-- `web-codereview-review-core`、`web-codereview-review-framework`、`web-codereview-review-reliability`、`web-codereview-review-security` 是 subagent；同一批次内可以并行执行。
-- 每个 subagent 只写自己的 `OUTPUT_PATH`，例如 `.codereview/results/batch-001-core.json`，避免并行写冲突。
-- `issue-curator` 必须等同批次所有适用检视专家完成后再运行，输出 `.codereview/results/batch-001-curated.json`。
-- `fix-advisor` 必须等同批次 `issue-curator` 完成后再运行，并优先消费 curated.json。
+- `web-codereview-main`：读写 state、跑脚本、派发子 agent
+- 同批次 `core` / `framework` / `reliability` / `security` 可并行
+- `issue-curator` → `fix-advisor` 须串行
 
 ## 升级提示
 
-从旧版（无 `issue-curator`）升级时，将 `opencode.example.json` 中新增的 `web-codereview-issue-curator` 合并到现有 opencode 配置，并替换 `fix-advisor` 与 `report-synthesizer` 的 prompt。运行中的 `.codereview/state.json` 会由主编排 Agent 启动时自动补 `curator: "pending"`。
+合并 `opencode.example.json` 中新增子 agent；旧 `state.json` 启动时自动补字段（含 `max_lines_per_batch: 900`）。

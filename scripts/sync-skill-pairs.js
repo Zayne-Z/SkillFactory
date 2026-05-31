@@ -21,7 +21,7 @@ const LEGACY_PROMPTS = {
   java: new Set(['spec-reviewer.md', 'robustness-reviewer.md', 'sql-reviewer.md']),
 };
 
-const REVIEW_OPTIONS = ['severity_mode', 'skip_low_risk_files', 'generate_html_report', 'user_confirmed'];
+const REVIEW_OPTIONS = ['severity_mode', 'skip_low_risk_files', 'generate_html_report', 'max_lines_per_batch', 'user_confirmed'];
 
 const PAIRS = {
   web: {
@@ -47,6 +47,7 @@ const PAIRS = {
       'general-standards.md',
       'security-checklist.md',
       'state-structure.md',
+      'memory-system.md',
     ],
     skipScripts: ['gen-builder-prompts.js'],
   },
@@ -71,6 +72,7 @@ const PAIRS = {
       'spring-boot-reference.md',
       'mybatis-reference.md',
       'state-structure.md',
+      'memory-system.md',
     ],
     skipScripts: [],
   },

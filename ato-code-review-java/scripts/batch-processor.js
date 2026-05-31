@@ -5,13 +5,13 @@
  * 用法：
  *   node batch-processor.js \
  *     --inventory .codereview/file-inventory.json \
- *     --max-lines 600 \
+ *     --max-lines 900 \
  *     --output .codereview/file-inventory.json
  *
  * 分批策略（Java 特化）：
  *  1. Mapper.xml 与对应 Mapper.java 优先放同一批（便于 SQL 专家跨文件分析）
  *  2. Controller 与同模块 Service 优先同批（便于框架/健壮性专家跨层分析）
- *  3. 每批变动行数不超过 max-lines（Java 默认 600，比前端更保守）
+ *  3. 每批变动行数不超过 max-lines（Java 默认 900）
  *  4. 超过 max-lines 的单文件单独成批
  *  5. 纯 POJO/DTO 文件归为低优先级批次
  */
@@ -89,7 +89,7 @@ function main() {
   assertPhase1Complete({ force: args.force === true || args.force === 'true' });
 
   const inventoryPath = args.inventory || '.codereview/file-inventory.json';
-  const maxLines = parseInt(args['max-lines']) || 600;
+  const maxLines = parseInt(args['max-lines']) || 900;
   const outputPath = args.output || inventoryPath;
 
   if (!fs.existsSync(inventoryPath)) {

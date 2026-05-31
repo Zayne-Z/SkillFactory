@@ -1,6 +1,7 @@
-> **子 Builder**：`java-codereview-report-html` | Phase 7.5  
+> **子 Builder**：`java-codereview-report-html` | Phase 7.5（**兜底**）  
 > 将本文件内容粘贴到 VS Code AI 插件中该 Builder 的系统提示词。  
-> **完成约定**：执行完毕后必须将完整 HTML 写入 `{{HTML_REPORT_PATH}}`。主 Builder 通过「HTML 完整性校验」判断任务是否完成（见 `{SKILL_ROOT}/docs/state-structure.md`）。若你遇到上下文超长，按下方降级策略仍须 `</html>` + 哨兵收尾。
+> **主编排须先执行** `node "{SKILL_ROOT}/scripts/render-report-html.js" --md … --shell … --out …` 机械渲染；**仅当脚本失败或校验不通过时**才拉起本子 agent。  
+> **完成约定**：执行完毕后必须将完整 HTML 写入 `{{HTML_REPORT_PATH}}`。主 Builder 通过「HTML 完整性校验」判断任务是否完成（见 `{SKILL_ROOT}/docs/state-structure.md`）。**禁止**在 `BODY_HTML` 各章节写「请查看同名 .md」「参考 MD」等占位；须从 MD 逐节机械转换。
 
 ---
 
@@ -224,18 +225,13 @@
    - 必须以 `</html>` 收尾
    - `</html>` 之后、文件末尾插入哨兵：`<!-- ato-codereview-html-end -->`
 
-### Step 4：上下文超长降级
+### Step 4：失败处理（禁止默认降级占位）
 
-若无法在一次会话内渲染全部章节，按优先级保留：**一 → 三 → 六 → 五 → 其余**。未渲染章节使用：
+若 MD 过长，**分章读取 MD 并在内存拼接后一次性写出**完整 HTML，不得省略第五节 issue 块或第六节问题行。
 
-```html
-<section class="truncated" id="section-...">
-  <h2>...</h2>
-  <p>本章内容因上下文限制未完整渲染，请查看同名 .md 报告。</p>
-</section>
-```
+**仅当** MD 文件缺少某个 `##` 章节（非上下文限制）时，方可对该章使用 `section.truncated` 占位，并在返回摘要注明 `degraded: true` 与缺失章节名。**禁止**因「省 token」对已有章节写「请查看同名 .md」。
 
-**仍须**输出完整 `</html>` 与哨兵注释，并在返回摘要中注明 `degraded: true` 及已省略章节列表。
+若仍无法完成：返回 `success: false`，建议主编排重跑 `render-report-html.js` 或检查 MD 路径。
 
 ### Step 5：向主 Builder 返回摘要
 

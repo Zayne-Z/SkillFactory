@@ -8,7 +8,7 @@
  *     --expert core \
  *     --output .codereview/memory-brief-batch-001-core.json
  *
- * expert: core | spring | security | data | curator
+ * expert: core | framework | reliability | security | curator
  */
 'use strict';
 
@@ -34,7 +34,7 @@ function parseArgs(argv) {
     else if (a === '--max-chars' && argv[i + 1]) out.maxChars = parseInt(argv[++i], 10) || DEFAULT_MAX_CHARS;
   }
   if (!out.expert) {
-    console.error('缺少 --expert (core|spring|security|data|curator)');
+    console.error('缺少 --expert (core|framework|reliability|security|curator)');
     process.exit(1);
   }
   if (!out.output) {

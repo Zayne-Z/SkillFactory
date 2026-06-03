@@ -35,6 +35,7 @@ description: >-
 
 ```bash
 node "{SKILL_ROOT}/scripts/init-memory.js"
+# state 不存在时：
 node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
 ```
 

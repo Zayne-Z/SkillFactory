@@ -34,6 +34,7 @@ description: >-
 
 ```bash
 node "{SKILL_ROOT}/scripts/init-memory.js"
+# state 不存在时：
 node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
 ```
 
@@ -149,17 +150,17 @@ codereview/   ← 多版本 report_*.md / *.html（不参与启动探测）
 
 禁止将子 Builder 提示词全文、`docs/` 全文、结果 JSON 全量读入主对话；只传变量与路径。上下文将满时写 `state.json` 并请用户重启主 Builder。
 
-### 2.5 opencode 并行执行约定
+### 2.5 Builder 并行执行约定
 
-本 Skill 可通过 opencode 执行。主 Builder 应将 `builder-prompts/subagents/*.md` 作为子 Builder 的系统提示词来源，并通过任务描述传入变量。每个子 Builder 的唯一交付物是写入约定的 `OUTPUT_PATH` JSON/报告文件；主 Builder 只检查文件，不依赖对话内容合并结果。
+本 Skill 面向 VS Code AI Builder 执行。主 Builder 应将 `builder-prompts/subagents/*.md` 作为子 Builder 的系统提示词来源，并通过任务描述传入变量。每个子 Builder 的唯一交付物是写入约定的 `OUTPUT_PATH` JSON/报告文件；主 Builder 只检查文件，不依赖对话内容合并结果。
 
 **并行原则：**
 
 - Phase 3 技术栈、Phase 4 任务规划存在依赖关系，必须串行。
-- Phase 5 中，同一批次内 `core`、`framework`、`reliability`、`security` 四个专家彼此独立，凡 `task-plan.json` 标记为适用且状态为 `pending` / `failed` 的，可以通过 opencode 并行拉起。
+- Phase 5 中，同一批次内 `core`、`framework`、`reliability`、`security` 四个专家彼此独立，凡 `task-plan.json` 标记为适用且状态为 `pending` / `failed` 的，可以通过 VS Code AI 并行拉起。
 - 并行启动前，先把这些专家状态统一写为 `in_progress`；每个子 Builder 写自己的固定输出文件，互不共享写入目标。
 - 等同批次所有适用专家完成后，先执行该批次的 `issue-curator`；curator 完成后再执行 `fix-advisor`，fix 完成后再进入下一批次或报告合成。
-- 若 opencode 当前环境不支持并行任务，则按 `core → framework → reliability → security` 串行降级，输出文件与状态规则保持不变。
+- 若 VS Code AI 当前环境不支持并行任务，则按 `core → framework → reliability → security` 串行降级，输出文件与状态规则保持不变。
 
 ---
 
@@ -297,7 +298,7 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" \
 
 **适用性：** 以 `task-plan.json` 的 `applicable_experts` 为准；非适用专家在 `review_progress` 中为 `skipped`。
 
-**opencode 并行派发建议：**
+**Builder 并行派发建议：**
 
 同一 `BATCH_ID` 中，对 `applicable_experts` 取交集后可一次性并行拉起多个子 Builder。每个任务必须显式包含：`BATCH_ID`、`BATCH_FILES`、`BRANCH1`、`BRANCH2`、`DIFF_PATCH_PATH`、`SEVERITY_MODE`、`MEMORY_BRIEF_PATH`、`TECH_STACK`、`SKILL_ROOT`、独立 `OUTPUT_PATH`，并强调“完成后只写对应输出文件”。主 Builder 等待这一组输出文件全部存在且 JSON 合法后，再将对应状态改为 `completed`；随后串行执行 `issue-curator` 与 `fix-advisor`。
 

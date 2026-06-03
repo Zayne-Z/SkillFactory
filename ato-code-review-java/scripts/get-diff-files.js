@@ -139,6 +139,17 @@ function execGit(args) {
   }
 }
 
+function normalizeNumstatPath(filePath) {
+  let normalized = String(filePath || '').trim();
+  if (normalized.includes('=>')) {
+    normalized = normalized.replace(/\{[^}]*=>\s*([^}]*)\}/g, (_, newPart) => newPart.trim());
+    if (normalized.includes('=>')) {
+      normalized = normalized.split('=>').pop().trim();
+    }
+  }
+  return normalized;
+}
+
 function ensureDir(dirPath) {
   if (dirPath && !fs.existsSync(dirPath)) {
     fs.mkdirSync(dirPath, { recursive: true });
@@ -206,7 +217,7 @@ function main() {
   diffNumStat.split('\n').forEach(line => {
     const parts = line.split('\t');
     if (parts.length >= 3) {
-      const filePath = parts[2].trim();
+      const filePath = normalizeNumstatPath(parts[2]);
       const additions = parseInt(parts[0]) || 0;
       const deletions = parseInt(parts[1]) || 0;
       numStatMap[filePath] = { additions, deletions };

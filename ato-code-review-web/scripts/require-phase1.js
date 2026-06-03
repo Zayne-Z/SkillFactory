@@ -7,7 +7,7 @@ const path = require('path');
 const PHASE1_MESSAGE = `
 PHASE1_REQUIRED: 尚未完成 Phase 1 五项确认，禁止执行检视脚本。
 
-主编排 Agent 必须向用户一次收齐并复述确认：
+主编排器必须向用户一次收齐并复述确认：
   1) BRANCH1 / BRANCH2
   2) severity_mode (all | critical_high_only)
   3) skip_low_risk_files (true | false)

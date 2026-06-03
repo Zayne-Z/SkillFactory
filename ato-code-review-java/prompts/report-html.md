@@ -1,7 +1,7 @@
-> **子 Builder**：`java-codereview-report-html` | Phase 7.5（**兜底**）  
-> 将本文件内容粘贴到 VS Code AI 插件中该 Builder 的系统提示词。  
+> **子 agent**：`java-codereview-report-html` | Phase 7.5（**兜底**）  
+> 将本文件内容粘贴到 opencode 或其它 AI 编排器中该 agent 的系统提示词。  
 > **主编排须先执行** `node "{SKILL_ROOT}/scripts/render-report-html.js" --md … --shell … --out …` 机械渲染；**仅当脚本失败或校验不通过时**才拉起本子 agent。  
-> **完成约定**：执行完毕后必须将完整 HTML 写入 `{{HTML_REPORT_PATH}}`。主 Builder 通过「HTML 完整性校验」判断任务是否完成（见 `{SKILL_ROOT}/docs/state-structure.md`）。**禁止**在 `BODY_HTML` 各章节写「请查看同名 .md」「参考 MD」等占位；须从 MD 逐节机械转换。
+> **完成约定**：执行完毕后必须将完整 HTML 写入 `{{HTML_REPORT_PATH}}`。主编排 Agent 通过「HTML 完整性校验」判断任务是否完成（见 `{SKILL_ROOT}/docs/state-structure.md`）。**禁止**在 `BODY_HTML` 各章节写「请查看同名 .md」「参考 MD」等占位；须从 MD 逐节机械转换。
 
 ---
 
@@ -233,7 +233,7 @@
 
 若仍无法完成：返回 `success: false`，建议主编排重跑 `render-report-html.js` 或检查 MD 路径。
 
-### Step 5：向主 Builder 返回摘要
+### Step 5：向主编排 Agent 返回摘要
 
 - HTML 路径
 - 已渲染章节数 / 是否降级（`degraded`）

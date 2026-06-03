@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 按批次一次性导出 git unified diff，供各检视子 Builder 直接读取，避免每个专家重复执行 git diff。
+ * 按批次一次性导出 git unified diff，供各检视子任务直接读取，避免每个专家重复执行 git diff。
  *
  * 用法：
  *   node export-batch-diffs.js \
@@ -136,7 +136,7 @@ function main() {
     dir: outputDir.replace(/\\/g, '/'),
     manifest: manifestPath.replace(/\\/g, '/'),
     strategy: 'precomputed_per_batch',
-    note: '各检视子 Builder 优先读取本批次 .patch，与多次 git diff 等价，减少重复 I/O',
+    note: '各检视子任务优先读取本批次 .patch，与多次 git diff 等价，减少重复 I/O',
   };
   fs.writeFileSync(inventoryPath, JSON.stringify(inventory, null, 2), 'utf8');
 

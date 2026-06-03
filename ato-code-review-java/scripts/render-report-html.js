@@ -70,6 +70,24 @@ function resolveStatePath(stateArg, mdPath) {
   return null;
 }
 
+function firstValue(...values) {
+  return values.find((value) => value !== undefined && value !== null && value !== '');
+}
+
+function labelFromFramework(framework, ts = {}) {
+  const raw = firstValue(ts.framework_name, ts.frameworkName, framework, ts.review_mode);
+  const key = String(raw || '').toLowerCase();
+  const labels = {
+    vue2: 'Vue 2',
+    vue3: 'Vue 3',
+    vue: 'Vue',
+    react: 'React',
+    vanilla: '原生前端',
+    other: '其它前端框架',
+  };
+  return labels[key] || String(raw || '');
+}
+
 function buildVarsFromWorkspace(statePath) {
   const vars = {};
   if (!statePath || !fs.existsSync(statePath)) return vars;
@@ -100,6 +118,18 @@ function buildVarsFromWorkspace(statePath) {
     const inv = JSON.parse(fs.readFileSync(invPath, 'utf8'));
     if (inv.summary?.total_files != null) vars.TOTAL_FILES = String(inv.summary.total_files);
     else if (Array.isArray(inv.files)) vars.TOTAL_FILES = String(inv.files.length);
+    if (firstValue(inv.summary?.total_additions, inv.total_additions) != null) {
+      vars.TOTAL_ADDITIONS = String(firstValue(inv.summary?.total_additions, inv.total_additions));
+    }
+    if (firstValue(inv.summary?.total_deletions, inv.total_deletions) != null) {
+      vars.TOTAL_DELETIONS = String(firstValue(inv.summary?.total_deletions, inv.total_deletions));
+    }
+    if (firstValue(inv.summary?.total_changed_lines, inv.total_changed_lines) != null) {
+      vars.TOTAL_CHANGED_LINES = String(firstValue(inv.summary?.total_changed_lines, inv.total_changed_lines));
+    }
+    if (vars.TOTAL_ADDITIONS == null && vars.TOTAL_CHANGED_LINES != null) vars.TOTAL_ADDITIONS = vars.TOTAL_CHANGED_LINES;
+    if (vars.TOTAL_DELETIONS == null) vars.TOTAL_DELETIONS = '0';
+    if (inv.total_batches != null) vars.TOTAL_BATCHES = String(inv.total_batches);
     const rs = inv.review_scope;
     if (rs?.skip_low_risk_files) {
       const n = (rs.skipped_low_risk_files || []).length;
@@ -118,10 +148,13 @@ function buildVarsFromWorkspace(statePath) {
   const tsPath = path.join(dir, 'tech-stack.json');
   if (fs.existsSync(tsPath)) {
     const ts = JSON.parse(fs.readFileSync(tsPath, 'utf8'));
-    const parts = [ts.java_version, ts.framework, ts.build_tool].filter(Boolean);
+    const frameworkName = labelFromFramework(ts.framework, ts);
+    const version = firstValue(ts.java_version, ts.vue_version, ts.react_version);
+    const parts = [version, frameworkName, ts.build_tool, ts.package_manager, ts.state_management, ts.router].filter(Boolean);
     vars.TECH_STACK_SUMMARY = ts.summary || parts.join(' · ') || '';
+    vars.FRAMEWORK_NAME = frameworkName;
     vars.SPRING_BOOT_VERSION = ts.spring_boot_version || ts.springBootVersion || '';
-    vars.ORM_FRAMEWORK = ts.orm || ts.orm_framework || ts.ormFramework || '';
+    vars.ORM_FRAMEWORK = ts.orm || ts.orm_framework || ts.ormFramework || 'ORM';
     if (ts.review_mode_description) vars.REVIEW_MODE_DESCRIPTION = ts.review_mode_description;
   }
 

@@ -10,7 +10,7 @@ description: >-
 
 # Java 后端代码检视 · 主编排工作流
 
-> **本文件是主编排 Agent 运行时的唯一指令来源**（opencode / Builder 均加载本 `SKILL.md`）。
+> **本文件是 opencode 主编排 Agent 运行时的唯一指令来源**。
 > 主编排 Agent 启动后按阶段推进，通过 opencode/子 agent 执行检视；
 > 主编排 Agent 自身**不做**深度代码检视，只负责编排、状态管理、并行调度与故障恢复。
 

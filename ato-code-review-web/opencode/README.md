@@ -18,7 +18,7 @@
 
 ## Phase 1 五问
 
-分支、检视深度、跳过低风险、是否 HTML、**每批最大行数**（默认 900）。详见 `SKILL.md` §0.2。
+分支、检视深度、跳过低风险、是否 HTML、**每批最大行数**都必须有值；可以分多轮问，不要求一次性发完。用户跳过时用默认值：当前分支 / `master`、`critical_high_only`、`true`、`true`、`1200`。详见 `SKILL.md` §0.2。
 
 ## 项目记忆
 
@@ -34,4 +34,4 @@
 
 ## 升级提示
 
-合并 `opencode.example.json` 中新增子 agent；旧 `state.json` 启动时自动补字段（含 `max_lines_per_batch: 900`）。
+合并 `opencode.example.json` 中新增子 agent；旧 `state.json` 启动时自动补字段（含 `max_lines_per_batch: 1200`）。

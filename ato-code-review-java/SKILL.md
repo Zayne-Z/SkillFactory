@@ -4,8 +4,8 @@ description: >-
   Java 后端增量代码检视 Skill。主编排 Agent 读取本文件驱动全流程，可通过 opencode
   并行拉起子 agent/subagent 逐阶段完成检视，所有中间状态持久化到 .codereview/state.json，
   支持任意环节断点续跑。启动后若 .codereview/state.json 存在则询问续跑或重新检视；
-  Phase 1 必须向用户逐项确认分支、检视深度、跳过低风险、是否生成 HTML、每批最大行数，
-  五项全部收齐并复述确认前禁止进入 Phase 2。opencode 主编排 Agent 必须通过 scripts/update-state.js 落盘 state.json，禁止仅在对话中更新进度。
+  Phase 1 必须确认分支、检视深度、跳过低风险、是否生成 HTML、每批最大行数；
+  可分多轮收集，用户跳过时应用默认值，五项全部落盘前禁止进入 Phase 2。opencode 主编排 Agent 必须通过 scripts/update-state.js 落盘 state.json，禁止仅在对话中更新进度。
 ---
 
 # Java 后端代码检视 · 主编排工作流
@@ -53,21 +53,21 @@ node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
 
 ### 0.2 Phase 1 五问（`user_confirmed !== true` 时**只做本步**）
 
-**禁止**：只问分支就跑脚本 / 拉子 agent；用补丁默认值代替用户选择。
+**禁止**：只问分支就跑脚本 / 拉子 agent；五项未收齐或未应用默认值就进入 Phase 2。
 
-**必须**向用户**一次性**发送（五项同一条消息，不要分多轮只问第 1 项）：
+五项不必一次性发给用户，可分多轮收集；但进入 Phase 2 前必须全部有合法值并复述确认。用户回复“跳过 / 默认 / 随便”时，按下列默认值落盘。
 
 ```
-请确认本次 Java 增量检视配置（五项均需回复，缺一不可）：
+请确认本次 Java 增量检视配置（五项最终都必须有值）：
 
-1) 分支 — BRANCH1：___  BRANCH2：（默认 master）
-2) 检视深度 severity_mode — all | critical_high_only
-3) 跳过低风险 skip_low_risk_files — true | false
-4) 生成 HTML generate_html_report — true | false
-5) 每批最大变动行数 max_lines_per_batch — 默认 900（大 MR 可 1200，小 MR 可 600）
+1) 分支 — BRANCH1：当前分支  BRANCH2：master
+2) 检视深度 severity_mode — 默认 critical_high_only（可选 all）
+3) 跳过低风险 skip_low_risk_files — 默认 true（可选 false）
+4) 生成 HTML generate_html_report — 默认 true（可选 false）
+5) 每批最大变动行数 max_lines_per_batch — 默认 1200
 ```
 
-用户只答分支 → 说明还需 2/3/4/5，**不得**继续。
+用户只答部分问题 → 可继续追问缺失项；用户跳过缺失项 → 应用默认值。**不得**在五项落盘前继续。
 
 复述五项无异议后**必须**执行：
 
@@ -186,9 +186,9 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
        └─ 其它          → 跳转到对应 Phase 继续
 4. 兼容性补丁：
    a. 若 state.json 不含 review_options 字段
-      → 补入默认值 { "severity_mode": "all", "skip_low_risk_files": false, "generate_html_report": false, "max_lines_per_batch": 900 }
-   b. 若 review_options 缺少 generate_html_report → 补 false（**仅字段占位**；不得据此跳过 Phase 1 向用户提问）
-   c. 若 review_options 缺少 max_lines_per_batch → 补 900
+      → 补入默认值 { "severity_mode": "critical_high_only", "skip_low_risk_files": true, "generate_html_report": true, "max_lines_per_batch": 1200 }
+   b. 若 review_options 缺少 generate_html_report → 补 true（**仅字段占位**；不得据此跳过 Phase 1 向用户提问）
+   c. 若 review_options 缺少 max_lines_per_batch → 补 1200
    d. 若 review_options 缺少 user_confirmed → 补 false（为 false 时必须执行完整 Phase 1 清单）
    e. 若 synthesis 缺少 html_report_path / html_status → 补 "" 与 "skipped"
    f. 若 review_progress[*] 缺少 curator 键（升级到含 issue-curator 的版本）
@@ -258,7 +258,7 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 | 时机 | 命令示例 |
 |------|----------|
 | 启动 / Phase 0 | `node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init` |
-| Phase 1 复述确认后 | `node .../update-state.js --branch1 {B1} --branch2 {B2} --set review_options.severity_mode=all --set review_options.skip_low_risk_files=false --set review_options.generate_html_report=true --set review_options.max_lines_per_batch=900 --set review_options.user_confirmed=true --phase diff_analysis --checkpoint phase1_done` |
+| Phase 1 复述确认后 | `node .../update-state.js --branch1 {B1} --branch2 {B2} --set review_options.severity_mode=critical_high_only --set review_options.skip_low_risk_files=true --set review_options.generate_html_report=true --set review_options.max_lines_per_batch=1200 --set review_options.user_confirmed=true --phase diff_analysis --checkpoint phase1_done` |
 | Phase 2 脚本跑完 | `node .../update-state.js --phase tech_stack --checkpoint phase2_diff_done`（可从 inventory 读 total 写入 `--set diff_analysis.total_files=N` 等） |
 | Phase 3 完成 | `node .../update-state.js --phase task_planning --checkpoint phase3_tech_stack_done` |
 | Phase 4 完成 | `node .../update-state.js --init-review-progress --task-plan .codereview/task-plan.json --phase reviewing --checkpoint phase4_task_plan_done` |
@@ -299,8 +299,8 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 |------|------|
 | `severity_mode` | `all` \| `critical_high_only` |
 | `skip_low_risk_files` | `true` \| `false` |
-| `generate_html_report` | `true` \| `false`（须用户明确选择，不得静默默认） |
-| `max_lines_per_batch` | 正整数，默认 `900`（Phase 2 传给 `batch-processor.js --max-lines`） |
+| `generate_html_report` | `true` \| `false`；默认 `true` |
+| `max_lines_per_batch` | 正整数，默认 `1200`（Phase 2 传给 `batch-processor.js --max-lines`） |
 | `user_confirmed` | Phase 1 复述确认后为 `true` |
 
 ---
@@ -314,7 +314,7 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 node "{SKILL_ROOT}/scripts/get-diff-files.js" --branch1 {BRANCH1} --branch2 {BRANCH2} --output .codereview/file-inventory.json
 ```
 
-**Step 2：分批**（`max-lines` 取自 `state.review_options.max_lines_per_batch`，默认 900）
+**Step 2：分批**（`max-lines` 取自 `state.review_options.max_lines_per_batch`，默认 1200）
 ```powershell
 node "{SKILL_ROOT}/scripts/batch-processor.js" --inventory .codereview/file-inventory.json --max-lines {MAX_LINES} --output .codereview/file-inventory.json
 ```

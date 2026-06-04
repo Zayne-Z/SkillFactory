@@ -27,7 +27,7 @@
 | `java-codereview-report-synthesizer` | [subagents/09-report-synthesizer.md](subagents/09-report-synthesizer.md) | 7 |
 | `java-codereview-report-html` | [subagents/10-report-html.md](subagents/10-report-html.md) | 7.5（可选） |
 
-> 升级提示：新增 `issue-curator`、`report-html`（可选）时按上表创建 Builder；主 Builder 须用 `update-state.js` 落盘（见 `SKILL.md` §0、§2.5）。Phase 1 须一次问齐五项，`user_confirmed=true` 后才可跑 Phase 2 脚本。
+> 升级提示：新增 `issue-curator`、`report-html`（可选）时按上表创建 Builder；主 Builder 须用 `update-state.js` 落盘（见 `SKILL.md` §0、§2.5）。Phase 1 五项可以分多轮收集，全部有值并 `user_confirmed=true` 后才可跑 Phase 2 脚本。
 
 ## 运行方式
 

@@ -6,7 +6,7 @@
  *   node update-state.js --init
  *   node update-state.js --phase branch_selection --checkpoint startup
  *   node update-state.js --set branches.branch1=feature/x --set branches.branch2=master
- *   node update-state.js --set review_options.severity_mode=all --set review_options.user_confirmed=true
+ *   node update-state.js --set review_options.severity_mode=critical_high_only --set review_options.user_confirmed=true
  *   node update-state.js --expert batch-001:core:in_progress
  *   node update-state.js --expert batch-001:core:completed --checkpoint batch-001-core-done
  *   node update-state.js --init-review-progress --task-plan .codereview/task-plan.json
@@ -16,6 +16,28 @@
 
 const fs = require('fs');
 const path = require('path');
+const { execFileSync } = require('child_process');
+
+const DEFAULT_REVIEW_OPTIONS = {
+  severity_mode: 'critical_high_only',
+  skip_low_risk_files: true,
+  generate_html_report: true,
+  max_lines_per_batch: 1200,
+  user_confirmed: false,
+};
+
+function currentGitBranch() {
+  try {
+    const name = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+      cwd: process.cwd(),
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+    return name && name !== 'HEAD' ? name : '';
+  } catch {
+    return '';
+  }
+}
 
 function parseArgs(argv) {
   const opts = {
@@ -94,14 +116,8 @@ function defaultState() {
     updated_at: t,
     current_phase: 'branch_selection',
     last_checkpoint: 'init',
-    branches: { branch1: '', branch2: 'master' },
-    review_options: {
-      severity_mode: 'all',
-      skip_low_risk_files: false,
-      generate_html_report: false,
-      max_lines_per_batch: 900,
-      user_confirmed: false,
-    },
+    branches: { branch1: currentGitBranch(), branch2: 'master' },
+    review_options: { ...DEFAULT_REVIEW_OPTIONS },
     tech_stack: {},
     diff_analysis: {
       total_files: 0,
@@ -138,6 +154,19 @@ function setByPath(obj, keypath, value) {
     cur = cur[p];
   }
   cur[parts[parts.length - 1]] = value;
+}
+
+function applyPhase1Defaults(state) {
+  state.branches = state.branches || {};
+  if (!state.branches.branch1) state.branches.branch1 = currentGitBranch();
+  if (!state.branches.branch2) state.branches.branch2 = 'master';
+
+  state.review_options = state.review_options || {};
+  for (const [key, value] of Object.entries(DEFAULT_REVIEW_OPTIONS)) {
+    if (state.review_options[key] === undefined || state.review_options[key] === null || state.review_options[key] === '') {
+      state.review_options[key] = value;
+    }
+  }
 }
 
 function isExpertApplicable(applicable, key) {
@@ -236,6 +265,8 @@ function applyPatches(state, opts) {
   for (const note of opts.notes) {
     state.notes.push({ at: nowIso(), message: note });
   }
+
+  applyPhase1Defaults(state);
 
   state.updated_at = nowIso();
   return state;

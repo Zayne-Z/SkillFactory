@@ -62,7 +62,7 @@ function checkSkillRoots() {
 
 function checkOpencodeContracts() {
   const javaConfig = read('ato-code-review-java/opencode/opencode.example.json');
-  assert(javaConfig.includes('ask all 5 Phase-1 options'), 'java opencode description should mention all 5 Phase-1 options');
+  assert(javaConfig.includes('ensure all 5 Phase-1 options have values'), 'java opencode description should require all 5 Phase-1 options to have values');
 
   const javaReport = firstLines(read('ato-code-review-java/prompts/report-synthesizer.md'), 5);
   assert(javaReport.includes('子 agent'), 'java opencode report-synthesizer should be labelled 子 agent');
@@ -102,6 +102,16 @@ function checkScriptContracts() {
     const render = read(`${root}/scripts/render-report-html.js`);
     assert(render.includes('vars.FRAMEWORK_NAME'), `${root} render-report-html.js should backfill FRAMEWORK_NAME`);
     assert(render.includes('TOTAL_DELETIONS'), `${root} render-report-html.js should backfill TOTAL_DELETIONS`);
+
+    const updateState = read(`${root}/scripts/update-state.js`);
+    assert(updateState.includes("severity_mode: 'critical_high_only'"), `${root} update-state.js should default severity_mode to critical_high_only`);
+    assert(updateState.includes('skip_low_risk_files: true'), `${root} update-state.js should default skip_low_risk_files to true`);
+    assert(updateState.includes('generate_html_report: true'), `${root} update-state.js should default generate_html_report to true`);
+    assert(updateState.includes('max_lines_per_batch: 1200'), `${root} update-state.js should default max_lines_per_batch to 1200`);
+
+    const phase1Gate = read(`${root}/scripts/require-phase1.js`);
+    assert(phase1Gate.includes('可以分多轮收集 Phase 1 五项'), `${root} require-phase1.js should allow collecting Phase 1 answers across turns`);
+    assert(phase1Gate.includes('max_lines_per_batch：1200'), `${root} require-phase1.js should document the 1200 default`);
   }
 }
 

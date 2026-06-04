@@ -3,10 +3,10 @@
  * 将变动文件清单智能分批，防止单批次内容过多导致上下文超长
  *
  * 用法：
- *   node batch-processor.js --inventory .codereview/file-inventory.json --max-lines 900 --output .codereview/file-inventory.json
+ *   node batch-processor.js --inventory .codereview/file-inventory.json --max-lines 1200 --output .codereview/file-inventory.json
  *
  * 分批策略：
- *  1. 按变动行数分批，每批不超过 max-lines（默认 900 行）
+ *  1. 按变动行数分批，每批不超过 max-lines（默认 1200 行）
  *  2. 超过 max-lines 的单个文件单独成一批
  *  3. 相同目录的文件优先分到同一批
  *  4. 优先级高的文件（api/store/router/views）排在前面
@@ -54,7 +54,7 @@ function main() {
   assertPhase1Complete({ force: args.force === true || args.force === 'true' });
 
   const inventoryPath = args.inventory || '.codereview/file-inventory.json';
-  const maxLines = parseInt(args['max-lines']) || 900;
+  const maxLines = parseInt(args['max-lines']) || 1200;
   const outputPath = args.output || inventoryPath;
 
   if (!fs.existsSync(inventoryPath)) {

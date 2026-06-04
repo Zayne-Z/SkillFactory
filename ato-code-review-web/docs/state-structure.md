@@ -14,12 +14,12 @@
   "updated_at": "2026-04-06T10:00:00.000Z",
   "current_phase": "branch_selection",
   "last_checkpoint": "init",
-  "branches": { "branch1": "", "branch2": "master" },
+  "branches": { "branch1": "<current-branch>", "branch2": "master" },
   "review_options": {
-    "severity_mode": "all",
-    "skip_low_risk_files": false,
-    "generate_html_report": false,
-    "max_lines_per_batch": 900,
+    "severity_mode": "critical_high_only",
+    "skip_low_risk_files": true,
+    "generate_html_report": true,
+    "max_lines_per_batch": 1200,
     "user_confirmed": false
   },
   "tech_stack": {},
@@ -48,7 +48,7 @@
 | `severity_mode` | string | `all` 或 `critical_high_only` |
 | `skip_low_risk_files` | boolean | `true` 时 Phase 2 跳过测试/E2E/Storybook 等低风险文件 |
 | `generate_html_report` | boolean | `true` 时 Phase 7 完成后进入 `html_rendering`，产出同名 `.html` |
-| `max_lines_per_batch` | number | Phase 2 `batch-processor.js --max-lines`；默认 **900** |
+| `max_lines_per_batch` | number | Phase 2 `batch-processor.js --max-lines`；默认 **1200** |
 | `user_confirmed` | boolean | Phase 1 五项确认后为 `true`；**为 false 时禁止 Phase 2** |
 
 ## synthesis

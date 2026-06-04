@@ -18,13 +18,13 @@
 
 ## Phase 1 五问（最高优先级）
 
-**一次消息问齐**：分支、检视深度、跳过低风险、是否 HTML、**每批最大行数（默认 900）**。**禁止**只问分支就继续。
+Phase 1 五项可以分多轮收集，不要求一次性发完；但分支、检视深度、跳过低风险、是否 HTML、**每批最大行数**必须全部有值才能继续。用户跳过时用默认值：当前分支 / `master`、`critical_high_only`、`true`、`true`、`1200`。
 
 复述确认后**必须**（含 `max_lines_per_batch`）：
 
 ```bash
 node "{SKILL_ROOT}/scripts/update-state.js" ... \
-  --set review_options.max_lines_per_batch=900 \
+  --set review_options.max_lines_per_batch=1200 \
   --set review_options.user_confirmed=true \
   --phase diff_analysis --checkpoint phase1_done
 ```

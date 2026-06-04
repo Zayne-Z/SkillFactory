@@ -17,15 +17,15 @@
   "last_checkpoint": "init",
 
   "branches": {
-    "branch1": "",
+    "branch1": "<current-branch>",
     "branch2": "master"
   },
 
   "review_options": {
-    "severity_mode": "all",
-    "skip_low_risk_files": false,
-    "generate_html_report": false,
-    "max_lines_per_batch": 900,
+    "severity_mode": "critical_high_only",
+    "skip_low_risk_files": true,
+    "generate_html_report": true,
+    "max_lines_per_batch": 1200,
     "user_confirmed": false
   },
 
@@ -65,10 +65,10 @@
 | `severity_mode` | string | `all`：报告所有严重级别；`critical_high_only`：仅 Critical + High |
 | `skip_low_risk_files` | boolean | `true` 时 Phase 2 对 `get-diff-files.js` 传 `--skip-low-risk true`，排除 DTO/Entity/测试等（详见清单 `review_scope`） |
 | `generate_html_report` | boolean | `true` 时 Phase 7 完成后进入 `html_rendering`，拉起 HTML 子 Builder 产出同名 `.html`；`false` 时跳过 |
-| `max_lines_per_batch` | number | Phase 2 `batch-processor.js --max-lines`；默认 **900** |
+| `max_lines_per_batch` | number | Phase 2 `batch-processor.js --max-lines`；默认 **1200** |
 | `user_confirmed` | boolean | Phase 1 五项清单已向用户询问并复述确认后为 `true`；**为 `false` 时禁止进入 Phase 2**（兼容性补丁填 `false` 不能代替用户确认） |
 
-Phase 1 须收齐分支 + 上表各项选项（含 `max_lines_per_batch`）并向用户复述后，设 `user_confirmed: true` 再进入 `diff_analysis`。断点续跑时子 Builder 通过主 Builder 传入的 `SEVERITY_MODE` 等变量读取此配置。
+Phase 1 须让分支 + 上表各项选项（含 `max_lines_per_batch`）都有值；可分多轮收集，用户跳过时使用默认值。复述后设 `user_confirmed: true` 再进入 `diff_analysis`。断点续跑时子 Builder 通过主 Builder 传入的 `SEVERITY_MODE` 等变量读取此配置。
 
 ## synthesis
 
@@ -187,7 +187,7 @@ Phase 4 完成后，主 Builder 根据 `task-plan.json` 初始化：
 6. 升级兼容：
    a. 若 review_progress[*] 缺少 curator 键 → 每批次补 curator: "pending"
    b. 若 review_options 缺少 generate_html_report → 补 false
-   c. 若 review_options 缺少 max_lines_per_batch → 补 900
+   c. 若 review_options 缺少 max_lines_per_batch → 补 1200
    d. 若 review_options 缺少 user_confirmed → 补 false（补完后仍须执行 Phase 1 清单）
    d. 若 synthesis 缺少 html_report_path / html_status → 补 "" 与 "skipped"
    → 写回 state.json 后再进入步骤 3/4/4b

@@ -3,7 +3,8 @@ name: ato-code-review-web-builder
 description: >-
   前端（Vue / React 等）增量代码检视 Skill（Builder 模式）。主 Builder 读取本文件驱动全流程；
   状态持久化到 .codereview/state.json，支持断点续跑。启动后若 state.json 存在则询问续跑或重新检视；
-  Phase 1 须确认分支、检视深度、跳过低风险、是否生成 HTML、每批最大行数五项。
+  Phase 1 须确认分支、检视深度、跳过低风险、是否生成 HTML、每批最大行数五项；
+  可分多轮收集，用户跳过时应用默认值，五项全部落盘前禁止进入 Phase 2。
 ---
 # 前端代码检视 · 主 Builder 工作流
 
@@ -40,12 +41,14 @@ node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
 
 ### 0.2 Phase 1 五问（`user_confirmed !== true` 时只做本步）
 
+五项不必一次性发给用户，可分多轮收集；但进入 Phase 2 前必须全部有合法值并复述确认。用户回复“跳过 / 默认 / 随便”时，按下列默认值落盘。
+
 ```
-1) 分支 — BRANCH1：___  BRANCH2：（默认 master）
-2) severity_mode — all | critical_high_only
-3) skip_low_risk_files — true | false
-4) generate_html_report — true | false
-5) max_lines_per_batch — 默认 900（大 MR 可 1200，小 MR 可 600）
+1) 分支 — BRANCH1：当前分支  BRANCH2：master
+2) severity_mode — 默认 critical_high_only（可选 all）
+3) skip_low_risk_files — 默认 true（可选 false）
+4) generate_html_report — 默认 true（可选 false）
+5) max_lines_per_batch — 默认 1200
 ```
 
 复述确认后：
@@ -129,7 +132,7 @@ codereview/   ← 多版本 report_*.md / *.html（不参与启动探测）
    - 存在：读取 current_phase
      - 若为 completed：告知报告路径；否则跳到对应 Phase
 4. 兼容性补丁：
-   - 若缺少 review_options → 补 severity_mode / skip_low_risk_files / generate_html_report / max_lines_per_batch(900) / user_confirmed
+   - 若缺少 review_options → 补 severity_mode / skip_low_risk_files / generate_html_report / max_lines_per_batch(1200) / user_confirmed
    - 若 review_progress[*] 缺少 curator → 补 `curator: "pending"`
    - 若 synthesis 缺少 html_report_path / html_status → 补 "" 与 "skipped"
    - **`user_confirmed !== true` → 回到 §0.2 Phase 1 五问**
@@ -181,11 +184,11 @@ node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
 
 **须与 §0.2 五问一致**；未 `user_confirmed` 禁止进入 Phase 2。
 
-1. 确认 `BRANCH1`、`BRANCH2`（默认 `master`）
-2. `severity_mode`：`all` | `critical_high_only`
-3. `skip_low_risk_files`：`true` 时 Phase 2 追加 `--skip-low-risk true`
-4. **`generate_html_report`**：`true` | `false`
-5. **`max_lines_per_batch`**：默认 `900`（Phase 2 传给 `batch-processor.js`）
+1. 确认 `BRANCH1`、`BRANCH2`；跳过时默认当前分支与 `master`
+2. `severity_mode`：默认 `critical_high_only`，可选 `all`
+3. `skip_low_risk_files`：默认 `true`；`true` 时 Phase 2 追加 `--skip-low-risk true`
+4. **`generate_html_report`**：默认 `true`
+5. **`max_lines_per_batch`**：默认 `1200`（Phase 2 传给 `batch-processor.js`）
 6. 验证分支后 `update-state.js` 落盘，`current_phase = "diff_analysis"`
 
 ---
@@ -200,7 +203,7 @@ node "{SKILL_ROOT}/scripts/get-diff-files.js" --branch1 {BRANCH1} --branch2 {BRA
 # node "{SKILL_ROOT}/scripts/get-diff-files.js" --branch1 {BRANCH1} --branch2 {BRANCH2} --output .codereview/file-inventory.json --skip-low-risk true
 ```
 
-**Step 2 分批**（`max-lines` 取自 `review_options.max_lines_per_batch`，默认 900）：
+**Step 2 分批**（`max-lines` 取自 `review_options.max_lines_per_batch`，默认 1200）：
 
 ```powershell
 node "{SKILL_ROOT}/scripts/batch-processor.js" --inventory .codereview/file-inventory.json --max-lines {MAX_LINES} --output .codereview/file-inventory.json

@@ -20,7 +20,7 @@
 
 ## Phase 1 五问 + 脚本门禁
 
-- 主编排须按 `SKILL.md` §0.2 **一次问齐**分支、检视深度、跳过低风险、是否 HTML、每批最大行数（默认 900）。
+- 主编排须按 `SKILL.md` §0.2 让分支、检视深度、跳过低风险、是否 HTML、每批最大行数都有值；可以分多轮问，不要求一次性发完。用户跳过时用默认值：当前分支 / `master`、`critical_high_only`、`true`、`true`、`1200`。
 - 未完成 Phase 1 时，`get-diff-files.js` 等会报 `PHASE1_REQUIRED` 并 exit 2（硬拦截，不依赖模型自觉）。
 - 复述确认后：`update-state.js` 设 `review_options.user_confirmed=true`，再跑 Phase 2。
 
@@ -44,4 +44,4 @@
 
 ## 升级提示
 
-合并 `opencode.example.json` 中新增子 agent（`issue-curator`、`report-html` 等）到现有配置；旧 `state.json` 由主编排启动时自动补字段（含 `max_lines_per_batch: 900`）。
+合并 `opencode.example.json` 中新增子 agent（`issue-curator`、`report-html` 等）到现有配置；旧 `state.json` 由主编排启动时自动补字段（含 `max_lines_per_batch: 1200`）。

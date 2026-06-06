@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 按专家 scope 从 memory.json 生成精简 brief，供子 agent 行动前读取
+ * 按专家 scope 从 memory.json 生成精简 brief，供子执行器行动前读取
  *
  * 用法：
  *   node build-memory-context.js \

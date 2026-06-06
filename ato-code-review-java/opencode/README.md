@@ -6,9 +6,9 @@
 
 1. 将 `opencode.example.json` 的 `agent` 配置合并到项目根目录的 `opencode.json`，或按需复制到全局配置。
 2. 若 skill 安装路径不是 `./ato-code-review-java`，请调整每个 `prompt` 的 `{file:...}` 路径。
-3. 在 opencode 中使用 `java-codereview-main` 作为主编排 agent。
+3. 在 opencode 中使用 `java-codereview-main` 作为主编排器。
 
-**主编排 prompt 即整份 `SKILL.md`**（唯一引导文件，不再拆 `java-codereview-main.md`）。启动规则集中在 `SKILL.md` 开头的 **§0 主编排启动清单**；子 agent 仍用 `prompts/*.md`。
+**主编排 prompt 即整份 `SKILL.md`**。启动规则集中在 `SKILL.md` 开头的 **§0 主编排启动清单**；子执行器统一使用 `prompts/*.md`。
 
 改 `SKILL.md` 或 `opencode.json` 后请**新开一轮 opencode 对话**（同一会话不会自动刷新 system prompt）。
 
@@ -34,14 +34,15 @@
 
 ## state.json 落盘
 
-主编排 **必须**用 `scripts/update-state.js` 写 state（见 `SKILL.md` §2.6）。子 agent 只写各自 `OUTPUT_PATH`。
+主编排 **必须**用 `scripts/update-state.js` 写 state（见 `SKILL.md` §2.6）。子执行器只写各自 `OUTPUT_PATH`。
 
 ## 并行执行约定
 
-- `java-codereview-main`：读写 state、跑脚本、派发子 agent。
+- `java-codereview-main`：读写 state、跑脚本、派发子执行器。
 - 同批次 `core` / `security` / `spring` / `data` 可并行；`issue-curator` → `fix-advisor` 须串行。
+- `failed` 为终态；需要重跑时先按 `SKILL.md` 说明改回 `pending`。
 - `report-html`：仅 `generate_html_report=true` 且 MD 已生成后。
 
 ## 升级提示
 
-合并 `opencode.example.json` 中新增子 agent（`issue-curator`、`report-html` 等）到现有配置；旧 `state.json` 由主编排启动时自动补字段（含 `max_lines_per_batch: 1200`）。
+合并 `opencode.example.json` 中新增子执行器（`issue-curator`、`report-html` 等）到现有配置；旧 `state.json` 由主编排启动时自动补字段（含 `max_lines_per_batch: 1200`）。

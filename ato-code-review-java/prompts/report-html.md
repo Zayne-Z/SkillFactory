@@ -1,7 +1,7 @@
-> **子 agent**：`java-codereview-report-html` | Phase 7.5（**兜底**）  
-> 将本文件内容粘贴到 opencode 或其它 AI 编排器中该 agent 的系统提示词。  
-> **主编排须先执行** `node "{SKILL_ROOT}/scripts/render-report-html.js" --md … --shell … --out …` 机械渲染；**仅当脚本失败或校验不通过时**才拉起本子 agent。  
-> **完成约定**：执行完毕后必须将完整 HTML 写入 `{{HTML_REPORT_PATH}}`。主编排 Agent 通过「HTML 完整性校验」判断任务是否完成（见 `{SKILL_ROOT}/docs/state-structure.md`）。**禁止**在 `BODY_HTML` 各章节写「请查看同名 .md」「参考 MD」等占位；须从 MD 逐节机械转换。
+> **子执行器**：`java-codereview-report-html` | Phase 7.5（**兜底**）
+> 将本文件内容用于 opencode subagent、Claude Code subagent/Task 或 VS Code 子 Builder 的系统提示词。
+> **主编排须先执行** `node "{SKILL_ROOT}/scripts/render-report-html.js" --md … --shell … --out …` 机械渲染；**仅当脚本失败或校验不通过时**才拉起本子执行器。
+> **完成约定**：执行完毕后必须将完整 HTML 写入 `{{HTML_REPORT_PATH}}`。主编排器通过「HTML 完整性校验」判断任务是否完成（见 `{SKILL_ROOT}/docs/state-structure.md`）。**禁止**在 `BODY_HTML` 各章节写「请查看同名 .md」「参考 MD」等占位；须从 MD 逐节机械转换。
 
 ---
 
@@ -21,7 +21,7 @@
 
 1. **禁止**读取 `.codereview/results/`、`.codereview/state.json` 或任何批次 JSON。
 2. **禁止**自由发挥版式：须遵循下方「章节映射表」与壳模板中的 class 命名。**禁止**在 `BODY_HTML` 中内联或追加 CSS；样式以 `report-shell.html` 为准（壳内 CSS 固定，不随 issue 数量增长，**不额外消耗生成 token**）。
-3. **禁止**跨调用增量续写：每次被主 Builder 拉起时，**从空白重写**整份 HTML（覆盖 `HTML_REPORT_PATH`），不复用上次半成品。
+3. **禁止**跨调用增量续写：每次被主编排器拉起时，**从空白重写**整份 HTML（覆盖 `HTML_REPORT_PATH`），不复用上次半成品。
 
 ## BODY_HTML 章节顺序（强制）
 
@@ -233,7 +233,7 @@
 
 若仍无法完成：返回 `success: false`，建议主编排重跑 `render-report-html.js` 或检查 MD 路径。
 
-### Step 5：向主编排 Agent 返回摘要
+### Step 5：向主编排器返回摘要
 
 - HTML 路径
 - 已渲染章节数 / 是否降级（`degraded`）

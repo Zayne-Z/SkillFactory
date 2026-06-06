@@ -6,9 +6,9 @@
 
 1. 将 `opencode.example.json` 的 `agent` 配置合并到项目根目录的 `opencode.json`，或按需复制到全局配置。
 2. 若 skill 安装路径不是 `./ato-code-review-web`，请调整每个 `prompt` 的 `{file:...}` 路径。
-3. 在 opencode 中使用 `web-codereview-main` 作为主编排 agent。
+3. 在 opencode 中使用 `web-codereview-main` 作为主编排器。
 
-**主编排 prompt 即整份 `SKILL.md`**。启动规则见 **§0**；子 agent 仍用 `prompts/*.md`。
+**主编排 prompt 即整份 `SKILL.md`**。启动规则见 **§0**；子执行器统一使用 `prompts/*.md`。
 
 ## 续跑 / 重新检视
 
@@ -28,10 +28,11 @@
 
 ## 并行执行约定
 
-- `web-codereview-main`：读写 state、跑脚本、派发子 agent
+- `web-codereview-main`：读写 state、跑脚本、派发子执行器
 - 同批次 `core` / `framework` / `reliability` / `security` 可并行
+- `failed` 为终态；需要重跑时先按 `SKILL.md` 说明改回 `pending`
 - `issue-curator` → `fix-advisor` 须串行
 
 ## 升级提示
 
-合并 `opencode.example.json` 中新增子 agent；旧 `state.json` 启动时自动补字段（含 `max_lines_per_batch: 1200`）。
+合并 `opencode.example.json` 中新增子执行器；旧 `state.json` 启动时自动补字段（含 `max_lines_per_batch: 1200`）。

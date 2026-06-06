@@ -1,7 +1,14 @@
 #!/usr/bin/env node
 /**
- * Cross-checks the four code-review skills for mode-specific contracts that
- * pair-sync cannot catch, such as README bindings and opencode prompt headers.
+ * Cross-checks the unified Java/Web code-review skills.
+ *
+ * The repository should expose exactly two code-review skills:
+ *   - ato-code-review-java
+ *   - ato-code-review-web
+ *
+ * VS Code Builder, opencode, and Claude Code must all consume the same
+ * prompts/*.md files. There must be no generated *-builder mirror directories
+ * and no sync script/doc for keeping duplicate prompt trees aligned.
  */
 'use strict';
 
@@ -11,22 +18,60 @@ const path = require('path');
 
 const REPO = path.resolve(__dirname, '..');
 
-const ROOTS = [
-  'ato-code-review-web',
-  'ato-code-review-web-builder',
-  'ato-code-review-java',
-  'ato-code-review-java-builder',
-];
+const SKILLS = {
+  java: {
+    root: 'ato-code-review-java',
+    idPrefix: 'java-codereview',
+    experts: ['core', 'spring', 'security', 'data'],
+    prompts: [
+      ['java-codereview-tech-stack', 'tech-stack-analysis.md'],
+      ['java-codereview-task-plan', 'task-planner.md'],
+      ['java-codereview-review-core', 'code-scanner.md'],
+      ['java-codereview-review-spring', 'framework-reviewer.md'],
+      ['java-codereview-review-security', 'security-reviewer.md'],
+      ['java-codereview-review-data', 'perf-reviewer.md'],
+      ['java-codereview-issue-curator', 'issue-curator.md'],
+      ['java-codereview-fix-advisor', 'fix-advisor.md'],
+      ['java-codereview-report-synthesizer', 'report-synthesizer.md'],
+      ['java-codereview-report-html', 'report-html.md'],
+    ],
+  },
+  web: {
+    root: 'ato-code-review-web',
+    idPrefix: 'web-codereview',
+    experts: ['core', 'framework', 'reliability', 'security'],
+    prompts: [
+      ['web-codereview-tech-stack', 'tech-stack-analysis.md'],
+      ['web-codereview-task-plan', 'task-planner.md'],
+      ['web-codereview-review-core', 'code-scanner.md'],
+      ['web-codereview-review-framework', 'framework-reviewer.md'],
+      ['web-codereview-review-reliability', 'perf-reviewer.md'],
+      ['web-codereview-review-security', 'security-reviewer.md'],
+      ['web-codereview-issue-curator', 'issue-curator.md'],
+      ['web-codereview-fix-advisor', 'fix-advisor.md'],
+      ['web-codereview-report-synthesizer', 'report-synthesizer.md'],
+      ['web-codereview-report-html', 'report-html.md'],
+    ],
+  },
+};
 
 const errors = [];
 const warnings = [];
 
-function read(rel) {
-  return fs.readFileSync(path.join(REPO, rel), 'utf8');
+function rel(...parts) {
+  return path.join(...parts);
 }
 
-function exists(rel) {
-  return fs.existsSync(path.join(REPO, rel));
+function abs(...parts) {
+  return path.join(REPO, ...parts);
+}
+
+function read(file) {
+  return fs.readFileSync(abs(file), 'utf8');
+}
+
+function exists(file) {
+  return fs.existsSync(abs(file));
 }
 
 function assert(condition, message) {
@@ -37,90 +82,93 @@ function warn(condition, message) {
   if (!condition) warnings.push(message);
 }
 
-function firstLines(text, count) {
-  return text.split('\n').slice(0, count).join('\n');
-}
+function checkUnifiedShape() {
+  assert(!exists('ato-code-review-java-builder'), 'ato-code-review-java-builder should not exist after merge');
+  assert(!exists('ato-code-review-web-builder'), 'ato-code-review-web-builder should not exist after merge');
+  assert(!exists('scripts/sync-skill-pairs.js'), 'sync-skill-pairs.js should be removed; prompts are single-source now');
+  assert(!exists('docs/SKILL-SYNC.md'), 'docs/SKILL-SYNC.md should be removed; pair sync is obsolete');
 
-function checkSkillRoots() {
-  const names = new Map();
-  for (const root of ROOTS) {
-    assert(exists(`${root}/SKILL.md`), `${root}/SKILL.md is missing`);
-    assert(exists(`${root}/scripts/update-state.js`), `${root}/scripts/update-state.js is missing`);
-    assert(exists(`${root}/templates/report-shell.html`), `${root}/templates/report-shell.html is missing`);
-    const skill = read(`${root}/SKILL.md`);
-    const name = (skill.match(/^name:\s*(.+)$/m) || [])[1];
-    assert(Boolean(name), `${root}/SKILL.md frontmatter name is missing`);
-    if (name) {
-      if (!names.has(name)) names.set(name, []);
-      names.get(name).push(root);
+  for (const cfg of Object.values(SKILLS)) {
+    assert(exists(rel(cfg.root, 'SKILL.md')), `${cfg.root}/SKILL.md is missing`);
+    assert(exists(rel(cfg.root, 'vscode-main-builder.md')), `${cfg.root}/vscode-main-builder.md is missing`);
+    assert(exists(rel(cfg.root, 'opencode/opencode.example.json')), `${cfg.root}/opencode/opencode.example.json is missing`);
+    assert(exists(rel(cfg.root, 'scripts/update-state.js')), `${cfg.root}/scripts/update-state.js is missing`);
+    assert(exists(rel(cfg.root, 'templates/report-shell.html')), `${cfg.root}/templates/report-shell.html is missing`);
+    for (const [, promptFile] of cfg.prompts) {
+      assert(exists(rel(cfg.root, 'prompts', promptFile)), `${cfg.root}/prompts/${promptFile} is missing`);
     }
   }
-  for (const [name, roots] of names) {
-    warn(roots.length === 1, `duplicate skill name "${name}" in ${roots.join(', ')} (known exception if Java Builder remains unfixed)`);
+}
+
+function checkSkillRunnerDocs() {
+  for (const cfg of Object.values(SKILLS)) {
+    const skill = read(rel(cfg.root, 'SKILL.md'));
+    assert(skill.includes('VS Code Builder'), `${cfg.root}/SKILL.md should mention VS Code Builder`);
+    assert(skill.includes('opencode'), `${cfg.root}/SKILL.md should mention opencode`);
+    assert(skill.includes('Claude Code'), `${cfg.root}/SKILL.md should mention Claude Code`);
+    assert(skill.includes('vscode-main-builder.md'), `${cfg.root}/SKILL.md should point to vscode-main-builder.md`);
+    assert(skill.includes('prompts/*.md'), `${cfg.root}/SKILL.md should identify prompts/*.md as the shared prompt source`);
+    assert(skill.includes('当前运行器的并行任务能力'), `${cfg.root}/SKILL.md should describe runner-neutral parallel dispatch`);
+    assert(skill.includes('`failed` 是终态'), `${cfg.root}/SKILL.md should define failed as terminal`);
+    assert(!skill.includes('builder-prompts/'), `${cfg.root}/SKILL.md should not reference builder-prompts/`);
+    assert(!skill.includes(`${cfg.root}-builder`), `${cfg.root}/SKILL.md should not reference a builder mirror directory`);
+    assert(!skill.includes('通过 opencode 并行拉起'), `${cfg.root}/SKILL.md should not limit parallel dispatch to opencode`);
+    assert(!skill.includes('**opencode 并行派发建议：**'), `${cfg.root}/SKILL.md should use runner-neutral parallel dispatch heading`);
+    assert(!skill.includes('状态为 `pending` / `failed`'), `${cfg.root}/SKILL.md should not auto-dispatch failed experts`);
+
+    const mainBuilder = read(rel(cfg.root, 'vscode-main-builder.md'));
+    assert(mainBuilder.includes('SKILL.md'), `${cfg.root}/vscode-main-builder.md should instruct the main Builder to read SKILL.md`);
+    assert(mainBuilder.includes('prompts/*.md'), `${cfg.root}/vscode-main-builder.md should use prompts/*.md`);
+    assert(!mainBuilder.includes('builder-prompts'), `${cfg.root}/vscode-main-builder.md should not use builder-prompts`);
   }
 }
 
 function checkOpencodeContracts() {
-  const javaConfig = read('ato-code-review-java/opencode/opencode.example.json');
-  assert(javaConfig.includes('ensure all 5 Phase-1 options have values'), 'java opencode description should require all 5 Phase-1 options to have values');
-
-  const javaReport = firstLines(read('ato-code-review-java/prompts/report-synthesizer.md'), 5);
-  assert(javaReport.includes('子 agent'), 'java opencode report-synthesizer should be labelled 子 agent');
-  assert(javaReport.includes('{{REPORT_PATH}}'), 'java opencode report-synthesizer should write {{REPORT_PATH}}');
-  assert(!javaReport.includes('{{OUTPUT_PATH}}'), 'java opencode report-synthesizer header should not require {{OUTPUT_PATH}}');
-  assert(!javaReport.includes('子 Builder'), 'java opencode report-synthesizer header should not mention 子 Builder');
-
-  const javaHtml = firstLines(read('ato-code-review-java/prompts/report-html.md'), 5);
-  assert(javaHtml.includes('子 agent'), 'java opencode report-html should be labelled 子 agent');
-  assert(!javaHtml.includes('子 Builder'), 'java opencode report-html header should not mention 子 Builder');
+  for (const cfg of Object.values(SKILLS)) {
+    const config = read(rel(cfg.root, 'opencode/opencode.example.json'));
+    assert(config.includes(`"{file:./${cfg.root}/SKILL.md}"`), `${cfg.root} opencode primary prompt should point to SKILL.md`);
+    assert(!config.includes('builder-prompts'), `${cfg.root} opencode config should not reference builder-prompts`);
+    assert(!config.includes(`${cfg.root}-builder`), `${cfg.root} opencode config should not reference builder mirror directories`);
+    for (const [id, promptFile] of cfg.prompts) {
+      assert(config.includes(`"${id}"`), `${cfg.root} opencode config should define ${id}`);
+      assert(config.includes(`{file:./${cfg.root}/prompts/${promptFile}}`), `${cfg.root} opencode ${id} should use prompts/${promptFile}`);
+    }
+  }
 }
 
-function checkBuilderContracts() {
-  const webBuilderReadme = read('ato-code-review-web-builder/builder-prompts/README.md');
-  assert(webBuilderReadme.includes('1 个主 + 10 个子'), 'web Builder README should mention 1 main + 10 sub Builders');
-  assert(webBuilderReadme.includes('web-codereview-report-html'), 'web Builder README should list web-codereview-report-html');
-
-  const webBuilderSkill = read('ato-code-review-web-builder/SKILL.md');
-  const javaBuilderSkill = read('ato-code-review-java-builder/SKILL.md');
-  assert(webBuilderSkill.includes('VS Code AI Builder 执行'), 'web Builder SKILL should describe Builder mode, not opencode mode');
-  assert(javaBuilderSkill.includes('VS Code AI 主 Builder'), 'java Builder SKILL should describe VS Code AI Builder mode');
+function checkPromptHeaders() {
+  for (const cfg of Object.values(SKILLS)) {
+    for (const [id, promptFile] of cfg.prompts) {
+      const prompt = read(rel(cfg.root, 'prompts', promptFile));
+      const head = prompt.split('\n').slice(0, 5).join('\n');
+      assert(head.includes(id), `${cfg.root}/prompts/${promptFile} should include id ${id} in header`);
+      assert(head.includes('opencode subagent'), `${cfg.root}/prompts/${promptFile} should mention opencode subagent`);
+      assert(head.includes('Claude Code'), `${cfg.root}/prompts/${promptFile} should mention Claude Code`);
+      assert(head.includes('VS Code 子 Builder'), `${cfg.root}/prompts/${promptFile} should mention VS Code 子 Builder`);
+      assert(!head.includes('粘贴到 VS Code AI 插件'), `${cfg.root}/prompts/${promptFile} should not be Builder-only`);
+    }
+  }
 }
 
 function checkScriptContracts() {
-  for (const root of ['ato-code-review-web', 'ato-code-review-web-builder']) {
-    const memory = read(`${root}/scripts/build-memory-context.js`);
-    assert(memory.includes('core | framework | reliability | security | curator'), `${root} memory helper should document frontend expert names`);
-    assert(!memory.includes('core|spring|security|data|curator'), `${root} memory helper should not show Java expert names in error text`);
-  }
+  for (const [kind, cfg] of Object.entries(SKILLS)) {
+    const memory = read(rel(cfg.root, 'scripts/build-memory-context.js'));
+    assert(memory.includes(cfg.experts.join(' | ') + ' | curator'), `${cfg.root} memory helper should document ${kind} expert names`);
 
-  for (const root of ['ato-code-review-java', 'ato-code-review-java-builder']) {
-    const diff = read(`${root}/scripts/get-diff-files.js`);
-    assert(diff.includes('normalizeNumstatPath'), `${root} get-diff-files.js should normalize rename paths from git numstat`);
-  }
+    const updateState = read(rel(cfg.root, 'scripts/update-state.js'));
+    assert(updateState.includes("severity_mode: 'critical_high_only'"), `${cfg.root} update-state.js should default severity_mode to critical_high_only`);
+    assert(updateState.includes('skip_low_risk_files: true'), `${cfg.root} update-state.js should default skip_low_risk_files to true`);
+    assert(updateState.includes('generate_html_report: true'), `${cfg.root} update-state.js should default generate_html_report to true`);
+    assert(updateState.includes('max_lines_per_batch: 1200'), `${cfg.root} update-state.js should default max_lines_per_batch to 1200`);
+    assert(updateState.includes('isExpertApplicable'), `${cfg.root} update-state.js should support applicable_experts arrays`);
 
-  for (const root of ROOTS) {
-    const render = read(`${root}/scripts/render-report-html.js`);
-    assert(render.includes('vars.FRAMEWORK_NAME'), `${root} render-report-html.js should backfill FRAMEWORK_NAME`);
-    assert(render.includes('TOTAL_DELETIONS'), `${root} render-report-html.js should backfill TOTAL_DELETIONS`);
+    const phase1Gate = read(rel(cfg.root, 'scripts/require-phase1.js'));
+    assert(phase1Gate.includes('可以分多轮收集 Phase 1 五项'), `${cfg.root} require-phase1.js should allow collecting Phase 1 answers across turns`);
+    assert(phase1Gate.includes('max_lines_per_batch：1200'), `${cfg.root} require-phase1.js should document the 1200 default`);
 
-    const updateState = read(`${root}/scripts/update-state.js`);
-    assert(updateState.includes("severity_mode: 'critical_high_only'"), `${root} update-state.js should default severity_mode to critical_high_only`);
-    assert(updateState.includes('skip_low_risk_files: true'), `${root} update-state.js should default skip_low_risk_files to true`);
-    assert(updateState.includes('generate_html_report: true'), `${root} update-state.js should default generate_html_report to true`);
-    assert(updateState.includes('max_lines_per_batch: 1200'), `${root} update-state.js should default max_lines_per_batch to 1200`);
-
-    const phase1Gate = read(`${root}/scripts/require-phase1.js`);
-    assert(phase1Gate.includes('可以分多轮收集 Phase 1 五项'), `${root} require-phase1.js should allow collecting Phase 1 answers across turns`);
-    assert(phase1Gate.includes('max_lines_per_batch：1200'), `${root} require-phase1.js should document the 1200 default`);
-  }
-}
-
-function checkReportShellPerformance() {
-  for (const root of ROOTS) {
-    const shell = read(`${root}/templates/report-shell.html`);
-    assert(!/backdrop-filter\s*:/.test(shell), `${root} report shell should avoid backdrop-filter on long reports`);
-    assert(!/background-attachment\s*:\s*fixed/.test(shell), `${root} report shell should avoid fixed background repaint cost`);
-    assert(!/feTurbulence/.test(shell), `${root} report shell should avoid full-page SVG noise filters`);
+    const render = read(rel(cfg.root, 'scripts/render-report-html.js'));
+    assert(render.includes('vars.FRAMEWORK_NAME'), `${cfg.root} render-report-html.js should backfill FRAMEWORK_NAME`);
+    assert(render.includes('TOTAL_DELETIONS'), `${cfg.root} render-report-html.js should backfill TOTAL_DELETIONS`);
   }
 }
 
@@ -139,11 +187,11 @@ function checkTrackedNoise() {
 }
 
 function main() {
-  checkSkillRoots();
+  checkUnifiedShape();
+  checkSkillRunnerDocs();
   checkOpencodeContracts();
-  checkBuilderContracts();
+  checkPromptHeaders();
   checkScriptContracts();
-  checkReportShellPerformance();
   checkTrackedNoise();
 
   for (const message of warnings) console.warn(`WARN ${message}`);

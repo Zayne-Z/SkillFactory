@@ -4,8 +4,8 @@
 
 1. **极简 JSON**：用户可直接编辑，无需脚本维护
 2. **持久化**：`reset-run.js` 重新检视时**保留**本文件，仅清除 state/diffs/results 等过程文件
-3. **手动维护**：用户根据误检/漏检/团队约定自行追加规则；主编排 Agent 可提示条目文案，由用户写入文件
-4. **行动前注入**：Phase 5 每批次、每专家拉起前，主编排 Agent 运行 `build-memory-context.js` 生成 brief，子 agent **第一个 tool call 前**读取
+3. **手动维护**：用户根据误检/漏检/团队约定自行追加规则；主编排器可提示条目文案，由用户写入文件
+4. **行动前注入**：Phase 5 每批次、每专家拉起前，主编排器运行 `build-memory-context.js` 生成 brief，子执行器**第一个 tool call 前**读取
 
 ---
 
@@ -49,7 +49,7 @@
 
 ---
 
-## 主编排 Agent 操作
+## 主编排器操作
 
 ### Phase 0 / 重新检视后
 
@@ -67,17 +67,17 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" \
   --output .codereview/memory-brief-batch-001-core.json
 ```
 
-将 `--output` 路径作为 `MEMORY_BRIEF_PATH` 传给子 agent。
+将 `--output` 路径作为 `MEMORY_BRIEF_PATH` 传给子执行器。
 
 ### 用户说「记住 xxx」
 
-1. 主编排 Agent 建议一条 `user_lessons` JSON 片段
+1. 主编排器建议一条 `user_lessons` JSON 片段
 2. 用户确认后**手动**编辑 `memory.json`（或授权 Agent Write 该文件）
 3. 更新 `updated_at`
 
 ---
 
-## 子 agent 使用规则
+## 子执行器使用规则
 
 | 专家 | 读取 brief 后 |
 |------|----------------|

@@ -5,7 +5,7 @@
 1. **极简 JSON**：用户可直接编辑，无需脚本维护
 2. **持久化**：`reset-run.js` 重新检视时**保留**本文件，仅清除 state/diffs/results 等过程文件
 3. **手动维护**：用户根据误检/漏检/团队约定自行追加规则
-4. **行动前注入**：Phase 5 每批次、每专家拉起前，主编排 Agent 运行 `build-memory-context.js` 生成 brief
+4. **行动前注入**：Phase 5 每批次、每专家拉起前，主编排器运行 `build-memory-context.js` 生成 brief
 
 ---
 
@@ -47,7 +47,7 @@
 
 ---
 
-## 主编排 Agent 操作
+## 主编排器操作
 
 ### Phase 0 / 重新检视后
 
@@ -69,7 +69,7 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" \
 
 ---
 
-## 子 agent 使用规则
+## 子执行器使用规则
 
 | 专家 | 行为 |
 |------|------|

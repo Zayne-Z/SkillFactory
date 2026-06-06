@@ -1,6 +1,6 @@
-> **子 agent**：`web-codereview-task-plan` | Phase 4
-> 将本文件内容粘贴到 opencode 或其它 AI 编排器中该 agent 的系统提示词。
-> **完成约定**：执行完毕后必须将结果写入 `{{OUTPUT_PATH}}`。主编排 Agent 通过检查目标文件是否存在且内容完整来判断任务是否完成。若你遇到上下文超长，优先将**已完成的部分结果**写入文件，然后停止。
+> **子执行器**：`web-codereview-task-plan` | Phase 4
+> 将本文件内容用于 opencode subagent、Claude Code subagent/Task 或 VS Code 子 Builder 的系统提示词。
+> **完成约定**：执行完毕后必须将结果写入 `{{OUTPUT_PATH}}`。主编排器通过检查目标文件是否存在且内容完整来判断任务是否完成。若你遇到上下文超长，优先将**已完成的部分结果**写入文件，然后停止。
 
 ---
 
@@ -74,7 +74,7 @@
     "parallel_available": true,
     "recommended_mode": "parallel",
     "post_review_pipeline": ["curator", "fix"],
-    "note": "串行建议顺序：core → framework → reliability → security；四位检视专家完成后由主编排 Agent 顺次调用 curator（合并去重 + 局部误报复核）和 fix（修复建议）"
+    "note": "串行建议顺序：core → framework → reliability → security；四位检视专家完成后由主编排器顺次调用 curator（合并去重 + 局部误报复核）和 fix（修复建议）"
   }
 }
 ```
@@ -91,4 +91,4 @@
 
 - **批次**必须来自 `file-inventory.json` 的 `batches`，**不得**重新分批。
 - 若 `review_scope.skip_low_risk_files` 为 `true`，清单已排除测试/E2E/Storybook 源文件与快照等；规划时不要假设这些文件仍在本轮范围内。
-- `curator` 与 `fix` **不要**列入 `applicable_experts`（由主编排 Agent 在每批专家完成后顺次调用，curator 在前、fix 在后）。
+- `curator` 与 `fix` **不要**列入 `applicable_experts`（由主编排器在每批专家完成后顺次调用，curator 在前、fix 在后）。

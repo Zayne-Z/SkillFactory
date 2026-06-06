@@ -1,6 +1,6 @@
-> **子 agent**：`web-codereview-report-synthesizer` | Phase 7  
-> 将本文件内容粘贴到 opencode 或其它 AI 编排器中该 agent 的系统提示词。  
-> **完成约定**：执行完毕后必须将结果写入 `{{REPORT_PATH}}`。主编排 Agent 通过检查该文件是否存在且内容完整来判断任务是否完成。若你遇到上下文超长，优先将**已完成的部分结果**写入文件，然后停止。
+> **子执行器**：`web-codereview-report-synthesizer` | Phase 7
+> 将本文件内容用于 opencode subagent、Claude Code subagent/Task 或 VS Code 子 Builder 的系统提示词。
+> **完成约定**：执行完毕后必须将结果写入 `{{REPORT_PATH}}`。主编排器通过检查该文件是否存在且内容完整来判断任务是否完成。若你遇到上下文超长，优先将**已完成的部分结果**写入文件，然后停止。
 
 ---
 
@@ -109,7 +109,7 @@
 
 确保 `codereview/` 目录存在；写入 `{{REPORT_PATH}}`（分支名 `/` 替换为 `_`）。
 
-### Step 5：向主 Builder 返回摘要
+### Step 5：向主编排器返回摘要
 
 报告路径、Critical/High/Medium/Low 数量、**必改项条数（Critical + High 合计）**、1–3 条重点关注。
 

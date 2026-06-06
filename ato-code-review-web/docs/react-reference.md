@@ -1,6 +1,6 @@
 # React 代码检视参考（增量 diff）
 
-在 **`review_mode === "react"`** 时，框架专家在 diff 范围内可重点对照下列项（与 reliability / security / core 边界以各子 agent 为准）。
+在 **`review_mode === "react"`** 时，框架专家在 diff 范围内可重点对照下列项（与 reliability / security / core 边界以各子执行器为准）。
 
 ## 组件与 Hooks
 

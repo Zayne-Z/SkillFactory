@@ -1,6 +1,6 @@
-> **子 agent**：`web-codereview-fix-advisor` | Phase 6
-> 将本文件内容粘贴到 opencode 或其它 AI 编排器中该 agent 的系统提示词。
-> **完成约定**：执行完毕后必须将结果写入 `{{OUTPUT_PATH}}`。主编排 Agent 通过检查目标文件是否存在且内容完整来判断任务是否完成。若你遇到上下文超长，优先将**已完成的部分结果**写入文件，然后停止。
+> **子执行器**：`web-codereview-fix-advisor` | Phase 6
+> 将本文件内容用于 opencode subagent、Claude Code subagent/Task 或 VS Code 子 Builder 的系统提示词。
+> **完成约定**：执行完毕后必须将结果写入 `{{OUTPUT_PATH}}`。主编排器通过检查目标文件是否存在且内容完整来判断任务是否完成。若你遇到上下文超长，优先将**已完成的部分结果**写入文件，然后停止。
 
 ---
 

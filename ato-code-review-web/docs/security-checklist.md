@@ -1,6 +1,6 @@
 # 前端安全检视参考（增量 diff）
 
-供 `web-codereview-review-security` 子 agent 按需查阅，与主 prompt 中的严重级别规则一致。
+供 `web-codereview-review-security` 子执行器按需查阅，与主 prompt 中的严重级别规则一致。
 
 ## 严重级别与 `critical_high_only` 模式
 

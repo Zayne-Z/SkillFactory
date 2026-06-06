@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 主编排 Agent 用：读写 .codereview/state.json（断点落盘）
+ * 主编排器用：读写 .codereview/state.json（断点落盘）
  *
  * 用法示例：
  *   node update-state.js --init

@@ -1,16 +1,17 @@
 ---
 name: ato-code-review-web
 description: >-
-  前端（Vue / React 等）增量代码检视 Skill。主编排 Agent 读取本文件驱动全流程；状态持久化到
-  .codereview/state.json，支持断点续跑。启动后若 state.json 存在则询问续跑或重新检视；
+  前端（Vue / React 等）增量代码检视 Skill。一个目录同时支持 VS Code Builder、opencode、
+  Claude Code 等运行器；主编排器读取本文件驱动全流程。状态持久化到 .codereview/state.json，
+  支持断点续跑。启动后若 state.json 存在则询问续跑或重新检视；
   Phase 1 须确认分支、检视深度、跳过低风险、是否生成 HTML、每批最大行数五项；
   可分多轮收集，用户跳过时应用默认值，五项全部落盘前禁止进入 Phase 2。
 ---
 
 # 前端代码检视 · 主编排工作流
 
-> **本文件是主编排 Agent 运行时的唯一指令来源。**
-> 主编排 Agent 负责编排、状态管理、并行调度与故障恢复；**不做**深度代码检视。
+> **本文件是 VS Code Builder、opencode、Claude Code 等运行器共用的主编排指令来源。**
+> 主编排器负责编排、状态管理、并行调度与故障恢复；**不做**深度代码检视。
 > 须用 `scripts/update-state.js` 落盘；Phase 2+ 在 `user_confirmed !== true` 时会报 `PHASE1_REQUIRED`。
 
 ---
@@ -85,7 +86,7 @@ node "{SKILL_ROOT}/scripts/update-state.js" \
 │   ├── batch-processor.js
 │   ├── export-batch-diffs.js
 │   ├── git-line-authors.js
-│   ├── render-report-html.js   ← Phase 7.5：MD → HTML（机械填充，优先于子 agent）
+│   ├── render-report-html.js   ← Phase 7.5：MD → HTML（机械填充，优先于子执行器）
 │   ├── sync-report-signoff.js
 │   ├── init-memory.js
 │   ├── reset-run.js
@@ -97,8 +98,9 @@ node "{SKILL_ROOT}/scripts/update-state.js" \
 │   ├── report-shell.html
 │   ├── memory.json.example
 │   └── signoff-payload.example.json
+├── vscode-main-builder.md
 └── prompts/
-    ├── …（检视子 agent）
+    ├── …（检视子执行器）
     ├── report-synthesizer.md
     └── report-html.md
 ```
@@ -118,7 +120,7 @@ codereview/   ← 多版本 report_*.md / *.html（不参与启动探测）
 
 每个操作前读 `state.json`，操作后立即写回。字段见 `{SKILL_ROOT}/docs/state-structure.md`。
 
-### 2.2 主编排 Agent 启动（每次对话开头）
+### 2.2 主编排器启动（每次对话开头）
 
 ```
 1. 确认 {SKILL_ROOT} 绝对路径
@@ -135,31 +137,32 @@ codereview/   ← 多版本 report_*.md / *.html（不参与启动探测）
 4. **reviewing**：按批次、按专家顺序 `core` → `framework` → `reliability` → `security` → `curator` → `fix`，找到第一个状态为 `pending` 或 `in_progress` 的项（`completed` / `skipped` / **`failed`** 均跳过；`failed` 为终态，除非用户要求人工改回 `pending`）
    - `in_progress`：按 `docs/state-structure.md`「in_progress 防死锁」校验对应 `*-{expert}.json`、`*-curated.json` 或 `*-fix.json`
 5. **synthesizing**：若 MD 已存在 → 按 `generate_html_report` 进入 `html_rendering` 或 `completed`；否则 Phase 7
-6. **html_rendering**：按 `state-structure.md` 校验 HTML 完整性；通过则 `completed`，否则重拉 HTML 子 agent（最多 2 次）
+6. **html_rendering**：按 `state-structure.md` 校验 HTML 完整性；通过则 `completed`，否则重拉 HTML 子执行器（最多 2 次）
 6. **幂等（可选）**：`tech_stack` 且 `tech-stack.json` 已合法 → 可直接 `task_planning`；`task_planning` 且 `task-plan.json` 已存在 → 补全 `review_progress` 后进入 `reviewing`
 ```
 
-### 2.3 子 agent 调用与故障恢复
+### 2.3 子执行器调用与故障恢复
 
-**标准流程：** 拉起子 agent 前将该专家标为 `in_progress` 并写回 `state.json`；返回后根据结果文件是否合法标为 `completed` 或进入故障恢复。
+**标准流程：** 拉起子执行器前将该专家标为 `in_progress` 并写回 `state.json`；返回后根据结果文件是否合法标为 `completed` 或进入故障恢复。
 
-**故障恢复：** 子 agent 超时/异常：将该专家置 `pending`，新实例重试，**最多 2 次**；仍失败则 `failed` 并记入 `notes[]`。
+**故障恢复：** 子执行器超时/异常：将该专家置 `pending`，新实例重试，**最多 2 次**；仍失败则 `failed` 并记入 `notes[]`。
 
-### 2.4 主编排 Agent 上下文纪律
+### 2.4 主编排器上下文纪律
 
-禁止将子 agent 提示词全文、`docs/` 全文、结果 JSON 全量读入主对话；只传变量与路径。上下文将满时写 `state.json` 并请用户重启主编排 Agent。
+禁止将子执行器提示词全文、`docs/` 全文、结果 JSON 全量读入主对话；只传变量与路径。上下文将满时写 `state.json` 并请用户重启主编排器。
 
-### 2.5 opencode 并行执行约定
+### 2.5 多运行器并行执行约定
 
-本 Skill 可通过 opencode 执行。主编排 Agent 应将 `prompts/*.md` 作为子 agent 的系统提示词来源，并通过任务描述传入变量。每个子 agent 的唯一交付物是写入约定的 `OUTPUT_PATH` JSON/报告文件；主编排 Agent 只检查文件，不依赖对话内容合并结果。
+本 Skill 可通过 VS Code Builder、opencode 或 Claude Code 执行。主编排器应将 `prompts/*.md` 作为唯一子执行器系统提示词来源，并通过任务描述传入变量。每个子执行器的唯一交付物是写入约定的 `OUTPUT_PATH` JSON/报告文件；主编排器只检查文件，不依赖对话内容合并结果。
 
 **并行原则：**
 
 - Phase 3 技术栈、Phase 4 任务规划存在依赖关系，必须串行。
-- Phase 5 中，同一批次内 `core`、`framework`、`reliability`、`security` 四个专家彼此独立，凡 `task-plan.json` 标记为适用且状态为 `pending` / `failed` 的，可以通过 opencode 并行拉起。
-- 并行启动前，先把这些专家状态统一写为 `in_progress`；每个子 agent 写自己的固定输出文件，互不共享写入目标。
+- Phase 5 中，同一批次内 `core`、`framework`、`reliability`、`security` 四个专家彼此独立，凡 `task-plan.json` 标记为适用且状态为 `pending` 的，都可以通过当前运行器的并行任务能力一次性派发。
+- `failed` 是终态，主编排器不得自动重跑；仅当用户明确要求时，先人工或脚本改回 `pending`，再重新派发。
+- 并行启动前，先把这些专家状态统一写为 `in_progress`；每个子执行器写自己的固定输出文件，互不共享写入目标。
 - 等同批次所有适用专家完成后，先执行该批次的 `issue-curator`；curator 完成后再执行 `fix-advisor`，fix 完成后再进入下一批次或报告合成。
-- 若 opencode 当前环境不支持并行任务，则按 `core → framework → reliability → security` 串行降级，输出文件与状态规则保持不变。
+- 若当前运行器不支持并行任务，则按 `core → framework → reliability → security` 串行降级，输出文件与状态规则保持不变。
 
 ---
 
@@ -176,7 +179,7 @@ node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
 
 ---
 
-### Phase 1：分支与检视选项（主编排 Agent）
+### Phase 1：分支与检视选项（主编排器）
 
 **须与 §0.2 五问一致**；未 `user_confirmed` 禁止进入 Phase 2。
 
@@ -211,7 +214,7 @@ node "{SKILL_ROOT}/scripts/batch-processor.js" --inventory .codereview/file-inve
 node "{SKILL_ROOT}/scripts/export-batch-diffs.js" --inventory .codereview/file-inventory.json --output-dir .codereview/diffs
 ```
 
-子 agent **优先**读取 `.codereview/diffs/{BATCH_ID}.patch`；缺失再按文件 `git diff`。
+子执行器**优先**读取 `.codereview/diffs/{BATCH_ID}.patch`；缺失再按文件 `git diff`。
 
 **Step 4** 展示批次数、文件数、行数及跳过低风险统计；将 `diff_analysis`（文件数、变动行数、批次数、`completed: true`）写入 `state.json` 后，设 `current_phase = "tech_stack"`。
 
@@ -219,7 +222,7 @@ node "{SKILL_ROOT}/scripts/export-batch-diffs.js" --inventory .codereview/file-i
 
 ### Phase 3：技术栈分析
 
-**子 agent：** `web-codereview-tech-stack`
+**子执行器：** `web-codereview-tech-stack`
 **提示词文件：** `{SKILL_ROOT}/prompts/tech-stack-analysis.md`
 
 | 变量 | 值 |
@@ -233,7 +236,7 @@ node "{SKILL_ROOT}/scripts/export-batch-diffs.js" --inventory .codereview/file-i
 
 ### Phase 4：任务规划
 
-**子 agent：** `web-codereview-task-plan`
+**子执行器：** `web-codereview-task-plan`
 **提示词文件：** `{SKILL_ROOT}/prompts/task-planner.md`
 
 | 变量 | 值 |
@@ -254,7 +257,7 @@ node "{SKILL_ROOT}/scripts/export-batch-diffs.js" --inventory .codereview/file-i
 for each batch:
   for expert in [core, framework, reliability, security]:
     skip if completed/skipped
-拉起子 agent，写回 state
+拉起子执行器，写回 state
   本批专家全部完成后 → Phase 5.5 curator → 写回
   curator 完成后 → Phase 6 fix（输入 curated.json）→ 写回
 all batches done → current_phase = "synthesizing"（见 Phase 7）
@@ -270,14 +273,14 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" \
   --output .codereview/memory-brief-{BATCH_ID}-{expert}.json
 ```
 
-| 专家 | 子 agent | 提示词文件 | 输出 | 合并来源 |
+| 专家 | 子执行器 | 提示词文件 | 输出 | 合并来源 |
 |------|------------|------------|------|----------|
 | core | `web-codereview-review-core` | `{SKILL_ROOT}/prompts/code-scanner.md` | `{BATCH_ID}-core.json` | 扫描 + 规范 |
 | framework | `web-codereview-review-framework` | `{SKILL_ROOT}/prompts/framework-reviewer.md` | `{BATCH_ID}-framework.json` | Vue/React + 样式 |
 | reliability | `web-codereview-review-reliability` | `{SKILL_ROOT}/prompts/perf-reviewer.md` | `{BATCH_ID}-reliability.json` | 性能 + 健壮性 |
 | security | `web-codereview-review-security` | `{SKILL_ROOT}/prompts/security-reviewer.md` | `{BATCH_ID}-security.json` | 安全（独立） |
 
-**每次检视子 agent 必传：**
+**每次检视子执行器必传：**
 
 | 变量 | 说明 |
 |------|------|
@@ -287,23 +290,23 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" \
 | `DIFF_PATCH_PATH` | `.codereview/diffs/{BATCH_ID}.patch`（存在则必传） |
 | `SEVERITY_MODE` | `state.json` → `review_options.severity_mode` |
 | `MEMORY_BRIEF_PATH` | `.codereview/memory-brief-{BATCH_ID}-{expert}.json` |
-| `TECH_STACK` | 摘要或路径（子 agent 可读 `tech-stack.json`） |
+| `TECH_STACK` | 摘要或路径（子执行器可读 `tech-stack.json`） |
 | `OUTPUT_PATH` | 结果路径 |
 | `SKILL_ROOT` | 本 Skill 根目录（读 `docs/vue2-reference.md` 等） |
 
-**检视范围（传达给子 agent）：**
+**检视范围（传达给子执行器）：**
 
 > 优先读 `DIFF_PATCH_PATH` 中 unified diff；缺失或为空再 `git --no-pager diff {BRANCH2}...{BRANCH1} -- <file>`。只报变更相关行；`line` **字符串**；每条 issue 必须补充 `symbol`（如 `UserList.vue#fetchUsers`、`useUser.ts#useUser`），报告不得只依赖行号定位。`critical_high_only` 时仅 `critical`/`high`。
 
 **适用性：** 以 `task-plan.json` 的 `applicable_experts` 为准；非适用专家在 `review_progress` 中为 `skipped`。
 
-**opencode 并行派发建议：**
+**并行派发建议：**
 
-同一 `BATCH_ID` 中，对 `applicable_experts` 取交集后可一次性并行拉起多个子 agent。每个任务必须显式包含：`BATCH_ID`、`BATCH_FILES`、`BRANCH1`、`BRANCH2`、`DIFF_PATCH_PATH`、`SEVERITY_MODE`、`MEMORY_BRIEF_PATH`、`TECH_STACK`、`SKILL_ROOT`、独立 `OUTPUT_PATH`，并强调“完成后只写对应输出文件”。主编排 Agent 等待这一组输出文件全部存在且 JSON 合法后，再将对应状态改为 `completed`；随后串行执行 `issue-curator` 与 `fix-advisor`。
+同一 `BATCH_ID` 中，对 `applicable_experts` 取交集后可一次性并行拉起多个子执行器。每个任务必须显式包含：`BATCH_ID`、`BATCH_FILES`、`BRANCH1`、`BRANCH2`、`DIFF_PATCH_PATH`、`SEVERITY_MODE`、`MEMORY_BRIEF_PATH`、`TECH_STACK`、`SKILL_ROOT`、独立 `OUTPUT_PATH`，并强调“完成后只写对应输出文件”。主编排器等待这一组输出文件全部存在且 JSON 合法后，再将对应状态改为 `completed`；随后串行执行 `issue-curator` 与 `fix-advisor`。
 
-**框架专家路径变量**（主编排 Agent 仅在与 **framework** 子 agent 通信时传入）：`VUE2_REF_PATH` = `{SKILL_ROOT}/docs/vue2-reference.md`；`VUE3_REF_PATH` = `{SKILL_ROOT}/docs/vue3-reference.md`；`REACT_REF_PATH` = `{SKILL_ROOT}/docs/react-reference.md`；`GENERAL_STANDARDS_PATH` = `{SKILL_ROOT}/docs/general-standards.md`。
+**框架专家路径变量**（主编排器仅在与 **framework** 子执行器通信时传入）：`VUE2_REF_PATH` = `{SKILL_ROOT}/docs/vue2-reference.md`；`VUE3_REF_PATH` = `{SKILL_ROOT}/docs/vue3-reference.md`；`REACT_REF_PATH` = `{SKILL_ROOT}/docs/react-reference.md`；`GENERAL_STANDARDS_PATH` = `{SKILL_ROOT}/docs/general-standards.md`。
 
-**安全专家路径变量**（主编排 Agent 仅在与 **security** 子 agent 通信时传入）：`SECURITY_REF_PATH` = `{SKILL_ROOT}/docs/security-checklist.md`。
+**安全专家路径变量**（主编排器仅在与 **security** 子执行器通信时传入）：`SECURITY_REF_PATH` = `{SKILL_ROOT}/docs/security-checklist.md`。
 
 ---
 
@@ -319,7 +322,7 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" \
   --output .codereview/memory-brief-{BATCH_ID}-curator.json
 ```
 
-**子 agent：** `web-codereview-issue-curator`
+**子执行器：** `web-codereview-issue-curator`
 **提示词文件：** `{SKILL_ROOT}/prompts/issue-curator.md`
 
 | 变量 | 值 |
@@ -340,7 +343,7 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" \
 
 ### Phase 6：修复建议（每批次一次，嵌在 Phase 5 循环末尾）
 
-**子 agent：** `web-codereview-fix-advisor`
+**子执行器：** `web-codereview-fix-advisor`
 **提示词文件：** `{SKILL_ROOT}/prompts/fix-advisor.md`
 
 | 变量 | 值 |
@@ -368,7 +371,7 @@ node "{SKILL_ROOT}/scripts/git-line-authors.js" \
   --output .codereview/line-authors.json
 ```
 
-**子 agent：** `web-codereview-report-synthesizer`  
+**子执行器：** `web-codereview-report-synthesizer`
 **提示词：** `{SKILL_ROOT}/prompts/report-synthesizer.md`
 
 | 变量 | 值 |
@@ -410,7 +413,7 @@ node "{SKILL_ROOT}/scripts/render-report-html.js" \
 
 **Step 2：** 脚本 `ok: true` 且 `placeholdersOk: true`；并校验 `<!DOCTYPE html>` + `</html>` + `<!-- ato-codereview-html-end -->`（见 `state-structure.md`）。`unresolvedPlaceholders` 非空 → 回到 Phase 7 补全 MD。
 
-**Step 3（仅当 Step 1/2 失败）：** 子 agent `web-codereview-report-html`（`prompts/report-html.md`），禁止降级占位，最多 2 次。
+**Step 3（仅当 Step 1/2 失败）：** 子执行器 `web-codereview-report-html`（`prompts/report-html.md`），禁止降级占位，最多 2 次。
 
 **HTML 签收：** 第六节勾选有效/已修（勾选「已修复」自动勾选「有效」）；第七节验证与签收：开发负责人填写结论并提交，**备注**默认「上述问题无需修复」可修改；自动汇总「本次参与开发」。提交后回写 MD 并生成 `【Fix】` 版 HTML；`file://` 下 fetch MD 失败时壳内 JS 会根据页面自动生成 MD。
 
@@ -426,9 +429,9 @@ node "{SKILL_ROOT}/scripts/render-report-html.js" \
 
 ---
 
-## 4. 子 agent / opencode 标识对照表
+## 4. 子执行器标识对照表
 
-用户需在 opencode 或其它 AI 编排器中预先创建以下子 agent。系统提示词取自 `{SKILL_ROOT}/prompts/` 对应文件：
+VS Code 子 Builder、opencode subagent、Claude Code subagent/Task 均使用同一套标识和同一套提示词。系统提示词取自 `{SKILL_ROOT}/prompts/` 对应文件：
 
 | 标识 | 提示词文件 |
 |------|------------|
@@ -443,11 +446,19 @@ node "{SKILL_ROOT}/scripts/render-report-html.js" \
 | `web-codereview-report-synthesizer` | `prompts/report-synthesizer.md` |
 | `web-codereview-report-html` | `prompts/report-html.md` |
 
-兼容说明：`prompts/spec-reviewer.md` 同 core，`prompts/style-reviewer.md` 同 framework，`prompts/robustness-reviewer.md` 同 reliability；新流程使用上表 **10** 个标识（HTML 子 agent 可选）。
+兼容说明：`prompts/spec-reviewer.md` 同 core，`prompts/style-reviewer.md` 同 framework，`prompts/robustness-reviewer.md` 同 reliability；新流程使用上表 **10** 个标识（HTML 子执行器可选）。
 
 ---
 
-## 5. Git 备忘
+## 5. 运行器接入
+
+- **VS Code Builder**：主 Builder 系统提示词使用 `{SKILL_ROOT}/vscode-main-builder.md`；10 个子 Builder 使用上表 `prompts/*.md`。Phase 5 同批专家可并行，curator/fix/report 串行。
+- **opencode**：使用 `{SKILL_ROOT}/opencode/opencode.example.json`；主 agent prompt 指向 `SKILL.md`，subagent prompt 指向同一套 `prompts/*.md`。
+- **Claude Code**：主会话读取 `SKILL.md`；需要并行时用 Claude Code 的 subagent/Task 能力分别加载上表 `prompts/*.md`，每个任务传入 Phase 5 变量并只写自己的 `OUTPUT_PATH`。
+
+---
+
+## 6. Git 备忘
 
 ```powershell
 git rev-parse --verify "branch-name"
@@ -457,10 +468,10 @@ git --no-pager diff {BRANCH2}...{BRANCH1} -- path/to/file.vue
 
 ---
 
-## 6. 主编排 Agent 禁令
+## 7. 主编排器禁令
 
 1. 不要将 `prompts/*.md` 全文读入主对话
 2. 不要将 `docs/*.md` 全文读入主对话
 3. 不要将专家 JSON 全文读入（仅必要时校验存在性）
 4. 不要在主对话中代做代码检视
-5. 上下文将满 → 写 `state.json` → 请用户重启主编排 Agent
+5. 上下文将满 → 写 `state.json` → 请用户重启主编排器

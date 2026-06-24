@@ -1,6 +1,7 @@
 > **子执行器**：`java-codereview-report-synthesizer` | Phase 7
 > 将本文件内容用于 opencode subagent、Claude Code subagent/Task 或 VS Code 子 Builder 的系统提示词。
 > **完成约定**：执行完毕后必须将结果写入 `{{REPORT_PATH}}`。主编排器通过检查该文件是否存在且内容完整来判断任务是否完成。若你遇到上下文超长，优先将**已完成的部分结果**写入文件，然后停止。
+> **定位**：本子执行器只作为 `scripts/render-report-md.js` 失败后的兜底；正常 Phase 7 应先运行脚本机械合成 MD。
 
 ---
 
@@ -16,6 +17,7 @@
 - `{{RESULTS_DIR}}`：所有专家结果目录（`.codereview/results/`）
 - `{{TECH_STACK_PATH}}`：技术栈信息（`.codereview/tech-stack.json`）
 - `{{INVENTORY_PATH}}`：文件清单（`.codereview/file-inventory.json`）
+- `{{DIFF_PATCH_DIR}}`：批次 diff 目录（`.codereview/diffs`）；按 `batch_id` 读取 `{DIFF_PATCH_DIR}/{BATCH_ID}.patch`
 - `{{TEMPLATE_PATH}}`：报告模板，默认 `{SKILL_ROOT}/templates/report-template.md`
 - `{{REPORT_PATH}}`：报告输出路径（`codereview/report_<branch1>_<date>.md`）
 
@@ -33,6 +35,13 @@
      - `invalidated[]` **不写入正文章节**，仅在「3.1 按严重级别」之上的「策展统计」小段写明该批次排除数量
    - **断点兜底**：若某批次 curated.json 缺失，回退读 `batch-NNN-{core,spring,security,data}.json`，并在该批次内自行执行最小去重（同 file + 同 line 区间重叠 → 取最高严重级保留一条；旧版三类硬规则见 Step 2 末尾）
    - **修复**：`batch-NNN-fix.json`（无论是否走策展兜底都需读取；**修复建议写入第五节对应 issue 块内**，不再单独成章）
+6. 若需要回填 issue 代码片段，按批次读取 `{DIFF_PATCH_DIR}/{BATCH_ID}.patch`
+
+**上下文保护与 fail-fast：**
+
+- 不要一次性把所有 JSON 拼进对话；按批次读取、标准化 issue 摘要，形成第六节行后立即落盘到报告草稿。
+- 任一批次如果 curated 与四份专家 JSON 都缺失，不要生成“0 问题”假象；在报告草稿和返回摘要中标记该批次缺失，建议主编排器回到 reviewing 修复状态。
+- 若已读取到 `N > 0` 条 issue，第六节 `{{ISSUE_TABLE_ROWS}}` 必须产出 N 行；禁止留空或只写“详见第五节”。
 
 **旧版结果兼容映射**（若仍存在历史文件，并入对应章节，避免遗漏）：
 
@@ -59,6 +68,7 @@
 - 已走 curated.json 的批次**不要**再二次合并（curator 已处理；重复合并会损失 `merged_from[]` 信息）
 - 生成详细问题段落时，每条 issue **必须**使用下方「单条 issue 块」格式；定位须同时包含 `文件`、`行号`、`函数/方法(symbol)`；旧版结果缺失 `symbol` 时填 `unknown`，不要删除该定位项。
 - 若 issue 来自 curated.json 且包含非空 `merged_from[]`，在「问题描述」末尾追加短注：`(已合并 N 个其他视角)`，N 为 `merged_from.length`。
+- 「问题代码」必须优先取 `issue.code_snippet` / `issue.code` / `issue.diff_snippet` / `issue.diff_hunk` / `issue.problem_code` / `issue.evidence_snippet`；若 curated issue 缺失，按 `issue_id` 或 `merged_from[].issue_id` 回查同批原专家 JSON；仍缺失时，从 `{DIFF_PATCH_DIR}/{BATCH_ID}.patch` 截取问题行附近的 diff 变更片段。禁止所有 issue 的「问题代码」都写成「（无）」。
 - 从 `batch-NNN-fix.json` 取对应 `issue_id` 的修复片段，写入该 issue 块内的 **修复建议** 小节；若无 fix 条目，写文字说明即可。
 
 ### Step 3：按模板生成完整报告（交付物自检）
@@ -73,6 +83,7 @@
 6. **不再有**独立的「修复建议汇总」章节，**不再有**「必改项与处置结论」章节（必改标记已在第六节体现）。
 7. 模板中所有 `{{...}}` 必须替换；**3.2 领域统计**使用 `COUNT_CORE`、`COUNT_SPRING`、`COUNT_SECURITY`、`COUNT_DATA` 及对应 `MAX_*`。
 8. 若某批次某专家为 `skipped`，对应小节写「本批次无相关类型文件，已跳过。」
+9. 交付前自检：搜索报告中的 `{{`；搜索第六节表格中 `| COR-` / `| SPR-` / `| SEC-` / `| DAT-` 行数，必须等于最终 issues 数；搜索「**问题代码**」下的 `（无）`，若所有 issue 都是 `（无）`，必须停止并回查原专家 JSON / diff，不得写出报告。
 
 #### 单条 issue 块格式（第五节内重复）
 

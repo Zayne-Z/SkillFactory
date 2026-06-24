@@ -1,19 +1,20 @@
 /**
- * Phase 2+ 脚本入口门禁：Phase 1 五项须已确认（review_options.user_confirmed === true）
+ * Phase 2+ 脚本入口门禁：Phase 1 六项须已确认（review_options.user_confirmed === true）
  */
 const fs = require('fs');
 const path = require('path');
 
 const PHASE1_MESSAGE = `
-PHASE1_REQUIRED: 尚未完成 Phase 1 五项确认，禁止执行检视脚本。
+PHASE1_REQUIRED: 尚未完成 Phase 1 六项确认，禁止执行检视脚本。
 
-主编排器可以分多轮收集 Phase 1 五项，但进入 Phase 2 前必须全部有合法值。
+主编排器可以分多轮收集 Phase 1 六项，但进入 Phase 2 前必须全部有合法值。
 用户跳过任一项时采用默认值：
   1) BRANCH1 / BRANCH2：当前分支 / master
   2) severity_mode：critical_high_only
   3) skip_low_risk_files：true
   4) generate_html_report：true
   5) max_lines_per_batch：1200
+  6) deep_doubt_analysis：true
 
 确认后执行：
   node "{SKILL_ROOT}/scripts/update-state.js" --branch1 <b1> --branch2 <b2> \\
@@ -21,10 +22,11 @@ PHASE1_REQUIRED: 尚未完成 Phase 1 五项确认，禁止执行检视脚本。
     --set review_options.skip_low_risk_files=<bool> \\
     --set review_options.generate_html_report=<bool> \\
     --set review_options.max_lines_per_batch=<n> \\
+    --set review_options.deep_doubt_analysis=<bool> \\
     --set review_options.user_confirmed=true \\
     --phase diff_analysis --checkpoint phase1_done
 
-若五项未收齐或未应用默认值就开始检视，说明未执行 SKILL.md §0.2；Phase 2 脚本会报 PHASE1_REQUIRED。
+若六项未收齐或未应用默认值就开始检视，说明未执行 SKILL.md §0.2；Phase 2 脚本会报 PHASE1_REQUIRED。
 `.trim();
 
 function phase1Problems(state) {
@@ -46,6 +48,9 @@ function phase1Problems(state) {
   }
   if (!Number.isInteger(opts.max_lines_per_batch) || opts.max_lines_per_batch <= 0) {
     problems.push(`review_options.max_lines_per_batch=${JSON.stringify(opts.max_lines_per_batch)}`);
+  }
+  if (typeof opts.deep_doubt_analysis !== 'boolean') {
+    problems.push(`review_options.deep_doubt_analysis=${JSON.stringify(opts.deep_doubt_analysis)}`);
   }
   return problems;
 }

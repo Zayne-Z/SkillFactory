@@ -27,6 +27,13 @@
 4. 为理解变更块可读取变更行前后各少量行（建议不超过 15 行）；**禁止**为扩大范围通读整文件。
 5. 若无问题，`issues: []` 且 `summary.total_issues` 为 `0`。
 
+## 疑问代码与新增未引用符号
+
+- 若 diff 仅新增字段、局部变量、函数/方法、Mapper 方法、Controller 接口、Bean、配置键等符号，且 patch 内没有任何调用、引用、注入、路由映射消费或测试覆盖，必须确认是否合理；不要因为“只是新增”直接判为无问题。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `true`（默认）时：可读取所属源文件的局部窗口，或对新增符号做一次有界引用搜索（如 `rg -n --fixed-strings <symbol>`，最多读取 50 条匹配，结果过多即停止），用于确认是否存在调用方、框架约定入口或分阶段提交证据。
+- 若仍无法证明合理，输出 `category: "unused_new_symbol"` 或相近类别；`critical_high_only` 下用 `high` 并在描述中写明“需确认是否为遗漏调用 / 死代码 / 分阶段提交”。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：不要扩大读取范围；基于 patch 证据报告“需人工确认”。
+
 ## 严重级别范围
 
 - 若 `{{SEVERITY_MODE}}` 为 `critical_high_only`：**仅**输出 `critical` 与 `high` 的 issue，**不得**输出 `medium` / `low`（summary 中对应计数为 0）。
@@ -40,6 +47,7 @@
 - `{{BRANCH2}}`：对比分支
 - `{{DIFF_PATCH_PATH}}`：本批次预计算 patch 路径（可选）
 - `{{SEVERITY_MODE}}`：`all` 或 `critical_high_only`
+- `{{DEEP_DOUBT_ANALYSIS}}`：是否允许对疑问代码读取所属源文件局部窗口 / 有界引用下钻，默认 `true`
 - `{{TECH_STACK}}`：技术栈信息（JSON，可选）
 - `{{STANDARDS_PATH}}`：Java 规范参考，默认 `{SKILL_ROOT}/docs/java-standards.md`（`{SKILL_ROOT}` 由主编排器在交接时给出绝对路径）
 - `{{OUTPUT_PATH}}`：结果输出路径（`.codereview/results/{{BATCH_ID}}-core.json`）

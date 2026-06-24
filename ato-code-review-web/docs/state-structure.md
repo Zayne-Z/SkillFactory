@@ -20,6 +20,7 @@
     "skip_low_risk_files": true,
     "generate_html_report": true,
     "max_lines_per_batch": 1200,
+    "deep_doubt_analysis": true,
     "user_confirmed": false
   },
   "tech_stack": {},
@@ -49,7 +50,8 @@
 | `skip_low_risk_files` | boolean | `true` 时 Phase 2 跳过测试/E2E/Storybook 等低风险文件 |
 | `generate_html_report` | boolean | `true` 时 Phase 7 完成后进入 `html_rendering`，产出同名 `.html` |
 | `max_lines_per_batch` | number | Phase 2 `batch-processor.js --max-lines`；默认 **1200** |
-| `user_confirmed` | boolean | Phase 1 五项确认后为 `true`；**为 false 时禁止 Phase 2** |
+| `deep_doubt_analysis` | boolean | 默认 **true**；专家遇到疑问代码时可读取所属源文件局部窗口或做一次有界引用下钻 |
+| `user_confirmed` | boolean | Phase 1 六项确认后为 `true`；**为 false 时禁止 Phase 2** |
 
 ## synthesis
 
@@ -64,10 +66,23 @@
 1. 首部 `<!DOCTYPE html>`
 2. 末尾 16KB 内含 `</html>`
 3. 末尾 16KB 内含 `<!-- ato-codereview-html-end -->`
+4. `render-report-html.js` stdout 中 `allIssueCodeMissing` 为 `false`
+5. stdout 中 `section6IssueRowsComplete` 为 `true`（即 `issueRows >= expectedIssueRows`，第六节多张问题表会合并计数）
 
 失败则先重跑 `render-report-html.js`；仍失败再重拉 `web-codereview-report-html`（最多 2 次）。**禁止** HTML 正文用「请查看同名 .md」占位已有 MD 章节。
 
-`render-report-html.js` 替换壳内 `{{REPORT_TITLE}}`、`{{BODY_HTML}}` 等，并校验最终 HTML **不得残留** `{{PLACEHOLDER}}`（`placeholdersOk: true`）。可用 `--state .codereview/state.json` 补全 MD 基础变量；`{{COUNT_*}}` 等统计须由 Phase 7 在 MD 中写实。
+`render-report-html.js` 替换壳内 `{{REPORT_TITLE}}`、`{{BODY_HTML}}` 等，并校验最终 HTML **不得残留** `{{PLACEHOLDER}}`（`placeholdersOk: true`），issue 详情「问题代码」不得全部为「（无）」，且第六节问题清单行数不得少于第三节合计或第五节 issue 条目数。可用 `--state .codereview/state.json` 补全 MD 基础变量；`{{COUNT_*}}` 等统计须由 Phase 7 在 MD 中写实。
+
+### MD 完整性校验
+
+Phase 7 优先运行 `render-report-md.js` 机械合成 Markdown。通过条件：
+
+1. stdout `ok: true`
+2. `unresolvedPlaceholders` 为空
+3. `allIssueCodeMissing` 为 `false`
+4. 当 stdout `issues > 0` 时，第六节「问题清单（全量）」至少包含同等数量的问题行，且 HTML 详情里的「问题代码」不得全部为「（无）」
+
+失败才拉起 `web-codereview-report-synthesizer` 兜底；兜底也必须保证第六节不为空。
 
 ## 阶段值（current_phase）
 
@@ -118,7 +133,7 @@
 - `reviewing`：找第一个 `pending` / `in_progress` 专家继续
 - `synthesizing`：MD 存在则按 `generate_html_report` 进入 `html_rendering` 或 `completed`
 - `html_rendering`：校验 HTML 完整性后 `completed` 或重试
-- 兼容补丁：补 `curator`、`generate_html_report`、`user_confirmed`、`html_status` 等缺失字段
+- 兼容补丁：补 `curator`、`generate_html_report`、`deep_doubt_analysis`、`user_confirmed`、`html_status` 等缺失字段
 
 ## in_progress 防死锁
 

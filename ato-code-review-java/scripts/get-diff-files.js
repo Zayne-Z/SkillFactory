@@ -10,6 +10,8 @@
  *   "generated_at": "2026-04-06T10:00:00.000Z",
  *   "total_files": 18,
  *   "total_changed_lines": 1560,
+ *   "total_additions": 1100,
+ *   "total_deletions": 460,
  *   "files": [
  *     {
  *       "path": "src/main/java/com/example/service/impl/UserServiceImpl.java",
@@ -195,6 +197,8 @@ function main() {
       generated_at: new Date().toISOString(),
       total_files: 0,
       total_changed_lines: 0,
+      total_additions: 0,
+      total_deletions: 0,
       files: [],
       review_scope: {
         skip_low_risk_files: skipLowRisk,
@@ -228,6 +232,8 @@ function main() {
   const files = [];
   const skippedLowRisk = [];
   let totalChangedLines = 0;
+  let totalAdditions = 0;
+  let totalDeletions = 0;
 
   diffNameStatus.split('\n').forEach(line => {
     if (!line.trim()) return;
@@ -258,6 +264,8 @@ function main() {
     const stats = numStatMap[filePath] || { additions: 0, deletions: 0 };
     const changedLines = stats.additions + stats.deletions;
     totalChangedLines += changedLines;
+    totalAdditions += stats.additions;
+    totalDeletions += stats.deletions;
 
     files.push({
       path: filePath,
@@ -279,6 +287,8 @@ function main() {
     generated_at: new Date().toISOString(),
     total_files: files.length,
     total_changed_lines: totalChangedLines,
+    total_additions: totalAdditions,
+    total_deletions: totalDeletions,
     files,
     review_scope: {
       skip_low_risk_files: skipLowRisk,

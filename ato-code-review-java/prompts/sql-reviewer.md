@@ -23,6 +23,13 @@
 2. XML 仅检视 diff 中出现的 SQL 片段。
 3. 无相关项时 `issues: []`。
 
+## 疑问代码与新增未引用符号
+
+- 若 diff 仅新增 Mapper 方法、XML SQL 节点、Repository 查询、缓存/并发辅助函数、批处理入口等符号，且 patch 内没有调用、XML/接口配对、注入使用或测试覆盖，必须确认是否合理。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `true`（默认）时：可读取所属源文件局部窗口，或对新增符号做一次有界引用搜索（最多读取 50 条匹配，结果过多即停止），判断是否存在 Mapper/XML 配对、Service 调用或框架动态入口。
+- 若无法证明合理，输出 `category: "unused_new_symbol"` / `data_unused_entry`；`critical_high_only` 下用 `high` 并标注需确认。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：只基于 patch 证据报告“需人工确认”。
+
 ## 严重级别范围
 
 若 `{{SEVERITY_MODE}}` 为 `critical_high_only`，仅输出 `critical` / `high`，不得输出 `medium` / `low`。
@@ -30,6 +37,7 @@
 ## 输入变量
 
 - `{{BATCH_ID}}`、`{{BATCH_FILES}}`、`{{BRANCH1}}`、`{{BRANCH2}}`、`{{DIFF_PATCH_PATH}}`、`{{SEVERITY_MODE}}`
+- `{{DEEP_DOUBT_ANALYSIS}}`：是否允许对疑问代码读取所属源文件局部窗口 / 有界引用下钻，默认 `true`
 - `{{TECH_STACK}}`：ORM、数据库、是否有 Redis 等
 - `{{MYBATIS_REF_PATH}}`：默认 `{SKILL_ROOT}/docs/mybatis-reference.md`
 - `{{OUTPUT_PATH}}`：`.codereview/results/{{BATCH_ID}}-data.json`

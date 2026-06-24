@@ -23,6 +23,13 @@
 2. **仅**报告与本次 diff hunk 直接相关的问题；可读变更行前后约 15 行；**禁止**通读全文件。
 3. 若无问题：`issues: []`，`summary.total_issues` 为 `0`。
 
+## 疑问代码与新增未引用符号
+
+- 若 diff 仅新增变量、函数、导出、组件方法、路由/API 包装等符号，且 patch 内没有任何调用、绑定或引用，必须确认是否合理；不要因为“只是新增”直接判为无问题。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `true`（默认）时：可读取所属源文件的局部窗口，或对新增符号做一次有界引用搜索（如 `rg -n --fixed-strings <symbol>`，最多读取 50 条匹配，结果过多即停止），用于确认是否存在调用方、框架约定入口或测试覆盖。
+- 若仍无法证明合理，输出 `category: "unused_new_symbol"` 或相近类别；`critical_high_only` 下用 `high` 并在描述中写明“需确认是否为遗漏调用 / 死代码 / 分阶段提交”。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：不要扩大读取范围；基于 patch 证据报告“需人工确认”。
+
 ## 严重级别范围
 
 - `{{SEVERITY_MODE}}` 为 `critical_high_only` 时：**仅** `critical` / `high`。
@@ -33,6 +40,7 @@
 
 - `{{BATCH_ID}}`、`{{BATCH_FILES}}`、`{{BRANCH1}}`、`{{BRANCH2}}`
 - `{{DIFF_PATCH_PATH}}`、`{{SEVERITY_MODE}}`
+- `{{DEEP_DOUBT_ANALYSIS}}`：是否允许对疑问代码读取所属源文件局部窗口 / 有界引用下钻，默认 `true`
 - `{{TECH_STACK}}`（可选）
 - `{{GENERAL_STANDARDS_PATH}}`：默认 `{SKILL_ROOT}/docs/general-standards.md`
 - `{{SKILL_ROOT}}`、`{{OUTPUT_PATH}}`（`.codereview/results/{{BATCH_ID}}-core.json`）

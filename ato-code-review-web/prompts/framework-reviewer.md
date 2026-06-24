@@ -23,10 +23,18 @@
 3. `issues[].line` **字符串**；`{{SEVERITY_MODE}}` 为 `critical_high_only` 时仅 `critical`/`high`。
 4. `issues[].symbol` **字符串且必填**：Vue 填 `组件名#生命周期/方法/computed/watch/模板块`；样式问题填最近选择器（如 `.user-card__title`）；无法判断时填 `"unknown"`。
 
+## 疑问代码与新增未引用符号
+
+- 若 diff 仅新增组件方法、hook、composable、store action、路由配置、样式类名或导出符号，且 patch 内没有任何调用、绑定、模板引用或样式使用，必须确认是否合理。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `true`（默认）时：可读取所属源文件局部窗口，或对新增符号/类名做一次有界引用搜索（最多读取 50 条匹配，结果过多即停止），判断是否为框架约定入口、动态绑定、测试入口或遗漏引用。
+- 若无法证明合理，输出 `category: "unused_new_symbol"` / `framework_unused_entry` / `style_unused_selector`；`critical_high_only` 下用 `high` 并标注需确认。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：只基于 patch 证据报告“需人工确认”，不扩大读取范围。
+
 ## 输入变量
 
 - `{{BATCH_ID}}`、`{{BATCH_FILES}}`、`{{BRANCH1}}`、`{{BRANCH2}}`
 - `{{DIFF_PATCH_PATH}}`、`{{SEVERITY_MODE}}`、`{{TECH_STACK}}`（或 `tech-stack.json` 路径）
+- `{{DEEP_DOUBT_ANALYSIS}}`：是否允许对疑问代码读取所属源文件局部窗口 / 有界引用下钻，默认 `true`
 - `{{VUE2_REF_PATH}}`、`{{VUE3_REF_PATH}}`、`{{REACT_REF_PATH}}`、`{{GENERAL_STANDARDS_PATH}}`（默认均在 `{SKILL_ROOT}/docs/`）
 - `{{SKILL_ROOT}}`、`{{OUTPUT_PATH}}`（`.codereview/results/{{BATCH_ID}}-framework.json`）
 - `{{MEMORY_BRIEF_PATH}}`：项目记忆 brief（可选；存在时**第一个 tool call 前**必读）

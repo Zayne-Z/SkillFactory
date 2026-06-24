@@ -26,6 +26,7 @@
     "skip_low_risk_files": true,
     "generate_html_report": true,
     "max_lines_per_batch": 1200,
+    "deep_doubt_analysis": true,
     "user_confirmed": false
   },
 
@@ -66,9 +67,10 @@
 | `skip_low_risk_files` | boolean | `true` 时 Phase 2 对 `get-diff-files.js` 传 `--skip-low-risk true`，排除 DTO/Entity/测试等（详见清单 `review_scope`） |
 | `generate_html_report` | boolean | `true` 时 Phase 7 完成后进入 `html_rendering`，拉起 HTML 子执行器产出同名 `.html`；`false` 时跳过 |
 | `max_lines_per_batch` | number | Phase 2 `batch-processor.js --max-lines`；默认 **1200** |
-| `user_confirmed` | boolean | Phase 1 五项清单已向用户询问并复述确认后为 `true`；**为 `false` 时禁止进入 Phase 2**（兼容性补丁填 `false` 不能代替用户确认） |
+| `deep_doubt_analysis` | boolean | 默认 **true**；专家遇到疑问代码时可读取所属源文件局部窗口或做一次有界引用下钻 |
+| `user_confirmed` | boolean | Phase 1 六项清单已向用户询问并复述确认后为 `true`；**为 `false` 时禁止进入 Phase 2**（兼容性补丁填 `false` 不能代替用户确认） |
 
-Phase 1 须让分支 + 上表各项选项（含 `max_lines_per_batch`）都有值；可分多轮收集，用户跳过时使用默认值。复述后设 `user_confirmed: true` 再进入 `diff_analysis`。断点续跑时子执行器通过主编排器传入的 `SEVERITY_MODE` 等变量读取此配置。
+Phase 1 须让分支 + 上表各项选项（含 `max_lines_per_batch`、`deep_doubt_analysis`）都有值；可分多轮收集，用户跳过时使用默认值。复述后设 `user_confirmed: true` 再进入 `diff_analysis`。断点续跑时子执行器通过主编排器传入的 `SEVERITY_MODE` 等变量读取此配置。
 
 ## synthesis
 
@@ -81,17 +83,30 @@ Phase 1 须让分支 + 上表各项选项（含 `max_lines_per_batch`）都有�
 
 ### HTML 完整性校验（主编排器判定 Phase 7.5 是否成功）
 
-通过条件（**三者必须同时满足**）：
+通过条件（**五者必须同时满足**）：
 
 1. 文件首部含 `<!DOCTYPE html>`
 2. 文件末尾 16KB 内含 `</html>`
 3. 文件末尾 16KB 内含哨兵注释 `<!-- ato-codereview-html-end -->`
+4. `render-report-html.js` stdout 中 `allIssueCodeMissing` 为 `false`
+5. stdout 中 `section6IssueRowsComplete` 为 `true`（即 `issueRows >= expectedIssueRows`，第六节多张问题表会合并计数）
 
 任一缺失：判定失败。主编排应**先**重跑 `node "{SKILL_ROOT}/scripts/render-report-html.js" --md … --shell … --out …`（覆盖写出）；脚本仍失败时再重拉 `java-codereview-report-html`（不复用既有半成品）。跨子执行器调用（重试）一律从空白重写。
 
 **禁止** HTML 正文中出现 `section.truncated` 或「请查看同名 .md」占位（除非 MD 本身缺失对应 `##` 章节且脚本与子执行器均已报错）。
 
-`render-report-html.js` 会替换壳内 `{{REPORT_TITLE}}`、`{{META_SUMMARY}}`、`{{BODY_HTML}}` 等，并校验**最终 HTML 不得残留** `{{PLACEHOLDER}}`。脚本可选用 `--state .codereview/state.json` 从 state/inventory/tech-stack 补全 MD 中尚未替换的基础变量；统计类占位（如 `{{COUNT_*}}`）须由 Phase 7 合成官在 MD 中写实。
+`render-report-html.js` 会替换壳内 `{{REPORT_TITLE}}`、`{{META_SUMMARY}}`、`{{BODY_HTML}}` 等，并校验**最终 HTML 不得残留** `{{PLACEHOLDER}}`，issue 详情「问题代码」不得全部为「（无）」，且第六节问题清单行数不得少于第三节合计或第五节 issue 条目数。脚本可选用 `--state .codereview/state.json` 从 state/inventory/tech-stack 补全 MD 中尚未替换的基础变量；统计类占位（如 `{{COUNT_*}}`）须由 Phase 7 合成官在 MD 中写实。
+
+### MD 完整性校验（主编排器判定 Phase 7 是否成功）
+
+Phase 7 优先运行 `render-report-md.js` 机械合成 Markdown。通过条件：
+
+1. stdout `ok: true`
+2. `unresolvedPlaceholders` 为空
+3. `allIssueCodeMissing` 为 `false`
+4. 当 stdout `issues > 0` 时，第六节「问题清单（全量）」至少包含同等数量的问题行，且 HTML 详情里的「问题代码」不得全部为「（无）」
+
+失败才拉起 `java-codereview-report-synthesizer` 兜底；兜底也必须保证第六节不为空。
 
 ## file-inventory.json 补充字段（非 state.json）
 
@@ -186,10 +201,11 @@ Phase 4 完成后，主编排器根据 `task-plan.json` 初始化：
    current_phase == "task_planning" 且 task-plan.json 已存在 → 可补全 review_progress 后进入 reviewing（避免重复跑子执行器）
 6. 升级兼容：
    a. 若 review_progress[*] 缺少 curator 键 → 每批次补 curator: "pending"
-   b. 若 review_options 缺少 generate_html_report → 补 false
+   b. 若 review_options 缺少 generate_html_report → 补 true
    c. 若 review_options 缺少 max_lines_per_batch → 补 1200
-   d. 若 review_options 缺少 user_confirmed → 补 false（补完后仍须执行 Phase 1 清单）
-   d. 若 synthesis 缺少 html_report_path / html_status → 补 "" 与 "skipped"
+   d. 若 review_options 缺少 deep_doubt_analysis → 补 true
+   e. 若 review_options 缺少 user_confirmed → 补 false（补完后仍须执行 Phase 1 清单）
+   f. 若 synthesis 缺少 html_report_path / html_status → 补 "" 与 "skipped"
    → 写回 state.json 后再进入步骤 3/4/4b
 ```
 

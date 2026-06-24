@@ -22,6 +22,13 @@
 2. 仅针对 **本次新增/修改** 的注解、方法体、事务边界报告；不扫描未改动代码的历史问题。
 3. 无相关项时 `issues: []`。
 
+## 疑问代码与新增未引用符号
+
+- 若 diff 仅新增 Controller 接口、Service 方法、Bean、注解配置、事务方法或框架扩展点，且 patch 内没有调用、路由消费、注入使用或测试覆盖，必须确认是否合理。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `true`（默认）时：可读取所属源文件局部窗口，或对新增符号做一次有界引用搜索（最多读取 50 条匹配，结果过多即停止），判断是否为 Spring/框架约定入口、反射入口或遗漏调用。
+- 若无法证明合理，输出 `category: "unused_new_symbol"` / `spring_unused_entry`；`critical_high_only` 下用 `high` 并标注需确认。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：只基于 patch 证据报告“需人工确认”。
+
 ## 严重级别范围
 
 若 `{{SEVERITY_MODE}}` 为 `critical_high_only`，仅输出 `critical` / `high`，不得输出 `medium` / `low`。
@@ -29,6 +36,7 @@
 ## 输入变量
 
 - `{{BATCH_ID}}`、`{{BATCH_FILES}}`、`{{BRANCH1}}`、`{{BRANCH2}}`、`{{DIFF_PATCH_PATH}}`、`{{SEVERITY_MODE}}`
+- `{{DEEP_DOUBT_ANALYSIS}}`：是否允许对疑问代码读取所属源文件局部窗口 / 有界引用下钻，默认 `true`
 - `{{TECH_STACK}}`：技术栈 JSON
 - `{{SPRING_REF_PATH}}`：默认 `{SKILL_ROOT}/docs/spring-boot-reference.md`
 - `{{MYBATIS_REF_PATH}}`：默认 `{SKILL_ROOT}/docs/mybatis-reference.md`

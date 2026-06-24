@@ -22,10 +22,18 @@
 2. `issues[].line` **字符串**；`critical_high_only` 时仅 `critical`/`high`。
 3. `issues[].symbol` **字符串且必填**：Vue 填 `组件名#函数/生命周期/computed/watch`，JS/TS 填 `文件名#函数名` / `类名#方法名`；模板级问题填 `组件名#template`；无法判断时填 `"unknown"`。
 
+## 疑问代码与新增未引用符号
+
+- 若 diff 仅新增异步函数、请求封装、缓存/防抖函数、资源清理函数、hook/composable 等符号，且 patch 内没有调用、订阅、绑定或清理路径，必须确认是否合理。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `true`（默认）时：可读取所属源文件局部窗口，或对新增符号做一次有界引用搜索（最多读取 50 条匹配，结果过多即停止），确认是否存在调用链或生命周期入口。
+- 若无法证明合理，输出 `category: "unused_new_symbol"` 或 `unreachable_reliability_path`；`critical_high_only` 下用 `high` 并标注需确认。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：只基于 patch 证据报告“需人工确认”。
+
 ## 输入变量
 
 - `{{BATCH_ID}}`、`{{BATCH_FILES}}`、`{{BRANCH1}}`、`{{BRANCH2}}`
 - `{{DIFF_PATCH_PATH}}`、`{{SEVERITY_MODE}}`、`{{TECH_STACK}}`
+- `{{DEEP_DOUBT_ANALYSIS}}`：是否允许对疑问代码读取所属源文件局部窗口 / 有界引用下钻，默认 `true`
 - `{{SKILL_ROOT}}`、`{{OUTPUT_PATH}}`（`.codereview/results/{{BATCH_ID}}-reliability.json`）
 
 ## 检查清单 A：性能

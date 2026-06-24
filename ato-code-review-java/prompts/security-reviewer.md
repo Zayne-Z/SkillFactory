@@ -30,6 +30,13 @@
 3. 未在 diff 中出现的历史漏洞不在本次报告范围。
 4. 无相关项时 `issues` 可为空数组。
 
+## 疑问代码与新增未引用符号
+
+- 若 diff 仅新增鉴权函数、Controller 接口、过滤器/拦截器、token/加密辅助、反序列化入口、SSRF/重定向相关工具等符号，且 patch 内没有调用、注册或路由消费，必须确认是否合理。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `true`（默认）时：可读取所属源文件局部窗口，或对新增符号做一次有界引用搜索（最多读取 50 条匹配，结果过多即停止），确认是否有真实安全路径使用。
+- 无法证明合理时输出 `category: "unused_new_symbol"` 或 `unreachable_security_control`；`critical_high_only` 下用 `high`，因为安全防护代码未接入可能造成实际缺口。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：只基于 patch 证据报告“需人工确认”。
+
 ## 严重级别范围
 
 若 `{{SEVERITY_MODE}}` 为 `critical_high_only`，仅输出 `critical` / `high`，不得输出 `medium` / `low`。
@@ -42,6 +49,7 @@
 - `{{BRANCH2}}`：对比分支
 - `{{DIFF_PATCH_PATH}}`：本批次预计算 patch（可选）
 - `{{SEVERITY_MODE}}`：`all` 或 `critical_high_only`
+- `{{DEEP_DOUBT_ANALYSIS}}`：是否允许对疑问代码读取所属源文件局部窗口 / 有界引用下钻，默认 `true`
 - `{{TECH_STACK}}`：技术栈信息
 - `{{OUTPUT_PATH}}`：结果输出路径（`.codereview/results/{{BATCH_ID}}-security.json`）
 - `{{MEMORY_BRIEF_PATH}}`：项目记忆 brief（可选；存在时**第一个 tool call 前**必读）

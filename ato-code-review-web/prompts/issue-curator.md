@@ -17,7 +17,7 @@
 
 ## 严格边界
 
-- **禁止**通读整项目；**禁止**追踪跨文件调用链。
+- **禁止**通读整项目；默认禁止追踪跨文件调用链；仅当 `{{DEEP_DOUBT_ANALYSIS}} == true` 且 issue 本身属于疑问代码 / 新增未引用符号时，允许一次有界引用下钻。
 - **禁止**新增专家未发现的问题；你只合并、复核、过滤已有问题。
 - **禁止**在 `critical_high_only` 模式下保留 medium / low。
 - 无法证明是误报时，**保留** issue，并在 `recommendation` 末尾追加「需结合调用方进一步确认」。
@@ -30,6 +30,7 @@
 - `{{BRANCH2}}`：基准分支
 - `{{DIFF_PATCH_PATH}}`：本批次预计算 unified diff（辅助理解，不替代局部上下文读取）
 - `{{SEVERITY_MODE}}`：`all` 或 `critical_high_only`
+- `{{DEEP_DOUBT_ANALYSIS}}`：是否允许对疑问代码读取所属源文件局部窗口 / 有界引用下钻，默认 `true`
 - `{{RESULTS_DIR}}`：专家结果目录（`.codereview/results/`）
 - `{{OUTPUT_PATH}}`：策展结果输出路径（`.codereview/results/{{BATCH_ID}}-curated.json`）
 - `{{SKILL_ROOT}}`：本 Skill 根目录
@@ -53,10 +54,10 @@
 把每条 issue 标准化为内部记录：
 
 ```json
-{ "source_expert": "security", "issue_id": "SEC-001", "file": "...", "line": "42", "symbol": "...", "severity": "high", "category": "xss", "title": "...", "description": "...", "recommendation": "..." }
+{ "source_expert": "security", "issue_id": "SEC-001", "file": "...", "line": "42", "symbol": "...", "severity": "high", "category": "xss", "title": "...", "description": "...", "code_snippet": "...", "recommendation": "..." }
 ```
 
-兼容字段：`recommendation` 可从原始 issue 的 `recommendation`、`suggestion`、`fix_suggestion` 中取第一个非空值；`symbol` 缺失时填 `"unknown"`；`line` 始终转为字符串，并解析为 `[start, end]` 区间用于分组。
+兼容字段：`recommendation` 可从原始 issue 的 `recommendation`、`suggestion`、`fix_suggestion` 中取第一个非空值；`code_snippet` 可从原始 issue 的 `code_snippet`、`code`、`diff_snippet`、`diff_hunk`、`problem_code`、`evidence_snippet` 中取第一个非空值；`symbol` 缺失时填 `"unknown"`；`line` 始终转为字符串，并解析为 `[start, end]` 区间用于分组。
 
 ### Step 2：跨专家合并
 
@@ -76,7 +77,7 @@
 | XSS / `v-html` / `dangerouslySetInnerHTML` / DOM 注入 / token / 密钥 / 权限 / 路由守卫 / 开放重定向 / CSRF | `security` |
 | Vue / React / hook 规则 / 组件约定 / props/emits / slot / scoped / CSS Modules / BEM / token / 样式选择器 | `framework` |
 | `v-for key` 性能 / 列表重排 / 内存泄漏 / timer / listener / WebSocket / async / 空值白屏 / 防抖节流 / abort/cancel / 边界状态 | `reliability` |
-| `console.log` / `debugger` / 死代码 / import / 命名 / 基础语法 / 规范 | `core` |
+| `console.log` / `debugger` / 死代码 / import / 命名 / 基础语法 / 规范 / 新增未引用符号 | `core` |
 | 以上均不匹配 | 取 severity 最高；并列按 `security > reliability > framework > core` |
 
 #### 2.3 合并字段
@@ -87,6 +88,7 @@
 - `severity`：取最高级别（critical > high > medium > low）。
 - `category` / `title`：保留主条目。
 - `description`：先概括根因，再用 `- 来源 X 视角：...` 列出各专家视角。
+- `code_snippet`：必须保留。优先取主条目的问题代码；主条目缺失时，从同组合并条目里选择最贴近最终 `file + line + symbol` 的非空代码片段。禁止输出空字符串或省略字段；若所有专家都缺失，则从 `DIFF_PATCH_PATH` 中截取问题行附近的 diff 变更片段。
 - `recommendation`：合并各专家建议并去重，输出一段统一修复方向。
 - `merged_from[]`：除主条目外，按 `{ issue_id, expert, severity, summary }` 记录被合并条目。
 
@@ -98,6 +100,8 @@
 
 - 同一文件在单批最多读取一次。把该文件所有 issue 行号合并成 `[min_start - 8, max_end + 8]` 的连续窗口。
 - 读取窗口可以来自工作区文件或 `git --no-pager show {{BRANCH1}}:<file>` 截取；复用该窗口处理同文件全部 issue。
+- 对 `unused_new_symbol`、`framework_unused_entry`、`style_unused_selector`、`unreachable_security_control`、`unreachable_reliability_path`：若 `{{DEEP_DOUBT_ANALYSIS}} == true`，可额外对符号做一次有界引用搜索（最多读取 50 条匹配，结果过多即停止）；仅在能明确证明有调用/绑定/动态框架入口时移入 `invalidated[]`，否则保留并在 `recommendation` 追加“需确认新增符号是否应接入调用链”。
+- 对 `unreachable_security_control` 与 `unreachable_reliability_path` 默认保留；除非引用证据与局部代码同时证明它已被真实路径使用，禁止移入 `invalidated[]`。
 - 配置、纯 JSON、锁文件、图片等无法形成函数/组件块的文件跳过复核，直接保留。
 
 #### 3.2 局部边界
@@ -174,5 +178,6 @@
 - `issues[].issue_id` 必须唯一；被合并的原 ID 全部放入 `merged_from[]`。
 - `domain` 必须为 `core` / `framework` / `reliability` / `security`，供报告按四大领域归类。
 - `line` 始终为字符串。
+- `code_snippet` 必须随 issue 输出，供最终 Markdown/HTML 的「问题代码」块使用；不得在策展合并时丢弃。
 - 复核结论必须写明局部代码证据或行号；没有证据就保留。
 - 上下文接近极限时，先写出已完成的部分，剩余未复核 issue 原样保守保留。

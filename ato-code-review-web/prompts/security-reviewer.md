@@ -20,6 +20,13 @@
 4. 为理解变更可读取变更行前后各少量行（建议不超过 15 行）；**禁止**为扩大范围通读整文件。
 5. 若无问题，输出 `issues: []` 且 `summary.total_issues` 为 `0`。
 
+## 疑问代码与新增未引用符号
+
+- 若 diff 仅新增权限判断函数、请求封装、token/鉴权辅助、路由守卫、危险 HTML 包装、重定向工具等符号，且 patch 内没有调用或绑定，必须确认是否合理。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `true`（默认）时：可读取所属源文件局部窗口，或对新增符号做一次有界引用搜索（最多读取 50 条匹配，结果过多即停止），确认是否有真实安全路径使用。
+- 无法证明合理时输出 `category: "unused_new_symbol"` 或 `unreachable_security_control`；`critical_high_only` 下用 `high`，因为安全防护代码未接入可能造成实际缺口。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：只基于 patch 证据报告“需人工确认”。
+
 ## 严重级别范围
 
 - 若 `{{SEVERITY_MODE}}` 为 `critical_high_only`：**仅**输出 `critical` 与 `high` 的 issue，**不得**输出 `medium` / `low`（summary 中对应计数为 0）。
@@ -39,6 +46,7 @@
 
 - `{{DIFF_PATCH_PATH}}`：本批次预计算 patch（可选）
 - `{{SEVERITY_MODE}}`：`all` 或 `critical_high_only`
+- `{{DEEP_DOUBT_ANALYSIS}}`：是否允许对疑问代码读取所属源文件局部窗口 / 有界引用下钻，默认 `true`
 - `{{SECURITY_REF_PATH}}`：安全检视参考（默认 `{SKILL_ROOT}/docs/security-checklist.md`）
 - `{{SKILL_ROOT}}`：Skill 根目录（读取参考文档时用绝对路径）
 - `{{BATCH_ID}}`：当前批次 ID

@@ -104,6 +104,7 @@
 - `sev-critical` / `sev-high` / `sev-medium` / `sev-low` 与严重级别对应。
 - Critical / High 标题旁加 `<span class="badge-mustfix">必改</span>`。
 - **必须**包含「问题代码」`<pre class="code">`（来自 MD 问题代码块），不可仅有描述与修复建议。
+- 若 MD 中存在 issue 条目，所有 issue 的「问题代码」不得都渲染为「（无）」；遇到这种情况必须停止并要求回到 Phase 7 回填 MD，禁止生成最终 HTML。
 
 ## 问题清单与签收（第六、七节）
 
@@ -139,6 +140,7 @@
 ```
 
 - 每条 `details.issue-row` **必须** `data-issue-id="{ID}"`；若有提交人则加 `data-author="{name}"` 与 `<span class="col-author col-clip" title="...">`（第六节「提交人」列，便于认领与签收汇总）。
+- 若第六节问题清单因分页、续表或批次拆成多张包含「问题 ID」的表，必须按 MD 出现顺序合并全部问题行；禁止只取第一张表。最终 `details.issue-row` 数量必须覆盖 MD 第六节问题行，并不得少于第三节合计或第五节 issue 条目数。
 - **详情按钮**：`btn-detail` 的 `data-issue-id` 须与第五节 `article#issue-{ID}` 一致；若第五节暂无完整条目，**至少**在行内提供 `.issue-row-expand`（loc-bar + code-snippet），壳 JS 会回退展示该行摘要。
 - 可能被截断的列（`.col-loc`、`.col-fn`、`.col-author`、`.col-desc`）须加 class `col-clip`，并设置 `title`（或与 `data-full` 同值的完整文本），悬停可查看省略内容。
 - `.cb-valid` / `.cb-fixed` 勾选会联动第七节统计（壳 JS 已内置）。
@@ -227,7 +229,7 @@
 
 ### Step 4：失败处理（禁止默认降级占位）
 
-若 MD 过长，**分章读取 MD 并在内存拼接后一次性写出**完整 HTML，不得省略第五节 issue 块或第六节问题行。
+若 MD 过长，**分章读取 MD 并在内存拼接后一次性写出**完整 HTML，不得省略第五节 issue 块或第六节问题行；第六节存在多张问题表时必须合并渲染。
 
 **仅当** MD 缺少某个 `##` 章节时，方可对该章使用 `section.truncated` 占位。**禁止**因省 token 对已有章节写「请查看同名 .md」。
 

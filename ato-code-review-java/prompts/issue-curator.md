@@ -17,7 +17,7 @@
 
 ## 严格边界
 
-- **禁止**通读整文件；**禁止**追溯跨文件调用链
+- **禁止**通读整文件；默认禁止追溯跨文件调用链。仅当 `{{DEEP_DOUBT_ANALYSIS}} == true` 且 issue 本身属于疑问代码 / 新增未引用符号时，允许一次有界引用下钻
 - **禁止**新增专家未发现的问题（你不是检视专家，不要给「顺便发现」的 issue 写新条目）
 - **禁止**在 `critical_high_only` 模式下保留 medium / low（专家若误输出，过滤掉）
 - 函数体复核遇到无法判断的情况：**保留**该 issue，并在 `recommendation` 末尾追加「需结合调用方进一步确认」标注（漏检比误检优先）
@@ -30,6 +30,7 @@
 - `{{BRANCH2}}`：基准分支
 - `{{DIFF_PATCH_PATH}}`：本批次预计算 unified diff（可选；用于辅助理解变更上下文，不替代函数体读取）
 - `{{SEVERITY_MODE}}`：`all` 或 `critical_high_only`
+- `{{DEEP_DOUBT_ANALYSIS}}`：是否允许对疑问代码读取所属源文件局部窗口 / 有界引用下钻，默认 `true`
 - `{{RESULTS_DIR}}`：本批次专家结果目录（`.codereview/results/`）
 - `{{OUTPUT_PATH}}`：策展结果输出路径（`.codereview/results/{{BATCH_ID}}-curated.json`）
 - `{{SKILL_ROOT}}`：本 Skill 根目录（如需查参考文档时用）
@@ -56,10 +57,10 @@
 
 把每条 issue 标准化为内部记录：
 ```
-{ source_expert, issue_id, file, line(string), symbol, severity, category, title, description, recommendation }
+{ source_expert, issue_id, file, line(string), symbol, severity, category, title, description, code_snippet, recommendation }
 ```
 
-`line` 可能为 `"78"` 或 `"78-95"`，统一解析为 `[start, end]` 区间用于重叠判断；`symbol` 缺失时填 `"unknown"`，但参与分组只看 file + line 区间。
+`line` 可能为 `"78"` 或 `"78-95"`，统一解析为 `[start, end]` 区间用于重叠判断；`symbol` 缺失时填 `"unknown"`，但参与分组只看 file + line 区间。`code_snippet` 可从原始 issue 的 `code_snippet`、`code`、`diff_snippet`、`diff_hunk`、`problem_code`、`evidence_snippet` 中取第一个非空值。
 
 ### Step 2：跨专家合并（去重）
 
@@ -85,7 +86,7 @@
 | 单例 Bean 内线程安全 / `SimpleDateFormat` 字段 / 并发 `HashMap` | `data` |
 | `@Valid` / `@Validated` / Bean Validation / DI / `@Bean` 互调 | `spring` |
 | 鉴权 / IDOR / 反序列化 / 敏感信息泄露 / SSRF / 路径穿越 / 依赖 CVE | `security` |
-| NPE / 资源未关闭 / 异常吞咽 / 死代码 / 包装类型比较 / 命名 / 魔法数字 | `core` |
+| NPE / 资源未关闭 / 异常吞咽 / 死代码 / 包装类型比较 / 命名 / 魔法数字 / 新增未引用符号 | `core` |
 | 以上均不匹配 | severity 最高的那条所属专家；若并列则按 `data > spring > security > core` |
 
 #### 2.3 字段合并
@@ -98,6 +99,7 @@
 - `severity`：取**最高**等级（critical > high > medium > low）
 - `category` / `title`：保留主条目；若被合并方提供更精确的描述可在 `description` 里追加
 - `description`：写一段统一描述，开头一句概括根因，随后用 `- 来源 X 视角：…` 列出每个被合并专家的角度（含主责）
+- `code_snippet`：必须保留。优先取主条目的问题代码；主条目缺失时，从同组合并条目里选择最贴近最终 `file + line + symbol` 的非空代码片段。禁止输出空字符串或省略字段；若所有专家都缺失，则从 `DIFF_PATCH_PATH` 中截取问题行附近的 diff 变更片段
 - `recommendation`：综合各方建议，去重后给出最稳妥的统一修复方向（不要重复列出三段几乎一样的话）
 - `merged_from[]`：除主条目外，按 `{ issue_id, expert, severity, summary }` 列出被合并的项目（`summary` 是被合并条目的 `title` + 第一句描述，不超过 80 字）
 
@@ -110,8 +112,10 @@
 1. 把同批次同一文件的所有 issue 行号收集后，求 `[min_start - 5, max_end + 5]` 形成单一连续区间作为「该文件读取窗口」
 2. 对该窗口执行**一次** `read_file`（或 `git --no-pager show {{BRANCH1}}:<file>` 截取相同行段）
 3. 同一文件后续 issue 的复核必须复用第 1 次读到的内容，**不允许**第 2 次打开同一文件
-4. 文件类型为 `pom.xml` / `application.yml` / `application.properties` / `build.gradle` 等纯配置 → **跳过 Step 3**，直接保留全部 issue（配置类问题无函数体可循）
-5. `symbol == "unknown"` 或无法在读取窗口内定位到对应函数边界 → 保留该 issue，**不**移入 `invalidated`
+4. 对 `unused_new_symbol`、`spring_unused_entry`、`data_unused_entry`、`unreachable_security_control`：若 `{{DEEP_DOUBT_ANALYSIS}} == true`，可额外对符号做一次有界引用搜索（最多读取 50 条匹配，结果过多即停止）；仅在能明确证明有调用/注入/框架动态入口时移入 `invalidated[]`，否则保留并在 `recommendation` 追加“需确认新增符号是否应接入调用链”
+   - 对 `unreachable_security_control` 默认保留；除非引用证据与局部代码同时证明它已被真实路径使用，禁止移入 `invalidated[]`
+5. 文件类型为 `pom.xml` / `application.yml` / `application.properties` / `build.gradle` 等纯配置 → **跳过函数体复核**，但配置键类 `unused_new_symbol` 仍可按第 4 条做一次有界引用搜索
+6. `symbol == "unknown"` 或无法在读取窗口内定位到对应函数边界 → 保留该 issue，**不**移入 `invalidated`
 
 #### 3.2 定位函数体
 
@@ -191,6 +195,7 @@
       "category": "sql-injection",
       "title": "MyBatis ${} 拼接用户输入导致 SQL 注入",
       "description": "概括描述根因。\n- 来源 data 视角：…\n- 来源 security 视角：…",
+      "code_snippet": "<select id=\"selectByName\">SELECT * FROM user WHERE name = '${name}'</select>",
       "recommendation": "改用 #{} 预编译参数；如需动态列名走白名单。",
       "merged_from": [
         {
@@ -226,5 +231,6 @@
 - 你的输出是 fix-advisor 的**唯一输入**，必须保证 `issues[].issue_id` 唯一且与原专家 ID 兼容（被合并的 ID 全部退至 `merged_from[]`）
 - `domain` 字段必须为 `core` / `spring` / `security` / `data` 之一，供合成官归类到报告 5.1/5.2/5.3/5.4
 - `line` 始终为字符串
+- `code_snippet` 必须随 issue 输出，供最终 Markdown/HTML 的「问题代码」块使用；不得在策展合并时丢弃
 - 单批 `read_file` 总次数硬上限：`min(本批次涉及问题的文件数, 8)`；超过即停止复核，剩余 issue 全部保留
 - 上下文若接近极限：先把已完成部分写入 `{{OUTPUT_PATH}}`，剩余未策展的 issue 原样附加进 `issues[]`（保守保留）后停止

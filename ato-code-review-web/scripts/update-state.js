@@ -23,6 +23,7 @@ const DEFAULT_REVIEW_OPTIONS = {
   skip_low_risk_files: true,
   generate_html_report: true,
   max_lines_per_batch: 1200,
+  deep_doubt_analysis: true,
   user_confirmed: false,
 };
 

@@ -4,8 +4,8 @@ description: >-
   前端（Vue / React 等）增量代码检视 Skill。一个目录同时支持 VS Code Builder、opencode、
   Claude Code 等运行器；主编排器读取本文件驱动全流程。状态持久化到 .codereview/state.json，
   支持断点续跑。启动后若 state.json 存在则询问续跑或重新检视；
-  Phase 1 须确认分支、检视深度、跳过低风险、是否生成 HTML、每批最大行数五项；
-  可分多轮收集，用户跳过时应用默认值，五项全部落盘前禁止进入 Phase 2。
+  Phase 1 须确认分支、检视深度、跳过低风险、是否生成 HTML、每批最大行数、是否深入分析疑问代码六项；
+  可分多轮收集，用户跳过时应用默认值，六项全部落盘前禁止进入 Phase 2。
 ---
 
 # 前端代码检视 · 主编排工作流
@@ -13,6 +13,7 @@ description: >-
 > **本文件是 VS Code Builder、opencode、Claude Code 等运行器共用的主编排指令来源。**
 > 主编排器负责编排、状态管理、并行调度与故障恢复；**不做**深度代码检视。
 > 须用 `scripts/update-state.js` 落盘；Phase 2+ 在 `user_confirmed !== true` 时会报 `PHASE1_REQUIRED`。
+> **命令兼容规则：** 所有示例命令必须能在 Windows PowerShell 5.1、PowerShell 7、bash/zsh 中逐条执行；多条命令分开运行，不使用 Bash 专用串联、反斜杠续行或 POSIX-only 语法。
 
 ---
 
@@ -35,15 +36,15 @@ description: >-
 
 ### 0.1 读 state / 初始化
 
-```bash
+```powershell
 node "{SKILL_ROOT}/scripts/init-memory.js"
 # state 不存在时：
 node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
 ```
 
-### 0.2 Phase 1 五问（`user_confirmed !== true` 时只做本步）
+### 0.2 Phase 1 六问（`user_confirmed !== true` 时只做本步）
 
-五项不必一次性发给用户，可分多轮收集；但进入 Phase 2 前必须全部有合法值并复述确认。用户回复“跳过 / 默认 / 随便”时，按下列默认值落盘。
+六项不必一次性发给用户，可分多轮收集；但进入 Phase 2 前必须全部有合法值并复述确认。用户回复“跳过 / 默认 / 随便”时，按下列默认值落盘。
 
 ```
 1) 分支 — BRANCH1：当前分支  BRANCH2：master
@@ -51,19 +52,13 @@ node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
 3) skip_low_risk_files — 默认 true（可选 false）
 4) generate_html_report — 默认 true（可选 false）
 5) max_lines_per_batch — 默认 1200
+6) deep_doubt_analysis — 默认 true（是否对疑问代码读取所属源文件局部窗口 / 下钻检视；可选 false）
 ```
 
 复述确认后：
 
-```bash
-node "{SKILL_ROOT}/scripts/update-state.js" \
-  --branch1 <BRANCH1> --branch2 <BRANCH2> \
-  --set review_options.severity_mode=<mode> \
-  --set review_options.skip_low_risk_files=<bool> \
-  --set review_options.generate_html_report=<bool> \
-  --set review_options.max_lines_per_batch=<N> \
-  --set review_options.user_confirmed=true \
-  --phase diff_analysis --checkpoint phase1_done
+```powershell
+node "{SKILL_ROOT}/scripts/update-state.js" --branch1 <BRANCH1> --branch2 <BRANCH2> --set review_options.severity_mode=<mode> --set review_options.skip_low_risk_files=<bool> --set review_options.generate_html_report=<bool> --set review_options.max_lines_per_batch=<N> --set review_options.deep_doubt_analysis=<bool> --set review_options.user_confirmed=true --phase diff_analysis --checkpoint phase1_done
 ```
 
 ### 0.3 项目记忆
@@ -86,6 +81,7 @@ node "{SKILL_ROOT}/scripts/update-state.js" \
 │   ├── batch-processor.js
 │   ├── export-batch-diffs.js
 │   ├── git-line-authors.js
+│   ├── render-report-md.js     ← Phase 7：JSON → MD（机械填充，优先于子执行器）
 │   ├── render-report-html.js   ← Phase 7.5：MD → HTML（机械填充，优先于子执行器）
 │   ├── sync-report-signoff.js
 │   ├── init-memory.js
@@ -130,10 +126,10 @@ codereview/   ← 多版本 report_*.md / *.html（不参与启动探测）
    - 存在：读取 current_phase
      - 若为 completed：告知报告路径；否则跳到对应 Phase
 4. 兼容性补丁：
-   - 若缺少 review_options → 补 severity_mode / skip_low_risk_files / generate_html_report / max_lines_per_batch(1200) / user_confirmed
+   - 若缺少 review_options → 补 severity_mode / skip_low_risk_files / generate_html_report / max_lines_per_batch(1200) / deep_doubt_analysis(true) / user_confirmed
    - 若 review_progress[*] 缺少 curator → 补 `curator: "pending"`
    - 若 synthesis 缺少 html_report_path / html_status → 补 "" 与 "skipped"
-   - **`user_confirmed !== true` → 回到 §0.2 Phase 1 五问**
+   - **`user_confirmed !== true` → 回到 §0.2 Phase 1 六问**
 4. **reviewing**：按批次、按专家顺序 `core` → `framework` → `reliability` → `security` → `curator` → `fix`，找到第一个状态为 `pending` 或 `in_progress` 的项（`completed` / `skipped` / **`failed`** 均跳过；`failed` 为终态，除非用户要求人工改回 `pending`）
    - `in_progress`：按 `docs/state-structure.md`「in_progress 防死锁」校验对应 `*-{expert}.json`、`*-curated.json` 或 `*-fix.json`
 5. **synthesizing**：若 MD 已存在 → 按 `generate_html_report` 进入 `html_rendering` 或 `completed`；否则 Phase 7
@@ -170,7 +166,7 @@ codereview/   ← 多版本 report_*.md / *.html（不参与启动探测）
 
 ### Phase 0：初始化
 
-```bash
+```powershell
 node "{SKILL_ROOT}/scripts/init-memory.js"
 node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
 ```
@@ -181,14 +177,15 @@ node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
 
 ### Phase 1：分支与检视选项（主编排器）
 
-**须与 §0.2 五问一致**；未 `user_confirmed` 禁止进入 Phase 2。
+**须与 §0.2 六问一致**；未 `user_confirmed` 禁止进入 Phase 2。
 
 1. 确认 `BRANCH1`、`BRANCH2`；跳过时默认当前分支与 `master`
 2. `severity_mode`：默认 `critical_high_only`，可选 `all`
 3. `skip_low_risk_files`：默认 `true`；`true` 时 Phase 2 追加 `--skip-low-risk true`
 4. **`generate_html_report`**：默认 `true`
 5. **`max_lines_per_batch`**：默认 `1200`（Phase 2 传给 `batch-processor.js`）
-6. 验证分支后 `update-state.js` 落盘，`current_phase = "diff_analysis"`
+6. **`deep_doubt_analysis`**：默认 `true`；为 `true` 时，专家遇到证据不足的疑问代码可读取所属源文件局部窗口或做一次有界引用下钻
+7. 验证分支后 `update-state.js` 落盘，`current_phase = "diff_analysis"`
 
 ---
 
@@ -265,12 +262,8 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 
 **四位检视专家**（拉起**前**必运行 `build-memory-context.js`，传入 `MEMORY_BRIEF_PATH`）：
 
-```bash
-node "{SKILL_ROOT}/scripts/build-memory-context.js" \
-  --memory .codereview/memory.json \
-  --batch-id {BATCH_ID} \
-  --expert {core|framework|reliability|security} \
-  --output .codereview/memory-brief-{BATCH_ID}-{expert}.json
+```powershell
+node "{SKILL_ROOT}/scripts/build-memory-context.js" --memory .codereview/memory.json --batch-id {BATCH_ID} --expert {core|framework|reliability|security} --output .codereview/memory-brief-{BATCH_ID}-{expert}.json
 ```
 
 | 专家 | 子执行器 | 提示词文件 | 输出 | 合并来源 |
@@ -289,6 +282,7 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" \
 | `BRANCH1` / `BRANCH2` | 分支 |
 | `DIFF_PATCH_PATH` | `.codereview/diffs/{BATCH_ID}.patch`（存在则必传） |
 | `SEVERITY_MODE` | `state.json` → `review_options.severity_mode` |
+| `DEEP_DOUBT_ANALYSIS` | `state.json` → `review_options.deep_doubt_analysis` |
 | `MEMORY_BRIEF_PATH` | `.codereview/memory-brief-{BATCH_ID}-{expert}.json` |
 | `TECH_STACK` | 摘要或路径（子执行器可读 `tech-stack.json`） |
 | `OUTPUT_PATH` | 结果路径 |
@@ -297,12 +291,14 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" \
 **检视范围（传达给子执行器）：**
 
 > 优先读 `DIFF_PATCH_PATH` 中 unified diff；缺失或为空再 `git --no-pager diff {BRANCH2}...{BRANCH1} -- <file>`。只报变更相关行；`line` **字符串**；每条 issue 必须补充 `symbol`（如 `UserList.vue#fetchUsers`、`useUser.ts#useUser`），报告不得只依赖行号定位。`critical_high_only` 时仅 `critical`/`high`。
+>
+> 若 diff 仅新增变量、函数、导出、组件方法、路由/API 包装等符号，且 patch 内无调用/绑定/引用，必须确认是否合理；`DEEP_DOUBT_ANALYSIS=true` 时允许读取所属源文件局部窗口或对符号做一次有界引用搜索（最多读取 50 条匹配，结果过多即停止）。无法证明合理时输出需确认 issue（`critical_high_only` 下用 `high`）。
 
 **适用性：** 以 `task-plan.json` 的 `applicable_experts` 为准；非适用专家在 `review_progress` 中为 `skipped`。
 
 **并行派发建议：**
 
-同一 `BATCH_ID` 中，对 `applicable_experts` 取交集后可一次性并行拉起多个子执行器。每个任务必须显式包含：`BATCH_ID`、`BATCH_FILES`、`BRANCH1`、`BRANCH2`、`DIFF_PATCH_PATH`、`SEVERITY_MODE`、`MEMORY_BRIEF_PATH`、`TECH_STACK`、`SKILL_ROOT`、独立 `OUTPUT_PATH`，并强调“完成后只写对应输出文件”。主编排器等待这一组输出文件全部存在且 JSON 合法后，再将对应状态改为 `completed`；随后串行执行 `issue-curator` 与 `fix-advisor`。
+同一 `BATCH_ID` 中，对 `applicable_experts` 取交集后可一次性并行拉起多个子执行器。每个任务必须显式包含：`BATCH_ID`、`BATCH_FILES`、`BRANCH1`、`BRANCH2`、`DIFF_PATCH_PATH`、`SEVERITY_MODE`、`DEEP_DOUBT_ANALYSIS`、`MEMORY_BRIEF_PATH`、`TECH_STACK`、`SKILL_ROOT`、独立 `OUTPUT_PATH`，并强调“完成后只写对应输出文件”。主编排器等待这一组输出文件全部存在且 JSON 合法后，再将对应状态改为 `completed`；随后串行执行 `issue-curator` 与 `fix-advisor`。
 
 **框架专家路径变量**（主编排器仅在与 **framework** 子执行器通信时传入）：`VUE2_REF_PATH` = `{SKILL_ROOT}/docs/vue2-reference.md`；`VUE3_REF_PATH` = `{SKILL_ROOT}/docs/vue3-reference.md`；`REACT_REF_PATH` = `{SKILL_ROOT}/docs/react-reference.md`；`GENERAL_STANDARDS_PATH` = `{SKILL_ROOT}/docs/general-standards.md`。
 
@@ -314,12 +310,8 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" \
 
 **拉起前：**
 
-```bash
-node "{SKILL_ROOT}/scripts/build-memory-context.js" \
-  --memory .codereview/memory.json \
-  --batch-id {BATCH_ID} \
-  --expert curator \
-  --output .codereview/memory-brief-{BATCH_ID}-curator.json
+```powershell
+node "{SKILL_ROOT}/scripts/build-memory-context.js" --memory .codereview/memory.json --batch-id {BATCH_ID} --expert curator --output .codereview/memory-brief-{BATCH_ID}-curator.json
 ```
 
 **子执行器：** `web-codereview-issue-curator`
@@ -333,6 +325,7 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" \
 | `DIFF_PATCH_PATH` | `.codereview/diffs/{BATCH_ID}.patch`（可选，与 Phase 5 同批） |
 | `RESULTS_DIR` | `.codereview/results/` |
 | `SEVERITY_MODE` | 同 Phase 5 |
+| `DEEP_DOUBT_ANALYSIS` | 同 Phase 5 |
 | `MEMORY_BRIEF_PATH` | `.codereview/memory-brief-{BATCH_ID}-curator.json` |
 | `OUTPUT_PATH` | `.codereview/results/{BATCH_ID}-curated.json` |
 | `SKILL_ROOT` | Skill 根目录 |
@@ -364,15 +357,19 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" \
 
 **Phase 7 开始前必须执行：**
 
-```bash
-node "{SKILL_ROOT}/scripts/git-line-authors.js" \
-  --branch1 <BRANCH1> --branch2 <BRANCH2> \
-  --results .codereview/results/ \
-  --output .codereview/line-authors.json
+```powershell
+node "{SKILL_ROOT}/scripts/git-line-authors.js" --branch1 <BRANCH1> --branch2 <BRANCH2> --results .codereview/results/ --output .codereview/line-authors.json
 ```
 
-**子执行器：** `web-codereview-report-synthesizer`
-**提示词：** `{SKILL_ROOT}/prompts/report-synthesizer.md`
+**Step 1（必做，优先）：** 机械合成 MD，避免问题多时把所有 JSON 压入模型上下文，也保证第六节问题清单由结构化 issue 全量生成：
+
+```powershell
+node "{SKILL_ROOT}/scripts/render-report-md.js" --state ".codereview/state.json" --results ".codereview/results" --inventory ".codereview/file-inventory.json" --tech-stack ".codereview/tech-stack.json" --template "{SKILL_ROOT}/templates/report-template.md" --out "{REPORT_PATH}"
+```
+
+脚本 stdout `ok: true`、`unresolvedPlaceholders: []`、`allIssueCodeMissing: false`、`section6IssueRowsComplete: true` 才算完成；若 stdout 中 `issues > 0`，第六节必须至少含同等数量的问题行，且 HTML 详情里的「问题代码」不得全部为「（无）」。
+
+**Step 2（仅 Step 1 失败）：** 拉起子执行器 `web-codereview-report-synthesizer`（`{SKILL_ROOT}/prompts/report-synthesizer.md`）作为兜底，禁止省略第六节问题行。
 
 | 变量 | 值 |
 |------|-----|
@@ -380,6 +377,7 @@ node "{SKILL_ROOT}/scripts/git-line-authors.js" \
 | `RESULTS_DIR` | `.codereview/results/` |
 | `TECH_STACK_PATH` | `.codereview/tech-stack.json` |
 | `INVENTORY_PATH` | `.codereview/file-inventory.json` |
+| `DIFF_PATCH_DIR` | `.codereview/diffs` |
 | `TEMPLATE_PATH` | `{SKILL_ROOT}/templates/report-template.md` |
 | `REPORT_PATH` | `codereview/report_{BRANCH1}_{DATE}.md` |
 
@@ -397,12 +395,8 @@ node "{SKILL_ROOT}/scripts/git-line-authors.js" \
 
 **Step 1（必做）：** 机械渲染（禁止「请查看同名 .md」占位）：
 
-```bash
-node "{SKILL_ROOT}/scripts/render-report-html.js" \
-  --md "{REPORT_MD_PATH}" \
-  --shell "{SKILL_ROOT}/templates/report-shell.html" \
-  --out "{HTML_REPORT_PATH}" \
-  --state ".codereview/state.json"
+```powershell
+node "{SKILL_ROOT}/scripts/render-report-html.js" --md "{REPORT_MD_PATH}" --shell "{SKILL_ROOT}/templates/report-shell.html" --out "{HTML_REPORT_PATH}" --state ".codereview/state.json"
 ```
 
 | 变量 | 值 |
@@ -411,7 +405,7 @@ node "{SKILL_ROOT}/scripts/render-report-html.js" \
 | `HTML_TEMPLATE_PATH` | `{SKILL_ROOT}/templates/report-shell.html` |
 | `HTML_REPORT_PATH` | 与 MD 同名 `.html` |
 
-**Step 2：** 脚本 `ok: true` 且 `placeholdersOk: true`；并校验 `<!DOCTYPE html>` + `</html>` + `<!-- ato-codereview-html-end -->`（见 `state-structure.md`）。`unresolvedPlaceholders` 非空 → 回到 Phase 7 补全 MD。
+**Step 2：** 脚本 `ok: true`、`placeholdersOk: true`、`allIssueCodeMissing: false`、`section6IssueRowsComplete: true`；并校验 `<!DOCTYPE html>` + `</html>` + `<!-- ato-codereview-html-end -->`（见 `state-structure.md`）。`unresolvedPlaceholders` 非空 → 回到 Phase 7 补全 MD；`allIssueCodeMissing: true` → 回到 Phase 7 回填 issue 代码片段；`section6IssueRowsComplete: false` → 回到 Phase 7/7.5 重新合成第六节，确保多张问题表合并渲染。
 
 **Step 3（仅当 Step 1/2 失败）：** 子执行器 `web-codereview-report-html`（`prompts/report-html.md`），禁止降级占位，最多 2 次。
 

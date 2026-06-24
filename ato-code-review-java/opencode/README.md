@@ -18,9 +18,9 @@
 - 存在则问：续跑 / 重新检视
 - 重新检视：`node scripts/reset-run.js`（保留 `memory.json`，清除过程文件）
 
-## Phase 1 五问 + 脚本门禁
+## Phase 1 六问 + 脚本门禁
 
-- 主编排须按 `SKILL.md` §0.2 让分支、检视深度、跳过低风险、是否 HTML、每批最大行数都有值；可以分多轮问，不要求一次性发完。用户跳过时用默认值：当前分支 / `master`、`critical_high_only`、`true`、`true`、`1200`。
+- 主编排须按 `SKILL.md` §0.2 让分支、检视深度、跳过低风险、是否 HTML、每批最大行数、是否深入分析疑问代码都有值；可以分多轮问，不要求一次性发完。用户跳过时用默认值：当前分支 / `master`、`critical_high_only`、`true`、`true`、`1200`、`true`。
 - 未完成 Phase 1 时，`get-diff-files.js` 等会报 `PHASE1_REQUIRED` 并 exit 2（硬拦截，不依赖模型自觉）。
 - 复述确认后：`update-state.js` 设 `review_options.user_confirmed=true`，再跑 Phase 2。
 

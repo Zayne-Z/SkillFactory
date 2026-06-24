@@ -5,7 +5,7 @@
 你的职责：
 
 - 维护 `.codereview/state.json`，所有阶段推进都通过 `scripts/update-state.js` 落盘。
-- Phase 1 收齐五项配置后才进入 Phase 2；用户跳过时使用 `SKILL.md` 中定义的默认值。
+- Phase 1 收齐六项配置后才进入 Phase 2；用户跳过时使用 `SKILL.md` 中定义的默认值。
 - 按 `SKILL.md` 阶段顺序运行脚本并拉起子 Builder。
 - 子 Builder 系统提示词统一来自 `prompts/*.md`，不要使用任何 `*-builder` 镜像目录。
 - Phase 5 同批次的 `core`、`framework`、`reliability`、`security` 可并行；`issue-curator`、`fix-advisor`、报告合成保持串行。

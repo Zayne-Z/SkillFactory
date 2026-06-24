@@ -74,6 +74,87 @@ function firstValue(...values) {
   return values.find((value) => value !== undefined && value !== null && value !== '');
 }
 
+function parseCount(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const n = Number.parseInt(value, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function firstPositiveCount(...values) {
+  for (const value of values) {
+    const n = parseCount(value);
+    if (n !== null && n > 0) return n;
+  }
+  return null;
+}
+
+function firstKnownCount(...values) {
+  for (const value of values) {
+    const n = parseCount(value);
+    if (n !== null) return n;
+  }
+  return null;
+}
+
+function sumFileCounts(files, keys) {
+  let seen = false;
+  let total = 0;
+  for (const file of files || []) {
+    for (const key of keys) {
+      const n = parseCount(file?.[key]);
+      if (n !== null) {
+        seen = true;
+        total += n;
+        break;
+      }
+    }
+  }
+  return { seen, total };
+}
+
+function deriveLineTotals(state, inventory = {}) {
+  const summary = inventory.summary || {};
+  const files = inventory.files || [];
+  const fileAdditions = sumFileCounts(files, ['additions', 'added']);
+  const fileDeletions = sumFileCounts(files, ['deletions', 'deleted']);
+  const fileChanged = sumFileCounts(files, ['changed_lines', 'changedLines', 'changed']);
+  const changedLines = firstPositiveCount(
+    summary.total_changed_lines,
+    inventory.total_changed_lines,
+    state.diff_analysis?.total_changed_lines,
+    fileChanged.seen ? fileChanged.total : null
+  );
+
+  const additions = firstPositiveCount(
+    summary.total_additions,
+    inventory.total_additions,
+    fileAdditions.seen ? fileAdditions.total : null,
+    state.diff_analysis?.total_additions
+  ) ?? (fileAdditions.seen
+    ? fileAdditions.total
+    : firstKnownCount(
+      summary.total_additions,
+      inventory.total_additions,
+      state.diff_analysis?.total_additions,
+      changedLines
+    )) ?? 0;
+
+  const deletions = firstPositiveCount(
+    summary.total_deletions,
+    inventory.total_deletions,
+    fileDeletions.seen ? fileDeletions.total : null,
+    state.diff_analysis?.total_deletions
+  ) ?? (fileDeletions.seen
+    ? fileDeletions.total
+    : firstKnownCount(
+      summary.total_deletions,
+      inventory.total_deletions,
+      state.diff_analysis?.total_deletions
+    )) ?? 0;
+
+  return { additions, deletions };
+}
+
 function labelFromFramework(framework, ts = {}) {
   const raw = firstValue(ts.framework_name, ts.frameworkName, framework, ts.review_mode);
   const key = String(raw || '').toLowerCase();
@@ -106,11 +187,9 @@ function buildVarsFromWorkspace(statePath) {
   const da = state.diff_analysis || {};
   if (da.total_files != null) vars.TOTAL_FILES = String(da.total_files);
   if (da.total_batches != null) vars.TOTAL_BATCHES = String(da.total_batches);
-  if (da.total_additions != null) vars.TOTAL_ADDITIONS = String(da.total_additions);
-  if (da.total_deletions != null) vars.TOTAL_DELETIONS = String(da.total_deletions);
-  if (da.total_changed_lines != null && vars.TOTAL_ADDITIONS == null) {
-    vars.TOTAL_ADDITIONS = String(da.total_changed_lines);
-  }
+  const stateLineTotals = deriveLineTotals(state);
+  vars.TOTAL_ADDITIONS = String(stateLineTotals.additions);
+  vars.TOTAL_DELETIONS = String(stateLineTotals.deletions);
 
   const invRel = da.inventory_path || 'file-inventory.json';
   const invPath = path.isAbsolute(invRel) ? invRel : path.join(dir, invRel);
@@ -118,17 +197,12 @@ function buildVarsFromWorkspace(statePath) {
     const inv = JSON.parse(fs.readFileSync(invPath, 'utf8'));
     if (inv.summary?.total_files != null) vars.TOTAL_FILES = String(inv.summary.total_files);
     else if (Array.isArray(inv.files)) vars.TOTAL_FILES = String(inv.files.length);
-    if (firstValue(inv.summary?.total_additions, inv.total_additions) != null) {
-      vars.TOTAL_ADDITIONS = String(firstValue(inv.summary?.total_additions, inv.total_additions));
-    }
-    if (firstValue(inv.summary?.total_deletions, inv.total_deletions) != null) {
-      vars.TOTAL_DELETIONS = String(firstValue(inv.summary?.total_deletions, inv.total_deletions));
-    }
+    const lineTotals = deriveLineTotals(state, inv);
+    vars.TOTAL_ADDITIONS = String(lineTotals.additions);
+    vars.TOTAL_DELETIONS = String(lineTotals.deletions);
     if (firstValue(inv.summary?.total_changed_lines, inv.total_changed_lines) != null) {
       vars.TOTAL_CHANGED_LINES = String(firstValue(inv.summary?.total_changed_lines, inv.total_changed_lines));
     }
-    if (vars.TOTAL_ADDITIONS == null && vars.TOTAL_CHANGED_LINES != null) vars.TOTAL_ADDITIONS = vars.TOTAL_CHANGED_LINES;
-    if (vars.TOTAL_DELETIONS == null) vars.TOTAL_DELETIONS = '0';
     if (inv.total_batches != null) vars.TOTAL_BATCHES = String(inv.total_batches);
     const rs = inv.review_scope;
     if (rs?.skip_low_risk_files) {
@@ -569,54 +643,69 @@ function colIndex(headers, names) {
 
 function renderSection6(section6, issueById) {
   const tables = extractTables(section6);
-  const t = tables.find((tb) => tb.headers.some((h) => stripMd(h).includes('问题 ID')));
-  if (!t) {
-    return collapsePanel('section-issues', '六、问题清单（全量）', '0 条', '<p>未解析到问题表。</p>', true);
+  const issueTables = tables.filter((tb) =>
+    tb.headers.some((h) => stripMd(h).includes('问题 ID'))
+  );
+  if (!issueTables.length) {
+    return {
+      html: collapsePanel('section-issues', '六、问题清单（全量）', '0 条', '<p>未解析到问题表。</p>', true),
+      rowCount: 0,
+      tableCount: 0,
+      duplicateIssueIds: [],
+    };
   }
 
-  const idx = {
-    id: colIndex(t.headers, ['问题 ID']),
-    file: colIndex(t.headers, ['文件']),
-    line: colIndex(t.headers, ['行号']),
-    fn: colIndex(t.headers, ['函数']),
-    author: colIndex(t.headers, ['提交人']),
-    sev: colIndex(t.headers, ['级别']),
-    must: colIndex(t.headers, ['必改']),
-    domain: colIndex(t.headers, ['领域']),
-    desc: colIndex(t.headers, ['问题描述']),
-  };
-
   const rows = [];
-  for (const row of t.rows) {
-    const get = (i) => (i >= 0 && row[i] != null ? stripMd(row[i]) : '');
-    const id = get(idx.id);
-    if (!id || !/^[A-Z]+-\d+$/.test(id)) continue;
-    const file = get(idx.file);
-    const line = get(idx.line);
-    const fn = get(idx.fn) || '—';
-    const author = get(idx.author) || '—';
-    const sevText = get(idx.sev);
-    const sev = detectSeverity(sevText);
-    const sevInfo = SEV[sev] || SEV.medium;
-    let must = get(idx.must);
-    if (must === '是' || must === '必改') must = 'yes';
-    else must = '';
-    const domain = get(idx.domain) || '';
-    const desc = get(idx.desc) || '—';
-    const loc = `${file}:${line}`.replace(/:$/, '');
-    const issue = issueById[id];
-    const rowCls = must === 'yes' ? 'issue-row row-mustfix' : 'issue-row';
-    let expand = '';
-    if (issue) {
-      expand = `<div class="issue-row-expand"><div class="loc-bar">`;
-      if (issue.loc.file) expand += `<span><strong>文件</strong> ${escapeHtml(issue.loc.file)}</span>`;
-      if (issue.loc.line) expand += `<span><strong>行号</strong> ${escapeHtml(issue.loc.line)}</span>`;
-      if (issue.loc.symbol) expand += `<span><strong>函数</strong> ${escapeHtml(issue.loc.symbol)}</span>`;
-      expand += '</div>';
-      if (issue.code) expand += `<pre class="code code-snippet">${escapeHtml(issue.code)}</pre>`;
-      expand += '</div>';
-    }
-    rows.push(`<details class="${rowCls}" data-issue-id="${escapeHtml(id)}" data-author="${escapeHtml(author)}" data-domain="${escapeHtml(domain)}">
+  const seenIds = new Set();
+  const duplicateIssueIds = [];
+  for (const t of issueTables) {
+    const idx = {
+      id: colIndex(t.headers, ['问题 ID']),
+      file: colIndex(t.headers, ['文件']),
+      line: colIndex(t.headers, ['行号']),
+      fn: colIndex(t.headers, ['函数']),
+      author: colIndex(t.headers, ['提交人']),
+      sev: colIndex(t.headers, ['级别']),
+      must: colIndex(t.headers, ['必改']),
+      domain: colIndex(t.headers, ['领域']),
+      desc: colIndex(t.headers, ['问题描述']),
+    };
+    if (idx.id < 0) continue;
+    for (const row of t.rows) {
+      const get = (i) => (i >= 0 && row[i] != null ? stripMd(row[i]) : '');
+      const id = get(idx.id);
+      if (!id || !/^[A-Z]+-\d+$/.test(id)) continue;
+      if (seenIds.has(id)) {
+        duplicateIssueIds.push(id);
+        continue;
+      }
+      seenIds.add(id);
+      const file = get(idx.file);
+      const line = get(idx.line);
+      const fn = get(idx.fn) || '—';
+      const author = get(idx.author) || '—';
+      const sevText = get(idx.sev);
+      const sev = detectSeverity(sevText);
+      const sevInfo = SEV[sev] || SEV.medium;
+      let must = get(idx.must);
+      if (must === '是' || must === '必改') must = 'yes';
+      else must = '';
+      const domain = get(idx.domain) || '';
+      const desc = get(idx.desc) || '—';
+      const loc = `${file}:${line}`.replace(/:$/, '');
+      const issue = issueById[id];
+      const rowCls = must === 'yes' ? 'issue-row row-mustfix' : 'issue-row';
+      let expand = '';
+      if (issue) {
+        expand = `<div class="issue-row-expand"><div class="loc-bar">`;
+        if (issue.loc.file) expand += `<span><strong>文件</strong> ${escapeHtml(issue.loc.file)}</span>`;
+        if (issue.loc.line) expand += `<span><strong>行号</strong> ${escapeHtml(issue.loc.line)}</span>`;
+        if (issue.loc.symbol) expand += `<span><strong>函数</strong> ${escapeHtml(issue.loc.symbol)}</span>`;
+        expand += '</div>';
+        if (issue.code) expand += `<pre class="code code-snippet">${escapeHtml(issue.code)}</pre>`;
+        expand += '</div>';
+      }
+      rows.push(`<details class="${rowCls}" data-issue-id="${escapeHtml(id)}" data-author="${escapeHtml(author)}" data-domain="${escapeHtml(domain)}">
   <summary>
     <span class="col-id">${escapeHtml(id)}</span>
     <span class="col-loc col-clip" title="${escapeHtml(loc)}">${escapeHtml(loc)}</span>
@@ -631,6 +720,7 @@ function renderSection6(section6, issueById) {
   </summary>
   ${expand}
 </details>`);
+    }
   }
 
   const body = `<div class="issue-list">
@@ -640,7 +730,12 @@ function renderSection6(section6, issueById) {
   </div>
   ${rows.join('\n')}
 </div>`;
-  return collapsePanel('section-issues', '六、问题清单（全量）', `${rows.length} 条`, body, true);
+  return {
+    html: collapsePanel('section-issues', '六、问题清单（全量）', `${rows.length} 条`, body, true),
+    rowCount: rows.length,
+    tableCount: issueTables.length,
+    duplicateIssueIds,
+  };
 }
 
 function renderSignoffSection() {
@@ -669,6 +764,11 @@ function renderSignoffSection() {
 </form>`,
     false
   );
+}
+
+function hasRealIssueCode(issue) {
+  const code = String(issue?.code || '').trim();
+  return Boolean(code) && !['（无）', '(无)', '无', '-', '—'].includes(code);
 }
 
 function buildToc() {
@@ -732,6 +832,11 @@ function buildReportHtml(md, shell, mdPath, outPath, statePathOpt) {
   const total = countTotal(s3);
   const mustfix = countMustfix(s3);
   const { byId } = parseIssueBlocks(s5);
+  const issueBlocks = Object.values(byId);
+  const missingCodeIssues = issueBlocks
+    .filter((issue) => !hasRealIssueCode(issue))
+    .map((issue) => issue.id);
+  const allIssueCodeMissing = issueBlocks.length > 0 && missingCodeIssues.length === issueBlocks.length;
 
   const bodyParts = [];
 
@@ -779,8 +884,9 @@ function buildReportHtml(md, shell, mdPath, outPath, statePathOpt) {
     )
   );
 
+  const section6Render = renderSection6(s6, byId);
   bodyParts.push(renderSection5(s5));
-  bodyParts.push(renderSection6(s6, byId));
+  bodyParts.push(section6Render.html);
   bodyParts.push(renderSignoffSection());
 
   const bodyHtml = bodyParts.join('\n');
@@ -801,21 +907,34 @@ function buildReportHtml(md, shell, mdPath, outPath, statePathOpt) {
   const unresolvedShell = SHELL_PLACEHOLDERS.filter((k) => html.includes(`{{${k}}}`));
   const unresolvedAll = findMustachePlaceholders(html);
 
-  fs.mkdirSync(path.dirname(outPath), { recursive: true });
-  fs.writeFileSync(outPath, html, 'utf8');
-
   const tail = html.slice(-16384);
   const structureOk =
     html.startsWith('<!DOCTYPE html>') &&
     tail.includes('</html>') &&
     tail.includes(SENTINEL);
   const placeholdersOk = unresolvedShell.length === 0 && unresolvedAll.length === 0;
-  const ok = structureOk && placeholdersOk;
+  const expectedIssueRows = Math.max(issueBlocks.length, total || 0);
+  const section6IssueRowsComplete =
+    expectedIssueRows === 0 || section6Render.rowCount >= expectedIssueRows;
+  const ok = structureOk && placeholdersOk && !allIssueCodeMissing && section6IssueRowsComplete;
+  const bytes = Buffer.byteLength(html, 'utf8');
+  if (ok) {
+    fs.mkdirSync(path.dirname(outPath), { recursive: true });
+    fs.writeFileSync(outPath, html, 'utf8');
+  }
 
   return {
     ok,
     structureOk,
     placeholdersOk,
+    missingCodeIssues,
+    allIssueCodeMissing,
+    expectedIssueRows,
+    issueRows: section6Render.rowCount,
+    section6IssueRowsComplete,
+    section6IssueTableCount: section6Render.tableCount,
+    duplicateIssueIds: section6Render.duplicateIssueIds,
+    bytes,
     bodyParts,
     byId,
     mdPath,
@@ -855,9 +974,16 @@ function main() {
       state: result.statePath,
       sections: result.bodyParts.length,
       issues: Object.keys(result.byId).length,
-      bytes: fs.statSync(result.outPath).size,
+      expectedIssueRows: result.expectedIssueRows,
+      issueRows: result.issueRows,
+      bytes: result.bytes,
       structureOk: result.structureOk,
       placeholdersOk: result.placeholdersOk,
+      missingCodeIssues: result.missingCodeIssues,
+      allIssueCodeMissing: result.allIssueCodeMissing,
+      section6IssueRowsComplete: result.section6IssueRowsComplete,
+      section6IssueTableCount: result.section6IssueTableCount,
+      duplicateIssueIds: result.duplicateIssueIds,
       mdPlaceholdersBefore: result.mdPlaceholdersBefore,
       mdPlaceholdersAfter: result.mdPlaceholdersAfter,
       unresolvedPlaceholders: result.unresolvedPlaceholders,

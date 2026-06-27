@@ -629,7 +629,7 @@ VS Code 子 Builder、opencode subagent、Claude Code subagent/Task 均使用同
 | `java-codereview-report-synthesizer` | `prompts/report-synthesizer.md` | 7 |
 | `java-codereview-report-html` | `prompts/report-html.md` | 7.5（可选） |
 
-兼容说明：`prompts/spec-reviewer.md` 同 core，`prompts/robustness-reviewer.md` 同 spring，`prompts/sql-reviewer.md` 同 data，保留旧文件名是为了不破坏已有配置；新流程使用上表 10 个标识（HTML 子执行器可选）。
+新流程仅保留上表 10 个子执行器标识（HTML 子执行器可选）。
 
 ---
 

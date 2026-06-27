@@ -467,6 +467,73 @@ for (const skill of SKILLS) {
   });
 }
 
+test('skills expose only current prompt entrypoints', () => {
+  const currentPromptFiles = [
+    'tech-stack-analysis.md',
+    'task-planner.md',
+    'code-scanner.md',
+    'framework-reviewer.md',
+    'security-reviewer.md',
+    'perf-reviewer.md',
+    'issue-curator.md',
+    'fix-advisor.md',
+    'report-synthesizer.md',
+    'report-html.md',
+  ];
+  for (const skill of SKILLS) {
+    const skillDoc = fs.readFileSync(path.join(ROOT, skill, 'SKILL.md'), 'utf8');
+    for (const promptFile of currentPromptFiles) {
+      const promptPath = `prompts/${promptFile}`;
+      assert.equal(
+        fs.existsSync(path.join(ROOT, skill, promptPath)),
+        true,
+        `${skill}/${promptPath} should exist`
+      );
+      assert.equal(
+        skillDoc.includes(promptPath),
+        true,
+        `${skill}/SKILL.md should list ${promptPath}`
+      );
+    }
+  }
+
+  const oldCorePrompt = ['spec', 'reviewer'].join('-');
+  const oldRobustnessPrompt = ['robustness', 'reviewer'].join('-');
+  const oldJavaDataPrompt = ['sql', 'reviewer'].join('-');
+  const oldWebStylePrompt = ['style', 'reviewer'].join('-');
+  const oldSkillSyncScript = ['sync', 'skill', 'pairs'].join('-');
+  const oldSkillSyncDoc = ['SKILL', 'SYNC'].join('-');
+  const forbiddenPaths = [
+    `ato-code-review-java/prompts/${oldCorePrompt}.md`,
+    `ato-code-review-java/prompts/${oldRobustnessPrompt}.md`,
+    `ato-code-review-java/prompts/${oldJavaDataPrompt}.md`,
+    `ato-code-review-web/prompts/${oldCorePrompt}.md`,
+    `ato-code-review-web/prompts/${oldWebStylePrompt}.md`,
+    `ato-code-review-web/prompts/${oldRobustnessPrompt}.md`,
+    '.cursor/commands/check-skills-sync.md',
+    '.cursor/commands/sync-skills.md',
+  ];
+  for (const filePath of forbiddenPaths) {
+    assert.equal(fs.existsSync(path.join(ROOT, filePath)), false, `${filePath} should not exist`);
+  }
+
+  const forbiddenRefs = [
+    oldCorePrompt,
+    oldRobustnessPrompt,
+    oldJavaDataPrompt,
+    oldWebStylePrompt,
+    oldSkillSyncScript,
+    oldSkillSyncDoc,
+  ];
+  const docs = [
+    fs.readFileSync(path.join(ROOT, 'ato-code-review-java/SKILL.md'), 'utf8'),
+    fs.readFileSync(path.join(ROOT, 'ato-code-review-web/SKILL.md'), 'utf8'),
+  ].join('\n');
+  for (const ref of forbiddenRefs) {
+    assert.equal(docs.includes(ref), false, `${ref} should not be referenced in SKILL.md`);
+  }
+});
+
 test('skill command examples stay compatible with Windows PowerShell 5.1', () => {
   for (const skill of SKILLS) {
     const markdownFiles = filesUnder(path.join(ROOT, skill), (file) => file.endsWith('.md'));

@@ -5,7 +5,7 @@
  * 用法：
  *   node reset-run.js
  *   node reset-run.js --dir .codereview
- *   node reset-run.js --skill-root /path/to/ato-code-review-java  # 或 ato-code-review-web
+ *   node reset-run.js --skill-root /path/to/ato-code-review-java
  */
 'use strict';
 

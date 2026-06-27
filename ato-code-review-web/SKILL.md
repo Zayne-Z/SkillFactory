@@ -446,7 +446,7 @@ VS Code 子 Builder、opencode subagent、Claude Code subagent/Task 均使用同
 | `web-codereview-report-synthesizer` | `prompts/report-synthesizer.md` |
 | `web-codereview-report-html` | `prompts/report-html.md` |
 
-兼容说明：`prompts/spec-reviewer.md` 同 core，`prompts/style-reviewer.md` 同 framework，`prompts/robustness-reviewer.md` 同 reliability；新流程使用上表 **10** 个标识（HTML 子执行器可选）。
+新流程仅保留上表 **10** 个子执行器标识（HTML 子执行器可选）。
 
 ---
 

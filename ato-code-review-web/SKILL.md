@@ -14,10 +14,26 @@ description: >-
 > 主编排器负责编排、状态管理、并行调度与故障恢复；**不做**深度代码检视。
 > 须用 `scripts/update-state.js` 落盘；Phase 2+ 在 `user_confirmed !== true` 时会报 `PHASE1_REQUIRED`。
 > **命令兼容规则：** 命令块使用跨 shell 的 `text` 示例；先将 `{SKILL_ROOT}` 与示例分支/选项替换为真实值，再在 Windows PowerShell 5.1、PowerShell 7、bash/zsh 中逐条执行。多条命令分开运行，不使用 Bash 专用串联、反斜杠续行或 POSIX-only 语法。
+> **前置依赖：** 本 Skill 全部脚本基于 Node.js 运行时（零三方依赖，无需 `npm install`），并依赖 Git 取 diff；每次对话最先做环境自检，见 §0「环境前置自检」。
 
 ---
 
 ## 0. 启动清单
+
+### 环境前置自检（最先执行一次，先于续跑探测）
+
+本 Skill 全部脚本依赖 Node.js 运行时与 Git。开始任何流程前先逐条执行：
+
+```text
+node --version
+git --version
+```
+
+- 两条命令都正常输出版本号 → 继续 §0.0 续跑探测。
+- 任一命令报 `command not found` / `不是内部或外部命令` / 退出码非 0 → **立即停止**，并明确告知用户**具体缺失项**：
+  - 缺 Node：未检测到 Node.js，本 Skill 的脚本无法运行，请通过公司 / 内部渠道安装或联系管理员配置后重试。
+  - 缺 Git：未检测到 Git，无法获取分支 diff，请通过公司 / 内部渠道安装或联系管理员配置后重试。
+- **内网约束：** 仅检测并指出缺失项，**不提供任何外网下载链接**。
 
 ### 0.0 续跑 vs 重新检视（**仅**探测 `.codereview/state.json`）
 

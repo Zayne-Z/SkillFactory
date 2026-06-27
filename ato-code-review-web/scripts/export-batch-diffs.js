@@ -3,9 +3,7 @@
  * 按批次一次性导出 git unified diff，供各检视子任务直接读取，避免每个专家重复执行 git diff。
  *
  * 用法：
- *   node export-batch-diffs.js \
- *     --inventory .codereview/file-inventory.json \
- *     --output-dir .codereview/diffs
+ *   node export-batch-diffs.js --inventory .codereview/file-inventory.json --output-dir .codereview/diffs
  *
  * 输出：
  *   {output-dir}/manifest.json  — 批次 → patch 文件映射

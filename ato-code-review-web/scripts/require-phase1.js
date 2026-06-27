@@ -16,15 +16,8 @@ PHASE1_REQUIRED: 尚未完成 Phase 1 六项确认，禁止执行检视脚本。
   5) max_lines_per_batch：1200
   6) deep_doubt_analysis：true
 
-确认后执行：
-  node "{SKILL_ROOT}/scripts/update-state.js" --branch1 <b1> --branch2 <b2> \\
-    --set review_options.severity_mode=<mode> \\
-    --set review_options.skip_low_risk_files=<bool> \\
-    --set review_options.generate_html_report=<bool> \\
-    --set review_options.max_lines_per_batch=<n> \\
-    --set review_options.deep_doubt_analysis=<bool> \\
-    --set review_options.user_confirmed=true \\
-    --phase diff_analysis --checkpoint phase1_done
+	确认后执行：
+	  node "{SKILL_ROOT}/scripts/update-state.js" --branch1 REVIEW_BRANCH --branch2 BASE_BRANCH --set review_options.severity_mode=critical_high_only --set review_options.skip_low_risk_files=true --set review_options.generate_html_report=true --set review_options.max_lines_per_batch=1200 --set review_options.deep_doubt_analysis=true --set review_options.user_confirmed=true --phase diff_analysis --checkpoint phase1_done
 
 若六项未收齐或未应用默认值就开始检视，说明未执行 SKILL.md §0.2；Phase 2 脚本会报 PHASE1_REQUIRED。
 `.trim();

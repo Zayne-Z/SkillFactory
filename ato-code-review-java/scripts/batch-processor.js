@@ -3,10 +3,7 @@
  * 将 Java 项目变动文件清单智能分批
  *
  * 用法：
- *   node batch-processor.js \
- *     --inventory .codereview/file-inventory.json \
- *     --max-lines 1200 \
- *     --output .codereview/file-inventory.json
+ *   node batch-processor.js --inventory .codereview/file-inventory.json --max-lines 1200 --output .codereview/file-inventory.json
  *
  * 分批策略（Java 特化）：
  *  1. Mapper.xml 与对应 Mapper.java 优先放同一批（便于 SQL 专家跨文件分析）

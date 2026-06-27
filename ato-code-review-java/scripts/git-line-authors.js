@@ -3,8 +3,8 @@
  * 解析 issue 变更行的 git 提交人，并汇总本次 diff 参与开发者。
  *
  * 用法：
- *   node scripts/git-line-authors.js --branch1 feature/x --branch2 master --results .codereview/results/ --output .codereview/line-authors.json
- *   node scripts/git-line-authors.js --branch1 feature/x --branch2 master --issues issues.json --output .codereview/line-authors.json
+ *   node scripts/git-line-authors.js --branch1 REVIEW_BRANCH --branch2 BASE_BRANCH --results .codereview/results/ --output .codereview/line-authors.json
+ *   node scripts/git-line-authors.js --branch1 REVIEW_BRANCH --branch2 BASE_BRANCH --issues issues.json --output .codereview/line-authors.json
  *
  * issues.json 格式：[{ "id": "SEC-004", "file": "src/.../Foo.java", "line": 52 }, ...]
  */

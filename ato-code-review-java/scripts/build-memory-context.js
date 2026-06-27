@@ -3,10 +3,7 @@
  * 按专家 scope 从 memory.json 生成精简 brief，供子执行器行动前读取
  *
  * 用法：
- *   node build-memory-context.js \
- *     --memory .codereview/memory.json \
- *     --expert core \
- *     --output .codereview/memory-brief-batch-001-core.json
+ *   node build-memory-context.js --memory .codereview/memory.json --expert core --output .codereview/memory-brief-batch-001-core.json
  *
  * expert: core | spring | security | data | curator
  */

@@ -51,18 +51,14 @@
 
 ### Phase 0 / 重新检视后
 
-```bash
+```text
 node "{SKILL_ROOT}/scripts/init-memory.js"
 ```
 
 ### Phase 5 每专家拉起前
 
-```bash
-node "{SKILL_ROOT}/scripts/build-memory-context.js" \
-  --memory .codereview/memory.json \
-  --batch-id batch-001 \
-  --expert framework \
-  --output .codereview/memory-brief-batch-001-framework.json
+```text
+node "{SKILL_ROOT}/scripts/build-memory-context.js" --memory .codereview/memory.json --batch-id batch-001 --expert framework --output .codereview/memory-brief-batch-001-framework.json
 ```
 
 专家名：`core` / `framework` / `reliability` / `security` / `curator`

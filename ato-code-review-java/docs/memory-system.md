@@ -53,18 +53,14 @@
 
 ### Phase 0 / 重新检视后
 
-```bash
+```text
 node "{SKILL_ROOT}/scripts/init-memory.js"
 ```
 
 ### Phase 5 每专家拉起前
 
-```bash
-node "{SKILL_ROOT}/scripts/build-memory-context.js" \
-  --memory .codereview/memory.json \
-  --batch-id batch-001 \
-  --expert core \
-  --output .codereview/memory-brief-batch-001-core.json
+```text
+node "{SKILL_ROOT}/scripts/build-memory-context.js" --memory .codereview/memory.json --batch-id batch-001 --expert core --output .codereview/memory-brief-batch-001-core.json
 ```
 
 将 `--output` 路径作为 `MEMORY_BRIEF_PATH` 传给子执行器。

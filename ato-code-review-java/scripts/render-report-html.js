@@ -3,9 +3,7 @@
  * 将 Phase 7 产出的 Markdown 检视报告机械转换为单文件 HTML（填充 report-shell.html）。
  *
  * 用法：
- *   node scripts/render-report-html.js --md codereview/report_x.md \
- *     --shell templates/report-shell.html --out codereview/report_x.html \
- *     [--state .codereview/state.json]
+ *   node scripts/render-report-html.js --md codereview/report_x.md --shell templates/report-shell.html --out codereview/report_x.html --state .codereview/state.json
  *
  * 若 MD 中仍有未替换的 {{PLACEHOLDER}}，会尝试从 state / inventory / tech-stack 补全；
  * 最终 HTML 中不得残留 {{...}}（否则 exit 2）。

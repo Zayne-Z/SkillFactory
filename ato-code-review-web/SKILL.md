@@ -13,7 +13,7 @@ description: >-
 > **本文件是 VS Code Builder、opencode、Claude Code 等运行器共用的主编排指令来源。**
 > 主编排器负责编排、状态管理、并行调度与故障恢复；**不做**深度代码检视。
 > 须用 `scripts/update-state.js` 落盘；Phase 2+ 在 `user_confirmed !== true` 时会报 `PHASE1_REQUIRED`。
-> **命令兼容规则：** 所有示例命令必须能在 Windows PowerShell 5.1、PowerShell 7、bash/zsh 中逐条执行；多条命令分开运行，不使用 Bash 专用串联、反斜杠续行或 POSIX-only 语法。
+> **命令兼容规则：** 命令块使用跨 shell 的 `text` 示例；先将 `{SKILL_ROOT}` 与示例分支/选项替换为真实值，再在 Windows PowerShell 5.1、PowerShell 7、bash/zsh 中逐条执行。多条命令分开运行，不使用 Bash 专用串联、反斜杠续行或 POSIX-only 语法。
 
 ---
 
@@ -36,7 +36,7 @@ description: >-
 
 ### 0.1 读 state / 初始化
 
-```powershell
+```text
 node "{SKILL_ROOT}/scripts/init-memory.js"
 # state 不存在时：
 node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
@@ -57,8 +57,8 @@ node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
 
 复述确认后：
 
-```powershell
-node "{SKILL_ROOT}/scripts/update-state.js" --branch1 <BRANCH1> --branch2 <BRANCH2> --set review_options.severity_mode=<mode> --set review_options.skip_low_risk_files=<bool> --set review_options.generate_html_report=<bool> --set review_options.max_lines_per_batch=<N> --set review_options.deep_doubt_analysis=<bool> --set review_options.user_confirmed=true --phase diff_analysis --checkpoint phase1_done
+```text
+node "{SKILL_ROOT}/scripts/update-state.js" --branch1 REVIEW_BRANCH --branch2 BASE_BRANCH --set review_options.severity_mode=critical_high_only --set review_options.skip_low_risk_files=true --set review_options.generate_html_report=true --set review_options.max_lines_per_batch=1200 --set review_options.deep_doubt_analysis=true --set review_options.user_confirmed=true --phase diff_analysis --checkpoint phase1_done
 ```
 
 ### 0.3 项目记忆
@@ -166,7 +166,7 @@ codereview/   ← 多版本 report_*.md / *.html（不参与启动探测）
 
 ### Phase 0：初始化
 
-```powershell
+```text
 node "{SKILL_ROOT}/scripts/init-memory.js"
 node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
 ```
@@ -193,7 +193,7 @@ node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
 
 **Step 1 清单**（若 `skip_low_risk_files === true`，在下列命令末尾追加 `--skip-low-risk true`）：
 
-```powershell
+```text
 node "{SKILL_ROOT}/scripts/get-diff-files.js" --branch1 {BRANCH1} --branch2 {BRANCH2} --output .codereview/file-inventory.json
 # 跳过低风险时示例：
 # node "{SKILL_ROOT}/scripts/get-diff-files.js" --branch1 {BRANCH1} --branch2 {BRANCH2} --output .codereview/file-inventory.json --skip-low-risk true
@@ -201,13 +201,13 @@ node "{SKILL_ROOT}/scripts/get-diff-files.js" --branch1 {BRANCH1} --branch2 {BRA
 
 **Step 2 分批**（`max-lines` 取自 `review_options.max_lines_per_batch`，默认 1200）：
 
-```powershell
+```text
 node "{SKILL_ROOT}/scripts/batch-processor.js" --inventory .codereview/file-inventory.json --max-lines {MAX_LINES} --output .codereview/file-inventory.json
 ```
 
 **Step 3 预计算批次 diff**：
 
-```powershell
+```text
 node "{SKILL_ROOT}/scripts/export-batch-diffs.js" --inventory .codereview/file-inventory.json --output-dir .codereview/diffs
 ```
 
@@ -262,7 +262,7 @@ all batches done → current_phase = "synthesizing"（见 Phase 7）
 
 **四位检视专家**（拉起**前**必运行 `build-memory-context.js`，传入 `MEMORY_BRIEF_PATH`）：
 
-```powershell
+```text
 node "{SKILL_ROOT}/scripts/build-memory-context.js" --memory .codereview/memory.json --batch-id {BATCH_ID} --expert {core|framework|reliability|security} --output .codereview/memory-brief-{BATCH_ID}-{expert}.json
 ```
 
@@ -310,7 +310,7 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" --memory .codereview/memory.
 
 **拉起前：**
 
-```powershell
+```text
 node "{SKILL_ROOT}/scripts/build-memory-context.js" --memory .codereview/memory.json --batch-id {BATCH_ID} --expert curator --output .codereview/memory-brief-{BATCH_ID}-curator.json
 ```
 
@@ -357,13 +357,13 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" --memory .codereview/memory.
 
 **Phase 7 开始前必须执行：**
 
-```powershell
-node "{SKILL_ROOT}/scripts/git-line-authors.js" --branch1 <BRANCH1> --branch2 <BRANCH2> --results .codereview/results/ --output .codereview/line-authors.json
+```text
+node "{SKILL_ROOT}/scripts/git-line-authors.js" --branch1 REVIEW_BRANCH --branch2 BASE_BRANCH --results .codereview/results/ --output .codereview/line-authors.json
 ```
 
 **Step 1（必做，优先）：** 机械合成 MD，避免问题多时把所有 JSON 压入模型上下文，也保证第六节问题清单由结构化 issue 全量生成：
 
-```powershell
+```text
 node "{SKILL_ROOT}/scripts/render-report-md.js" --state ".codereview/state.json" --results ".codereview/results" --inventory ".codereview/file-inventory.json" --tech-stack ".codereview/tech-stack.json" --template "{SKILL_ROOT}/templates/report-template.md" --out "{REPORT_PATH}"
 ```
 
@@ -395,7 +395,7 @@ node "{SKILL_ROOT}/scripts/render-report-md.js" --state ".codereview/state.json"
 
 **Step 1（必做）：** 机械渲染（禁止「请查看同名 .md」占位）：
 
-```powershell
+```text
 node "{SKILL_ROOT}/scripts/render-report-html.js" --md "{REPORT_MD_PATH}" --shell "{SKILL_ROOT}/templates/report-shell.html" --out "{HTML_REPORT_PATH}" --state ".codereview/state.json"
 ```
 
@@ -454,7 +454,7 @@ VS Code 子 Builder、opencode subagent、Claude Code subagent/Task 均使用同
 
 ## 6. Git 备忘
 
-```powershell
+```text
 git rev-parse --verify "branch-name"
 git --no-pager diff --name-only {BRANCH2}...{BRANCH1}
 git --no-pager diff {BRANCH2}...{BRANCH1} -- path/to/file.vue

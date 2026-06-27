@@ -112,6 +112,33 @@ function commandBlocks(markdown) {
   return blocks;
 }
 
+function filesUnder(dir, predicate) {
+  const out = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const file = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...filesUnder(file, predicate));
+    } else if (!predicate || predicate(file)) {
+      out.push(file);
+    }
+  }
+  return out;
+}
+
+function phase1Message(scriptPath) {
+  const source = fs.readFileSync(scriptPath, 'utf8');
+  const match = source.match(/const PHASE1_MESSAGE = `([\s\S]*?)`\.trim\(\);/);
+  assert.ok(match, `${scriptPath} should define PHASE1_MESSAGE`);
+  return match[1];
+}
+
+function scriptCommandExamples(scriptPath) {
+  return fs.readFileSync(scriptPath, 'utf8')
+    .split(/\r?\n/)
+    .filter((line) => /^\s*\*\s+(node|git)\b/.test(line))
+    .map((line) => line.replace(/^\s*\*\s+/, ''));
+}
+
 function renderReport(skill, workspace, outName = 'report_feature_report_2026-06-22.md') {
   const script = path.join(ROOT, skill, 'scripts/render-report-md.js');
   const template = path.join(ROOT, skill, 'templates/report-template.md');
@@ -197,13 +224,37 @@ test('ato-code-review-java get-diff-files writes top-level additions and deletio
 
 test('skill command examples stay compatible with Windows PowerShell 5.1', () => {
   for (const skill of SKILLS) {
-    const skillMd = fs.readFileSync(path.join(ROOT, skill, 'SKILL.md'), 'utf8');
-    const blocks = commandBlocks(skillMd);
+    const markdownFiles = filesUnder(path.join(ROOT, skill), (file) => file.endsWith('.md'));
+    for (const file of markdownFiles) {
+      const markdown = fs.readFileSync(file, 'utf8');
+      const blocks = commandBlocks(markdown);
 
-    assert.doesNotMatch(skillMd, /```(?:bash|sh|shell)\b/i);
-    for (const block of blocks) {
-      assert.doesNotMatch(block.code, /(^|\n)[^\n]*\s\\\r?\n/);
-      assert.doesNotMatch(block.code, /&&|\|\|/);
+      assert.doesNotMatch(markdown, /```(?:bash|sh|shell)\b/i, file);
+      for (const block of blocks) {
+        assert.doesNotMatch(block.code, /(^|\n)[^\n]*\s\\\r?\n/, file);
+        assert.doesNotMatch(block.code, /&&|\|\|/, file);
+        assert.doesNotMatch(block.code, /<[A-Z_a-z][^>\n]*>/, file);
+        assert.doesNotMatch(block.code, /\bfeature\/current\b/, file);
+        assert.doesNotMatch(block.code, /--branch2\s+master\b/, file);
+      }
+    }
+
+    const gateMessage = phase1Message(path.join(ROOT, skill, 'scripts/require-phase1.js'));
+    assert.doesNotMatch(gateMessage, /(^|\n)[^\n]*\s\\\r?\n/);
+    assert.doesNotMatch(gateMessage, /&&|\|\|/);
+    assert.doesNotMatch(gateMessage, /<[A-Z_a-z][^>\n]*>/);
+    assert.doesNotMatch(gateMessage, /\bfeature\/current\b/);
+    assert.doesNotMatch(gateMessage, /--branch2\s+master\b/);
+
+    const scriptFiles = filesUnder(path.join(ROOT, skill, 'scripts'), (file) => file.endsWith('.js'));
+    for (const file of scriptFiles) {
+      for (const command of scriptCommandExamples(file)) {
+        assert.doesNotMatch(command, /(^|\n)[^\n]*\s\\\r?\n/, file);
+        assert.doesNotMatch(command, /&&|\|\|/, file);
+        assert.doesNotMatch(command, /<[A-Z_a-z][^>\n]*>/, file);
+        assert.doesNotMatch(command, /\bfeature\/(?:current|x)\b/, file);
+        assert.doesNotMatch(command, /--branch2\s+master\b/, file);
+      }
     }
   }
 });

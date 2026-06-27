@@ -5,7 +5,7 @@
  * 用法示例：
  *   node update-state.js --init
  *   node update-state.js --phase branch_selection --checkpoint startup
- *   node update-state.js --set branches.branch1=feature/x --set branches.branch2=master
+ *   node update-state.js --set branches.branch1=REVIEW_BRANCH --set branches.branch2=BASE_BRANCH
  *   node update-state.js --set review_options.severity_mode=critical_high_only --set review_options.user_confirmed=true
  *   node update-state.js --expert batch-001:core:in_progress
  *   node update-state.js --expert batch-001:core:completed --checkpoint batch-001-core-done

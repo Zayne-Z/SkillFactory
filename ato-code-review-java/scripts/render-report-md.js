@@ -667,6 +667,14 @@ function lowRiskLabel(state, inventory) {
   return '已检视全部变动文件';
 }
 
+function diffRef(inventory, key, fallback) {
+  const refs = inventory.git_refs || {};
+  const entry = refs[key] || {};
+  if (entry.diff_ref) return entry.diff_ref;
+  if (refs.update_mode === 'remote' && entry.remote_ref) return entry.remote_ref;
+  return fallback || inventory[key] || '';
+}
+
 function buildVars({ state, inventory, tech, lineAuthors, issues, fixes, config, kind }) {
   const opts = state.review_options || {};
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
@@ -683,6 +691,8 @@ function buildVars({ state, inventory, tech, lineAuthors, issues, fixes, config,
   return {
     BRANCH1: state.branches?.branch1 || '',
     BRANCH2: state.branches?.branch2 || '',
+    DIFF_BRANCH1: diffRef(inventory, 'branch1', state.branches?.branch1),
+    DIFF_BRANCH2: diffRef(inventory, 'branch2', state.branches?.branch2),
     SEVERITY_MODE_LABEL: opts.severity_mode === 'critical_high_only' ? '仅 Critical + High' : '全部级别',
     LOW_RISK_SCOPE_LABEL: lowRiskLabel(state, inventory),
     REVIEW_DATE: (state.updated_at || state.created_at || new Date().toISOString()).slice(0, 10),

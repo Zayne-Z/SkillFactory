@@ -14,8 +14,8 @@
 
 **只检视本次 Git 差异中的变更行**，不对整文件做通篇评审。
 
-1. **优先**读取 `{{DIFF_PATCH_PATH}}`（若主编排器已提供且文件存在）：其中为本批次合并的 unified diff，与对多文件执行 `git --no-pager diff {{BRANCH2}}...{{BRANCH1}} -- <paths…>` 等价。
-2. 若 patch 不存在或为空，再对每个文件：`git --no-pager diff {{BRANCH2}}...{{BRANCH1}} -- <file_path>`。
+1. **优先**读取 `{{DIFF_PATCH_PATH}}`（若主编排器已提供且文件存在）：其中为本批次合并的 unified diff，与对多文件执行 `git --no-pager diff {{DIFF_BRANCH2}}...{{DIFF_BRANCH1}} -- <paths…>` 等价。
+2. 若 patch 不存在或为空，再对每个文件：`git --no-pager diff {{DIFF_BRANCH2}}...{{DIFF_BRANCH1}} -- <file_path>`。
 3. **仅**报告与本次 diff hunk 直接相关的问题。
 4. 为理解变更可读取变更行前后各少量行（建议不超过 15 行）；**禁止**为扩大范围通读整文件。
 5. 若无问题，输出 `issues: []` 且 `summary.total_issues` 为 `0`。
@@ -53,6 +53,7 @@
 - `{{BATCH_FILES}}`：本批次文件列表
 - `{{BRANCH1}}`：被检视分支
 - `{{BRANCH2}}`：对比分支
+- `{{DIFF_BRANCH1}}` / `{{DIFF_BRANCH2}}`：实际用于 diff 的 resolved refs，来自 `.codereview/file-inventory.json.git_refs`
 - `{{OUTPUT_PATH}}`：结果输出路径（`.codereview/results/{{BATCH_ID}}-security.json`）
 - `{{MEMORY_BRIEF_PATH}}`：项目记忆 brief（可选；存在时**第一个 tool call 前**必读）
 

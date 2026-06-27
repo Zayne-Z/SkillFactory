@@ -67,7 +67,7 @@
 | `skip_low_risk_files` | boolean | `true` 时 Phase 2 对 `get-diff-files.js` 传 `--skip-low-risk true`，排除 DTO/Entity/测试等（详见清单 `review_scope`） |
 | `generate_html_report` | boolean | `true` 时 Phase 7 完成后进入 `html_rendering`，拉起 HTML 子执行器产出同名 `.html`；`false` 时跳过 |
 | `max_lines_per_batch` | number | Phase 2 `batch-processor.js --max-lines`；默认 **1200** |
-| `deep_doubt_analysis` | boolean | 默认 **true**；专家遇到疑问代码时可读取所属源文件局部窗口或做一次有界引用下钻 |
+| `deep_doubt_analysis` | boolean | 默认 **true**；专家/策展遇到疑问代码时可读取所属源文件局部窗口或做一次有界引用下钻，并对问题行之前调用的存量函数做关联复核 |
 | `user_confirmed` | boolean | Phase 1 六项清单已向用户询问并复述确认后为 `true`；**为 `false` 时禁止进入 Phase 2**（兼容性补丁填 `false` 不能代替用户确认） |
 
 Phase 1 须让分支 + 上表各项选项（含 `max_lines_per_batch`、`deep_doubt_analysis`）都有值；可分多轮收集，用户跳过时使用默认值。复述后设 `user_confirmed: true` 再进入 `diff_analysis`。断点续跑时子执行器通过主编排器传入的 `SEVERITY_MODE` 等变量读取此配置。

@@ -18,7 +18,7 @@
 
 ## 检视范围（增量 diff，必读）
 
-1. **优先**读 `{{DIFF_PATCH_PATH}}`（存在且非空则用之）；否则 `git --no-pager diff {{BRANCH2}}...{{BRANCH1}} -- <file>`
+1. **优先**读 `{{DIFF_PATCH_PATH}}`（存在且非空则用之）；否则 `git --no-pager diff {{DIFF_BRANCH2}}...{{DIFF_BRANCH1}} -- <file>`
 2. 仅针对 **本次新增/修改** 的注解、方法体、事务边界报告；不扫描未改动代码的历史问题。
 3. 无相关项时 `issues: []`。
 
@@ -35,7 +35,7 @@
 
 ## 输入变量
 
-- `{{BATCH_ID}}`、`{{BATCH_FILES}}`、`{{BRANCH1}}`、`{{BRANCH2}}`、`{{DIFF_PATCH_PATH}}`、`{{SEVERITY_MODE}}`
+- `{{BATCH_ID}}`、`{{BATCH_FILES}}`、`{{BRANCH1}}`、`{{BRANCH2}}`、`{{DIFF_BRANCH1}}`、`{{DIFF_BRANCH2}}`、`{{DIFF_PATCH_PATH}}`、`{{SEVERITY_MODE}}`
 - `{{DEEP_DOUBT_ANALYSIS}}`：是否允许对疑问代码读取所属源文件局部窗口 / 有界引用下钻，默认 `true`
 - `{{TECH_STACK}}`：技术栈 JSON
 - `{{SPRING_REF_PATH}}`：默认 `{SKILL_ROOT}/docs/spring-boot-reference.md`

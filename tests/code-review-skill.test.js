@@ -99,6 +99,122 @@ function readJson(file) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
+function git(cwd, args) {
+  return execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: {
+      ...process.env,
+      GIT_PAGER: 'cat',
+      GIT_TERMINAL_PROMPT: '0',
+    },
+  }).trim();
+}
+
+function setGitIdentity(cwd, name, email = 'codex@example.com') {
+  git(cwd, ['config', 'user.email', email]);
+  git(cwd, ['config', 'user.name', name]);
+}
+
+function fileForSkill(skill) {
+  if (skill.endsWith('-web')) {
+    return {
+      path: 'src/App.ts',
+      initial: "export const base = 'base';\n",
+      localFeature: "export const localFeature = 'local';\n",
+      remoteBase: "export const remoteBase = 'remote-base';\n",
+      remoteFeature: "export const remoteFeature = 'remote-feature';\n",
+    };
+  }
+  return {
+    path: 'src/main/java/App.java',
+    initial: 'class App {\n  String base() { return "base"; }\n}\n',
+    localFeature: '// local feature marker\n',
+    remoteBase: '// remote base marker\n',
+    remoteFeature: '// remote feature marker\n',
+  };
+}
+
+function commitFile(cwd, filePath, content, message, authorName) {
+  setGitIdentity(cwd, authorName);
+  const fullPath = path.join(cwd, filePath);
+  fs.mkdirSync(path.dirname(fullPath), { recursive: true });
+  fs.writeFileSync(fullPath, content, 'utf8');
+  git(cwd, ['add', filePath]);
+  git(cwd, ['commit', '-m', message]);
+}
+
+function appendAndCommit(cwd, filePath, line, message, authorName) {
+  setGitIdentity(cwd, authorName);
+  fs.appendFileSync(path.join(cwd, filePath), line, 'utf8');
+  git(cwd, ['add', filePath]);
+  git(cwd, ['commit', '-m', message]);
+}
+
+function createBranchSyncFixture(skill) {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), `${skill} branch sync `));
+  const remote = path.join(root, 'origin repo.git');
+  const seed = path.join(root, 'seed repo');
+  const work = path.join(root, 'work repo');
+  const spec = fileForSkill(skill);
+
+  git(root, ['init', '--bare', '-b', 'master', remote]);
+  fs.mkdirSync(seed);
+  git(seed, ['init', '-b', 'master']);
+  git(seed, ['remote', 'add', 'origin', remote]);
+  commitFile(seed, spec.path, spec.initial, 'initial', 'Initial Author');
+  git(seed, ['push', '-u', 'origin', 'master']);
+
+  git(seed, ['checkout', '-b', 'feature/sync']);
+  appendAndCommit(seed, spec.path, spec.localFeature, 'local feature', 'Local Feature');
+  git(seed, ['push', '-u', 'origin', 'feature/sync']);
+
+  git(root, ['clone', remote, work]);
+  setGitIdentity(work, 'Work User');
+  git(work, ['checkout', '-b', 'feature/sync', 'origin/feature/sync']);
+
+  git(seed, ['checkout', 'master']);
+  appendAndCommit(seed, spec.path, spec.remoteBase, 'remote base', 'Remote Base');
+  git(seed, ['push', 'origin', 'master']);
+
+  git(seed, ['checkout', 'feature/sync']);
+  appendAndCommit(seed, spec.path, spec.remoteFeature, 'remote feature', 'Remote Feature');
+  git(seed, ['push', 'origin', 'feature/sync']);
+
+  return {
+    root,
+    remote,
+    seed,
+    work,
+    spec,
+    remoteMasterOid: git(seed, ['rev-parse', 'master']),
+    remoteFeatureOid: git(seed, ['rev-parse', 'feature/sync']),
+  };
+}
+
+function runGetDiff(skill, workspace, output, extraArgs = []) {
+  execFileSync(process.execPath, [
+    path.join(ROOT, skill, 'scripts/get-diff-files.js'),
+    '--branch1',
+    'feature/sync',
+    '--branch2',
+    'master',
+    '--output',
+    output,
+    '--force',
+    'true',
+    ...extraArgs,
+  ], { cwd: workspace, stdio: 'pipe' });
+}
+
+function remoteMarkerLine(workspace, ref, filePath, marker) {
+  const text = git(workspace, ['show', `${ref}:${filePath}`]);
+  const idx = text.split(/\r?\n/).findIndex((line) => line.includes(marker));
+  assert.notEqual(idx, -1, `${marker} should exist in ${ref}:${filePath}`);
+  return idx + 1;
+}
+
 function commandBlocks(markdown) {
   const blocks = [];
   const blockPattern = /```([^\n]*)\n([\s\S]*?)```/g;
@@ -214,6 +330,8 @@ test('ato-code-review-java get-diff-files writes top-level additions and deletio
     out,
     '--force',
     'true',
+    '--update-mode',
+    'local',
   ], { cwd: workspace, stdio: 'pipe' });
 
   const inventory = readJson(out);
@@ -221,6 +339,133 @@ test('ato-code-review-java get-diff-files writes top-level additions and deletio
   assert.equal(inventory.total_deletions, 1);
   assert.equal(inventory.total_changed_lines, 3);
 });
+
+for (const skill of SKILLS) {
+  test(`${skill} get-diff-files fast-forwards local branches by default`, () => {
+    const fixture = createBranchSyncFixture(skill);
+    const out = path.join(fixture.work, '.codereview/file-inventory.json');
+
+    assert.notEqual(git(fixture.work, ['rev-parse', 'master']), fixture.remoteMasterOid);
+    assert.notEqual(git(fixture.work, ['rev-parse', 'feature/sync']), fixture.remoteFeatureOid);
+
+    runGetDiff(skill, fixture.work, out);
+
+    assert.equal(git(fixture.work, ['rev-parse', 'master']), fixture.remoteMasterOid);
+    assert.equal(git(fixture.work, ['rev-parse', 'feature/sync']), fixture.remoteFeatureOid);
+
+    const inventory = readJson(out);
+    assert.equal(inventory.git_refs.update_mode, 'local-ff');
+    assert.equal(inventory.git_refs.branch1.diff_ref, 'feature/sync');
+    assert.equal(inventory.git_refs.branch2.diff_ref, 'master');
+    assert.equal(Number(inventory.total_additions), 2);
+    assert.ok(inventory.files.some((file) => file.path === fixture.spec.path));
+  });
+
+  test(`${skill} remote mode leaves local branches unchanged and downstream scripts reuse resolved refs`, () => {
+    const fixture = createBranchSyncFixture(skill);
+    const out = path.join(fixture.work, '.codereview/file-inventory.json');
+    const beforeMaster = git(fixture.work, ['rev-parse', 'master']);
+    const beforeFeature = git(fixture.work, ['rev-parse', 'feature/sync']);
+
+    runGetDiff(skill, fixture.work, out, ['--update-mode', 'remote']);
+
+    assert.equal(git(fixture.work, ['rev-parse', 'master']), beforeMaster);
+    assert.equal(git(fixture.work, ['rev-parse', 'feature/sync']), beforeFeature);
+
+    const inventory = readJson(out);
+    assert.equal(inventory.git_refs.update_mode, 'remote');
+    assert.equal(inventory.git_refs.branch1.diff_ref, 'origin/feature/sync');
+    assert.equal(inventory.git_refs.branch2.diff_ref, 'origin/master');
+    assert.equal(Number(inventory.total_additions), 2);
+
+    inventory.batches = [{
+      id: 'batch-001',
+      files: [{ path: fixture.spec.path, type: inventory.files[0].type, changed_lines: inventory.files[0].changed_lines }],
+      total_lines: inventory.files[0].changed_lines,
+    }];
+    writeJson(out, inventory);
+
+    const outputDir = path.join(fixture.work, '.codereview/diffs');
+    execFileSync(process.execPath, [
+      path.join(ROOT, skill, 'scripts/export-batch-diffs.js'),
+      '--inventory',
+      out,
+      '--output-dir',
+      outputDir,
+      '--force',
+      'true',
+    ], { cwd: fixture.work, stdio: 'pipe' });
+    const patch = fs.readFileSync(path.join(outputDir, 'batch-001.patch'), 'utf8');
+    assert.match(patch, /remoteFeature|remote feature/);
+
+    const resultsDir = path.join(fixture.work, '.codereview/results');
+    fs.mkdirSync(resultsDir, { recursive: true });
+    const marker = skill.endsWith('-web') ? 'remoteFeature' : 'remote feature';
+    const line = remoteMarkerLine(
+      fixture.work,
+      inventory.git_refs.branch1.diff_ref,
+      fixture.spec.path,
+      marker
+    );
+    writeJson(path.join(resultsDir, 'batch-001-curated.json'), {
+      issues: [{ issue_id: 'SYNC-001', file: fixture.spec.path, line }],
+    });
+
+    const authorsOut = path.join(fixture.work, '.codereview/line-authors.json');
+    execFileSync(process.execPath, [
+      path.join(ROOT, skill, 'scripts/git-line-authors.js'),
+      '--inventory',
+      out,
+      '--results',
+      resultsDir,
+      '--output',
+      authorsOut,
+    ], { cwd: fixture.work, stdio: 'pipe' });
+    const authors = readJson(authorsOut);
+    assert.equal(authors.issue_authors['SYNC-001'], 'Remote Feature');
+    assert.ok(authors.contributors.includes('Remote Feature'));
+  });
+
+  test(`${skill} default local update stops on dirty current branch and suggests both recovery choices`, () => {
+    const fixture = createBranchSyncFixture(skill);
+    const out = path.join(fixture.work, '.codereview/file-inventory.json');
+    fs.appendFileSync(path.join(fixture.work, fixture.spec.path), '// dirty local edit\n', 'utf8');
+
+    assert.throws(() => {
+      runGetDiff(skill, fixture.work, out);
+    }, (error) => {
+      const stderr = String(error.stderr || '');
+      assert.match(stderr, /自动更新本地分支失败/);
+      assert.match(stderr, /手动更新本地分支/);
+      assert.match(stderr, /--update-mode remote/);
+      return true;
+    });
+    assert.equal(fs.existsSync(out), false);
+  });
+
+  test(`${skill} refsFromInventory keeps remote mode on remote refs when diff_ref is absent`, () => {
+    const { refsFromInventory } = require(path.join(ROOT, skill, 'scripts/git-ref-sync.js'));
+    const refs = refsFromInventory({
+      branch1: 'feature/sync',
+      branch2: 'master',
+      git_refs: {
+        update_mode: 'remote',
+        branch1: { remote_ref: 'origin/feature/sync' },
+        branch2: { remote_ref: 'origin/master' },
+      },
+    });
+
+    assert.equal(refs.branch1, 'origin/feature/sync');
+    assert.equal(refs.branch2, 'origin/master');
+  });
+
+  test(`${skill} refsFromInventory rejects old inventories without synchronized git refs`, () => {
+    const { refsFromInventory } = require(path.join(ROOT, skill, 'scripts/git-ref-sync.js'));
+    assert.throws(() => {
+      refsFromInventory({ branch1: 'feature/sync', branch2: 'master' });
+    }, /缺少 git_refs/);
+  });
+}
 
 test('skill command examples stay compatible with Windows PowerShell 5.1', () => {
   for (const skill of SKILLS) {
@@ -248,6 +493,9 @@ test('skill command examples stay compatible with Windows PowerShell 5.1', () =>
 
     const scriptFiles = filesUnder(path.join(ROOT, skill, 'scripts'), (file) => file.endsWith('.js'));
     for (const file of scriptFiles) {
+      const source = fs.readFileSync(file, 'utf8');
+      assert.doesNotMatch(source, /shell:\s*true/, file);
+      assert.doesNotMatch(source, /\bexecSync\s*\(/, file);
       for (const command of scriptCommandExamples(file)) {
         assert.doesNotMatch(command, /(^|\n)[^\n]*\s\\\r?\n/, file);
         assert.doesNotMatch(command, /&&|\|\|/, file);
@@ -256,6 +504,29 @@ test('skill command examples stay compatible with Windows PowerShell 5.1', () =>
         assert.doesNotMatch(command, /--branch2\s+master\b/, file);
       }
     }
+  }
+});
+
+test('review prompts use resolved diff refs instead of display branch names for fallbacks', () => {
+  for (const skill of SKILLS) {
+    const skillDoc = fs.readFileSync(path.join(ROOT, skill, 'SKILL.md'), 'utf8');
+    assert.match(skillDoc, /DIFF_BRANCH1/);
+    assert.match(skillDoc, /DIFF_BRANCH2/);
+
+    const promptFiles = filesUnder(path.join(ROOT, skill, 'prompts'), (file) => file.endsWith('.md'));
+    for (const file of promptFiles) {
+      const markdown = fs.readFileSync(file, 'utf8');
+      assert.doesNotMatch(markdown, /\{\{BRANCH2\}\}\.\.\.\{\{BRANCH1\}\}/, file);
+      assert.doesNotMatch(markdown, /git --no-pager show \{\{BRANCH1\}\}:<file>/, file);
+    }
+  }
+});
+
+test('issue curators normalize expert id fields to issue_id', () => {
+  for (const skill of SKILLS) {
+    const curator = fs.readFileSync(path.join(ROOT, skill, 'prompts/issue-curator.md'), 'utf8');
+    assert.match(curator, /source\.issue_id \|\| source\.id/);
+    assert.match(curator, /不得只保留 `id` 而缺少 `issue_id`/);
   }
 });
 
@@ -302,6 +573,24 @@ for (const skill of SKILLS) {
     const html = fs.readFileSync(htmlPath, 'utf8');
     assert.match(html, /新增 7 行 \/ 删除 2 行/);
     assert.doesNotMatch(html, /新增 0 行 \/ 删除 0 行/);
+  });
+
+  test(`${skill} render-report-md shows resolved diff refs when inventory used remote mode`, () => {
+    const workspace = makeWorkspace(skill);
+    const inventoryPath = path.join(workspace, '.codereview/file-inventory.json');
+    const inventory = readJson(inventoryPath);
+    inventory.branch1 = 'feature/report';
+    inventory.branch2 = 'master';
+    inventory.git_refs = {
+      update_mode: 'remote',
+      branch1: { diff_ref: 'origin/feature/report', remote_ref: 'origin/feature/report' },
+      branch2: { diff_ref: 'origin/master', remote_ref: 'origin/master' },
+    };
+    writeJson(inventoryPath, inventory);
+
+    const mdPath = renderReport(skill, workspace, 'report_remote_refs.md');
+    const md = fs.readFileSync(mdPath, 'utf8');
+    assert.match(md, /origin\/master\.\.\.origin\/feature\/report/);
   });
 
   test(`${skill} render-report-html preserves all section-6 issue rows split across tables`, () => {

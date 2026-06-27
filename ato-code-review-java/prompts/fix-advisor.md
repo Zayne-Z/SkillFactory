@@ -25,6 +25,7 @@
 - `{{BATCH_FILES}}`：本批次文件列表
 - `{{BRANCH1}}`：被检视分支
 - `{{BRANCH2}}`：基准分支
+- `{{DIFF_BRANCH1}}` / `{{DIFF_BRANCH2}}`：实际用于 diff 的 resolved refs，来自 `.codereview/file-inventory.json.git_refs`
 - `{{DIFF_PATCH_PATH}}`：本批次预计算 unified diff（与 Phase 5 共用；**优先**据此取代码上下文）
 - `{{CURATED_PATH}}`：策展结果路径（默认 `.codereview/results/{{BATCH_ID}}-curated.json`，存在时作为唯一问题清单）
 - `{{RESULTS_DIR}}`：当前批次所有专家结果目录（`.codereview/results/`）
@@ -53,7 +54,7 @@
 ### Step 2：获取代码上下文（优先 patch，少读工作区）
 
 1. **优先（默认）**：读取 **`{{DIFF_PATCH_PATH}}` 一次**。在其中按文件路径定位与每条 `issue` 行号相关的 hunk（`@@ ... @@` 块），使用 hunk 内上下文行（空格/`+` 前缀的展示行）理解语义并撰写修复片段。同一文件多条 issue 时仍只依赖该 patch，**不要**对同一路径多次读取 patch。
-2. **按文件去重**：若必须离开 patch 补足上下文，对每个仓库相对路径**至多**触发一次工作区读取或一次 `git --no-pager diff {{BRANCH2}}...{{BRANCH1}} -- <file>`；读取前合并该文件所有 issue 涉及的行号，取「最小行号 − 10」至「最大行号 + 10」的**单一**区间（可裁剪在合理上限内），**禁止**因 issue 条数多次打开同一文件。
+2. **按文件去重**：若必须离开 patch 补足上下文，对每个仓库相对路径**至多**触发一次工作区读取或一次 `git --no-pager diff {{DIFF_BRANCH2}}...{{DIFF_BRANCH1}} -- <file>`；读取前合并该文件所有 issue 涉及的行号，取「最小行号 − 10」至「最大行号 + 10」的**单一**区间（可裁剪在合理上限内），**禁止**因 issue 条数多次打开同一文件。
 3. **仅当** patch 不存在、为空、或 hunk 边界导致无法写出正确替换代码时，才使用第 2 步回退。
 
 ### Step 3：生成修复建议

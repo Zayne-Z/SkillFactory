@@ -21,8 +21,8 @@
 
 **只检视本次 Git 差异中的变更行**，不对整文件做通篇评审。
 
-1. **优先**读取 `{{DIFF_PATCH_PATH}}`（若主编排器已提供且文件存在）：其中为本批次合并的 unified diff，与对多文件执行 `git --no-pager diff {{BRANCH2}}...{{BRANCH1}} -- <paths…>` 等价。
-2. 若 patch 不存在或为空，再对每个文件：`git --no-pager diff {{BRANCH2}}...{{BRANCH1}} -- <file_path>`。
+1. **优先**读取 `{{DIFF_PATCH_PATH}}`（若主编排器已提供且文件存在）：其中为本批次合并的 unified diff，与对多文件执行 `git --no-pager diff {{DIFF_BRANCH2}}...{{DIFF_BRANCH1}} -- <paths…>` 等价。
+2. 若 patch 不存在或为空，再对每个文件：`git --no-pager diff {{DIFF_BRANCH2}}...{{DIFF_BRANCH1}} -- <file_path>`。
 3. **仅**报告与 diff 中新增（`+`）或修改块**直接相关**的问题。
 4. 为理解变更块可读取变更行前后各少量行（建议不超过 15 行）；**禁止**为扩大范围通读整文件。
 5. 若无问题，`issues: []` 且 `summary.total_issues` 为 `0`。
@@ -33,6 +33,12 @@
 - `{{DEEP_DOUBT_ANALYSIS}}` 为 `true`（默认）时：可读取所属源文件的局部窗口，或对新增符号做一次有界引用搜索（如 `rg -n --fixed-strings <symbol>`，最多读取 50 条匹配，结果过多即停止），用于确认是否存在调用方、框架约定入口或分阶段提交证据。
 - 若仍无法证明合理，输出 `category: "unused_new_symbol"` 或相近类别；`critical_high_only` 下用 `high` 并在描述中写明“需确认是否为遗漏调用 / 死代码 / 分阶段提交”。
 - `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：不要扩大读取范围；基于 patch 证据报告“需人工确认”。
+
+## 关联被调用函数（安全性取决于存量函数时）
+
+- 当某个疑似缺陷（NPE / 资源 / 参数校验 / 异常）的安全性取决于**问题行之前调用的某个存量方法**（如先 `validateUser(user)` / `Assert.notNull(user)` 再 `user.getName()`），不要只看变更行就直接判为缺陷，也不要因“看不到处理”直接判为缺陷。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `true` 时：可对该被调用方法做一次有界引用搜索并读取其方法体局部窗口，确认其是否在为 null / 非法时抛异常或拦截；确认已处理则不报，确认未处理才报。
+- 若无法在预算内完成下钻：仍输出该 issue，并在 `description` 写明“安全性依赖被调用方法 `类名#方法名`，需关联确认”，交由策展专家 Step 3.4 下钻复核，避免误报。
 
 ## 严重级别范围
 
@@ -45,6 +51,7 @@
 - `{{BATCH_FILES}}`：本批次文件列表（JSON 数组）
 - `{{BRANCH1}}`：被检视分支
 - `{{BRANCH2}}`：对比分支
+- `{{DIFF_BRANCH1}}` / `{{DIFF_BRANCH2}}`：实际用于 diff 的 resolved refs，来自 `.codereview/file-inventory.json.git_refs`
 - `{{DIFF_PATCH_PATH}}`：本批次预计算 patch 路径（可选）
 - `{{SEVERITY_MODE}}`：`all` 或 `critical_high_only`
 - `{{DEEP_DOUBT_ANALYSIS}}`：是否允许对疑问代码读取所属源文件局部窗口 / 有界引用下钻，默认 `true`

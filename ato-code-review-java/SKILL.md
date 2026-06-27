@@ -256,7 +256,7 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 | 时机 | 命令示例 |
 |------|----------|
 | 启动 / Phase 0 | `node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init` |
-| Phase 1 复述确认后 | `node .../update-state.js --branch1 {B1} --branch2 {B2} --set review_options.severity_mode=critical_high_only --set review_options.skip_low_risk_files=true --set review_options.generate_html_report=true --set review_options.max_lines_per_batch=1200 --set review_options.user_confirmed=true --phase diff_analysis --checkpoint phase1_done` |
+| Phase 1 复述确认后 | `node .../update-state.js --branch1 {B1} --branch2 {B2} --set review_options.severity_mode=critical_high_only --set review_options.skip_low_risk_files=true --set review_options.generate_html_report=true --set review_options.max_lines_per_batch=1200 --set review_options.deep_doubt_analysis=true --set review_options.user_confirmed=true --phase diff_analysis --checkpoint phase1_done` |
 | Phase 2 脚本跑完 | `node .../update-state.js --phase tech_stack --checkpoint phase2_diff_done`（可从 inventory 读 total 写入 `--set diff_analysis.total_files=N` 等） |
 | Phase 3 完成 | `node .../update-state.js --phase task_planning --checkpoint phase3_tech_stack_done` |
 | Phase 4 完成 | `node .../update-state.js --init-review-progress --task-plan .codereview/task-plan.json --phase reviewing --checkpoint phase4_task_plan_done` |
@@ -299,7 +299,7 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 | `skip_low_risk_files` | `true` \| `false` |
 | `generate_html_report` | `true` \| `false`；默认 `true` |
 | `max_lines_per_batch` | 正整数，默认 `1200`（Phase 2 传给 `batch-processor.js --max-lines`） |
-| `deep_doubt_analysis` | `true` \| `false`；默认 `true`，允许专家对疑问代码读取所属源文件局部窗口或有界下钻 |
+| `deep_doubt_analysis` | `true` \| `false`；默认 `true`，允许专家/策展对疑问代码读取所属源文件局部窗口或有界下钻，并对问题行调用的存量函数做关联下钻复核（避免「调用了已处理的存量函数」被误报） |
 | `user_confirmed` | Phase 1 复述确认后为 `true` |
 
 ---
@@ -312,6 +312,8 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 ```text
 node "{SKILL_ROOT}/scripts/get-diff-files.js" --branch1 {BRANCH1} --branch2 {BRANCH2} --output .codereview/file-inventory.json
 ```
+
+默认 `--update-mode local-ff`：脚本会 fetch upstream/origin，并只用 fast-forward 更新本地 `BRANCH1`、`BRANCH2`。若更新失败，**立即停止**，不要用可能过期的本地分支继续检视；向用户确认二选一：手动更新本地两个分支后重新开始，或重新运行并追加 `--update-mode remote` 直接对比远端分支。用户确认已手动更新时，可追加 `--update-mode local`。
 
 **Step 2：分批**（`max-lines` 取自 `state.review_options.max_lines_per_batch`，默认 1200）
 ```text
@@ -326,7 +328,7 @@ node "{SKILL_ROOT}/scripts/batch-processor.js" --inventory .codereview/file-inve
 node "{SKILL_ROOT}/scripts/export-batch-diffs.js" --inventory .codereview/file-inventory.json --output-dir .codereview/diffs
 ```
 
-脚本会更新 `file-inventory.json` 的 `diff_bundle`（含 `manifest.json`）。若某 patch 为空，子专家可回退为按文件 `git diff`。若 `manifest` 中单批 `byte_length` 过大，可告警或调整 `max-lines` 分批。
+脚本会更新 `file-inventory.json` 的 `diff_bundle`（含 `manifest.json`）。若某 patch 为空，主编排器可按 `file-inventory.json.git_refs` 中的实际 diff refs 补取单文件 `git diff`。若 `manifest` 中单批 `byte_length` 过大，可告警或调整 `max-lines` 分批。
 
 **Step 4：** 向用户展示批次数、文件数、行数及跳过低风险统计（若有），确认后执行：
 
@@ -426,6 +428,8 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" --memory .codereview/memory.
 | `BATCH_FILES` | 该批次文件列表 JSON（从 task-plan.json 读取） |
 | `BRANCH1` | 被检视分支 |
 | `BRANCH2` | 基准分支 |
+| `DIFF_BRANCH1` | 实际用于 diff 的被检视 ref：读取 `.codereview/file-inventory.json.git_refs.branch1.diff_ref`；缺失时才退回 `BRANCH1` |
+| `DIFF_BRANCH2` | 实际用于 diff 的基准 ref：读取 `.codereview/file-inventory.json.git_refs.branch2.diff_ref`；缺失时才退回 `BRANCH2` |
 | `DIFF_PATCH_PATH` | `.codereview/diffs/{BATCH_ID}.patch`（Phase 2 已导出则必传；不存在则子执行器仅用 git） |
 | `SEVERITY_MODE` | `state.json` → `review_options.severity_mode`（`all` 或 `critical_high_only`） |
 | `DEEP_DOUBT_ANALYSIS` | `state.json` → `review_options.deep_doubt_analysis` |
@@ -436,7 +440,7 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" --memory .codereview/memory.
 
 **检视范围（硬性规则，传达给每个子执行器）：**
 
-> **优先**读取 `DIFF_PATCH_PATH` 中的 unified diff（与 `git --no-pager diff {BRANCH2}...{BRANCH1} -- <paths…>` 等价）。缺失或为空时再对每个文件执行 `git --no-pager diff {BRANCH2}...{BRANCH1} -- <file>`。
+> **优先**读取 `DIFF_PATCH_PATH` 中的 unified diff。缺失或为空时，主编排器必须从 `.codereview/file-inventory.json.git_refs` 取 `branch2.diff_ref` 与 `branch1.diff_ref`，分别作为 `DIFF_BRANCH2` / `DIFF_BRANCH1` 后再按文件补取 diff。
 > 只检视变更行；禁止对未改动代码批量报问题。`line` 字段必须为字符串；每条 issue 必须补充 `symbol`（如 `UserServiceImpl#createOrder`、`UserMapper.xml#selectById`），报告不得只依赖行号定位。
 >
 > 若 `SEVERITY_MODE` 为 `critical_high_only`，**仅**输出 `critical` 与 `high`，不得输出 `medium` / `low`。
@@ -445,7 +449,7 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" --memory .codereview/memory.
 
 **并行派发建议：**
 
-同一 `BATCH_ID` 中，对 `applicable_experts` 取交集后可一次性并行拉起多个子执行器。每个任务必须显式包含：`BATCH_ID`、`BATCH_FILES`、`BRANCH1`、`BRANCH2`、`DIFF_PATCH_PATH`、`SEVERITY_MODE`、`DEEP_DOUBT_ANALYSIS`、`MEMORY_BRIEF_PATH`、`TECH_STACK`、`SKILL_ROOT`、独立 `OUTPUT_PATH`，并强调“完成后只写对应输出文件”。主编排器等待这一组输出文件全部存在且 JSON 合法后，再将对应状态改为 `completed`；随后串行执行 `issue-curator` 和 `fix-advisor`。
+同一 `BATCH_ID` 中，对 `applicable_experts` 取交集后可一次性并行拉起多个子执行器。每个任务必须显式包含：`BATCH_ID`、`BATCH_FILES`、`BRANCH1`、`BRANCH2`、`DIFF_BRANCH1`、`DIFF_BRANCH2`、`DIFF_PATCH_PATH`、`SEVERITY_MODE`、`DEEP_DOUBT_ANALYSIS`、`MEMORY_BRIEF_PATH`、`TECH_STACK`、`SKILL_ROOT`、独立 `OUTPUT_PATH`，并强调“完成后只写对应输出文件”。主编排器等待这一组输出文件全部存在且 JSON 合法后，再将对应状态改为 `completed`；随后串行执行 `issue-curator` 和 `fix-advisor`。
 
 **适用性剪枝（来自 task-plan.json 的 `applicable_experts`）：**
 
@@ -470,7 +474,8 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" --memory .codereview/memory.
 
 **目的：**
 1. **跨专家合并**：把同一文件、同一行（区间重叠）、实质相同根因的多条 issue 合并为一条主条目（按主责专家优先级），其余视角并入 `merged_from[]`，避免 fix-advisor 与最终报告对同一行写出多段重复内容
-2. **函数体级关联复核**：对合并后剩余的每条 issue，**仅在其所在函数体（或 XML SQL 节点）范围内**检查是否已通过判空 / try-with-resources / `@Valid` / 工具断言 / 白名单 / 同步原语等手段处理；已处理的移入 `invalidated[]` 不再下发，避免误报
+2. **函数体级关联复核**：对合并后剩余的每条 issue，先在其所在函数体（或 XML SQL 节点）范围内检查是否已通过判空 / try-with-resources / `@Valid` / 工具断言 / 白名单 / 同步原语等手段处理；已处理的移入 `invalidated[]` 不再下发，避免误报
+3. **被调用关联函数下钻复核**：当 NPE / 资源 / 参数校验 / 异常类 issue 的安全性取决于问题行之前调用的**存量函数**（例如先 `validateUser(user)` 再 `user.getName()`）时，在 `deep_doubt_analysis` 为 true 且预算内（每批下钻 ≤ 3 次）下钻该被调用函数体，确认其确实已处理后才判为误报，从而做到「关联代码检查而非只看变更行」
 
 **传入变量：**
 | 变量 | 值 |
@@ -478,6 +483,7 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" --memory .codereview/memory.
 | `BATCH_ID` | 当前批次 |
 | `BATCH_FILES` | 当前批次文件列表 |
 | `BRANCH1` / `BRANCH2` | 同 Phase 5 |
+| `DIFF_BRANCH1` / `DIFF_BRANCH2` | 同 Phase 5；用于 curator 的 `git show` / 兜底 diff，避免 remote 模式回退到过期本地分支 |
 | `DIFF_PATCH_PATH` | `.codereview/diffs/{BATCH_ID}.patch`（与 Phase 5 共用） |
 | `SEVERITY_MODE` | 同 Phase 5（`critical_high_only` 时不得保留 medium / low） |
 | `DEEP_DOUBT_ANALYSIS` | 同 Phase 5 |
@@ -504,13 +510,15 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" --memory .codereview/memory.
 | `BATCH_FILES` | 当前批次文件列表 |
 | `BRANCH1` | 被检视分支（与 Phase 5 相同） |
 | `BRANCH2` | 基准分支（与 Phase 5 相同） |
+| `DIFF_BRANCH1` | 实际用于 diff 的被检视 ref（与 Phase 5 相同） |
+| `DIFF_BRANCH2` | 实际用于 diff 的基准 ref（与 Phase 5 相同） |
 | `DIFF_PATCH_PATH` | `.codereview/diffs/{BATCH_ID}.patch`（Phase 2 `export-batch-diffs.js` 已生成；主编排器按 `BATCH_ID` 自动拼装路径并传入，**用户无需填写**；与检视专家共用同一份 unified diff） |
 | `CURATED_PATH` | `.codereview/results/{BATCH_ID}-curated.json`（Phase 5.5 输出，**优先输入**；缺失时 fix-advisor 自动回退读 4 份原始专家 JSON） |
 | `RESULTS_DIR` | `.codereview/results/` |
 | `SEVERITY_MODE` | 同 Phase 5（`critical_high_only` 时仅对 C/H 问题给修复建议） |
 | `OUTPUT_PATH` | `.codereview/results/{BATCH_ID}-fix.json` |
 
-**修复阶段上下文规则（须传达给子执行器）：** 优先从 `DIFF_PATCH_PATH` 中定位各 `issue` 对应文件与行号附近的 hunk，用 patch 内已有上下文生成修复片段；**禁止**对同一工作区源文件反复 `read_file`。仅当 patch 缺失、为空或 hunk 上下文不足以写出正确补丁时，对该文件**最多**使用一次工作区读取（或 `git --no-pager diff {BRANCH2}...{BRANCH1} -- <file>`），并合并该文件内多条 issue 所需的行区间。
+**修复阶段上下文规则（须传达给子执行器）：** 优先从 `DIFF_PATCH_PATH` 中定位各 `issue` 对应文件与行号附近的 hunk，用 patch 内已有上下文生成修复片段；**禁止**对同一工作区源文件反复 `read_file`。仅当 patch 缺失、为空或 hunk 上下文不足以写出正确补丁时，对该文件**最多**使用一次工作区读取；如需补取 diff，必须使用 `.codereview/file-inventory.json.git_refs` 中的 `branch2.diff_ref...branch1.diff_ref`。
 
 ---
 
@@ -542,7 +550,7 @@ node "{SKILL_ROOT}/scripts/render-report-md.js" --state ".codereview/state.json"
 **提交人 attribution（多人协作认领）：** Phase 7 **开始前**，主编排器**必须**执行（不可仅依赖合成官自觉运行）：
 
 ```text
-node "{SKILL_ROOT}/scripts/git-line-authors.js" --branch1 REVIEW_BRANCH --branch2 BASE_BRANCH --results .codereview/results/ --output .codereview/line-authors.json
+node "{SKILL_ROOT}/scripts/git-line-authors.js" --inventory .codereview/file-inventory.json --results .codereview/results/ --output .codereview/line-authors.json
 ```
 
 合成官读取 `line-authors.json`：`issue_authors[issue_id]` → 第六节「提交人」列；`contributors` → 模板 `{{CONTRIBUTORS}}`（第七节「本次参与开发」）。
@@ -637,9 +645,9 @@ VS Code 子 Builder、opencode subagent、Claude Code subagent/Task 均使用同
 
 ```text
 git rev-parse --verify "branch-name"
-git --no-pager diff --name-only {BRANCH2}...{BRANCH1}
-git --no-pager diff {BRANCH2}...{BRANCH1} -- path/to/File.java
-git --no-pager diff --stat {BRANCH2}...{BRANCH1}
+git --no-pager diff --name-only DIFF_BRANCH2...DIFF_BRANCH1
+git --no-pager diff DIFF_BRANCH2...DIFF_BRANCH1 -- path/to/File.java
+git --no-pager diff --stat DIFF_BRANCH2...DIFF_BRANCH1
 ```
 
 ---

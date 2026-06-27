@@ -19,7 +19,7 @@
 
 ## 检视范围（增量 diff，强制）
 
-1. **优先**读取 `{{DIFF_PATCH_PATH}}`（若存在且非空）；否则对每个文件：`git --no-pager diff {{BRANCH2}}...{{BRANCH1}} -- <file_path>`。
+1. **优先**读取 `{{DIFF_PATCH_PATH}}`（若存在且非空）；否则对每个文件：`git --no-pager diff {{DIFF_BRANCH2}}...{{DIFF_BRANCH1}} -- <file_path>`。
 2. **仅**报告与本次 diff hunk 直接相关的问题；可读变更行前后约 15 行；**禁止**通读全文件。
 3. 若无问题：`issues: []`，`summary.total_issues` 为 `0`。
 
@@ -30,6 +30,12 @@
 - 若仍无法证明合理，输出 `category: "unused_new_symbol"` 或相近类别；`critical_high_only` 下用 `high` 并在描述中写明“需确认是否为遗漏调用 / 死代码 / 分阶段提交”。
 - `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：不要扩大读取范围；基于 patch 证据报告“需人工确认”。
 
+## 关联被调用函数（安全性取决于存量函数时）
+
+- 当某个疑似缺陷（空值 / 异常 / 资源 / 权限）的安全性取决于**问题行之前调用的某个存量函数**（如先 `ensureUser(user)` 再 `user.name`），不要只看变更行就直接判为缺陷，也不要直接判为无问题。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `true` 时：可对该被调用函数做一次有界引用搜索并读取其函数体局部窗口确认是否已处理；确认已处理则不报，确认未处理才报。
+- 若无法在预算内完成下钻：仍输出该 issue，并在 `description` 写明“安全性依赖被调用函数 `<函数名>`，需关联确认”，交由策展专家 Step 3.4 下钻复核，避免误报。
+
 ## 严重级别范围
 
 - `{{SEVERITY_MODE}}` 为 `critical_high_only` 时：**仅** `critical` / `high`。
@@ -38,7 +44,7 @@
 
 ## 输入变量
 
-- `{{BATCH_ID}}`、`{{BATCH_FILES}}`、`{{BRANCH1}}`、`{{BRANCH2}}`
+- `{{BATCH_ID}}`、`{{BATCH_FILES}}`、`{{BRANCH1}}`、`{{BRANCH2}}`、`{{DIFF_BRANCH1}}`、`{{DIFF_BRANCH2}}`
 - `{{DIFF_PATCH_PATH}}`、`{{SEVERITY_MODE}}`
 - `{{DEEP_DOUBT_ANALYSIS}}`：是否允许对疑问代码读取所属源文件局部窗口 / 有界引用下钻，默认 `true`
 - `{{TECH_STACK}}`（可选）

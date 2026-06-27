@@ -50,7 +50,7 @@
 | `skip_low_risk_files` | boolean | `true` 时 Phase 2 跳过测试/E2E/Storybook 等低风险文件 |
 | `generate_html_report` | boolean | `true` 时 Phase 7 完成后进入 `html_rendering`，产出同名 `.html` |
 | `max_lines_per_batch` | number | Phase 2 `batch-processor.js --max-lines`；默认 **1200** |
-| `deep_doubt_analysis` | boolean | 默认 **true**；专家遇到疑问代码时可读取所属源文件局部窗口或做一次有界引用下钻 |
+| `deep_doubt_analysis` | boolean | 默认 **true**；专家/策展遇到疑问代码时可读取所属源文件局部窗口或做一次有界引用下钻，并对问题行之前调用的存量函数做关联复核 |
 | `user_confirmed` | boolean | Phase 1 六项确认后为 `true`；**为 false 时禁止 Phase 2** |
 
 ## synthesis

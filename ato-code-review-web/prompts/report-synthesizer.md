@@ -55,7 +55,7 @@
 ### Step 2：汇总统计
 
 - 在生成报告前，若存在 `.codereview/results/` 且尚未生成作者映射，运行：
-  `node {SKILL_ROOT}/scripts/git-line-authors.js --branch1 <branch1> --branch2 <branch2> --results {{RESULTS_DIR}} --output .codereview/line-authors.json`
+  `node {SKILL_ROOT}/scripts/git-line-authors.js --inventory .codereview/file-inventory.json --results {{RESULTS_DIR}} --output .codereview/line-authors.json`
 - 读取 `line-authors.json`：`issue_authors[issue_id]` 填入第六节「提交人」列；`contributors` 填入模板 `{{CONTRIBUTORS}}`（第七节「本次参与开发」，逗号或顿号分隔）
 - 按严重级别统计（critical/high/medium/low）；若 `severity_mode` 为 `critical_high_only`，在「基本信息」或第四节说明 **本轮未收集 medium/low**，汇总表中对应数量应为 0
 - 按问题类别统计（与各 JSON 的 `category` 一致）

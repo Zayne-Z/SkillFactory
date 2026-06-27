@@ -25,7 +25,7 @@
 
 **只检视本次 Git 差异中的变更行**，不对整文件做安全扫雷式罗列。
 
-1. **优先**读 `{{DIFF_PATCH_PATH}}`（存在且非空）；否则使用 `git --no-pager diff {{BRANCH2}}...{{BRANCH1}} -- <file>` 聚焦新增/修改的配置、Controller、SQL、依赖等。
+1. **优先**读 `{{DIFF_PATCH_PATH}}`（存在且非空）；否则使用 `git --no-pager diff {{DIFF_BRANCH2}}...{{DIFF_BRANCH1}} -- <file>` 聚焦新增/修改的配置、Controller、SQL、依赖等。
 2. **仅**报告与本次变更**直接相关**的安全问题（如 Java 侧新拼接 SQL、新暴露接口、新提交的密钥等）；**Mapper/XML 的 `${}`** 由 data 专家主责，本专家不重复。
 3. 未在 diff 中出现的历史漏洞不在本次报告范围。
 4. 无相关项时 `issues` 可为空数组。
@@ -47,6 +47,7 @@
 - `{{BATCH_FILES}}`：本批次文件列表
 - `{{BRANCH1}}`：被检视分支
 - `{{BRANCH2}}`：对比分支
+- `{{DIFF_BRANCH1}}` / `{{DIFF_BRANCH2}}`：实际用于 diff 的 resolved refs，来自 `.codereview/file-inventory.json.git_refs`
 - `{{DIFF_PATCH_PATH}}`：本批次预计算 patch（可选）
 - `{{SEVERITY_MODE}}`：`all` 或 `critical_high_only`
 - `{{DEEP_DOUBT_ANALYSIS}}`：是否允许对疑问代码读取所属源文件局部窗口 / 有界引用下钻，默认 `true`

@@ -17,7 +17,7 @@
 | 变动文件数 | {{TOTAL_FILES}} 个 |
 | 变动行数 | 新增 {{TOTAL_ADDITIONS}} 行 / 删除 {{TOTAL_DELETIONS}} 行 |
 | 检视批次 | {{TOTAL_BATCHES}} 批 |
-| 检视范围说明 | **仅针对各文件相对 `{{BRANCH2}}...{{BRANCH1}}` 的 diff 变更行**；未改动代码不在本次检视范围内 |
+| 检视范围说明 | **仅针对各文件相对 `{{DIFF_BRANCH2}}...{{DIFF_BRANCH1}}` 的 diff 变更行**；未改动代码不在本次检视范围内 |
 | 报告生成时间 | {{GENERATED_AT}} |
 
 ---

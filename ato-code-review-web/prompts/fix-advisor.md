@@ -18,12 +18,12 @@
 
 ## 检视范围（diff）
 
-优先读取 `{{DIFF_PATCH_PATH}}` 一次，并用对应 hunk 上下文生成修复建议；只有 patch 缺失、为空或上下文不足时，才按文件读取工作区或执行 `git --no-pager diff {{BRANCH2}}...{{BRANCH1}} -- <path>`，同一文件最多读取一次。
+优先读取 `{{DIFF_PATCH_PATH}}` 一次，并用对应 hunk 上下文生成修复建议；只有 patch 缺失、为空或上下文不足时，才按文件读取工作区或执行 `git --no-pager diff {{DIFF_BRANCH2}}...{{DIFF_BRANCH1}} -- <path>`，同一文件最多读取一次。
 
 ## 输入变量
 
 - `{{DIFF_PATCH_PATH}}`、`{{CURATED_PATH}}`、`{{SEVERITY_MODE}}`、`{{SKILL_ROOT}}`
-- `{{BATCH_ID}}`、`{{BATCH_FILES}}`、`{{BRANCH1}}`、`{{BRANCH2}}`
+- `{{BATCH_ID}}`、`{{BATCH_FILES}}`、`{{BRANCH1}}`、`{{BRANCH2}}`、`{{DIFF_BRANCH1}}`、`{{DIFF_BRANCH2}}`
 - `{{RESULTS_DIR}}`、`{{OUTPUT_PATH}}`（`.../{{BATCH_ID}}-fix.json`）
 
 ## Step 1：读取问题清单

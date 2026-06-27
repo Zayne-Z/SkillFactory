@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
  * 获取两个分支之间的 Java 项目变动文件清单
- * 用法：node get-diff-files.js --branch1 <branch1> --branch2 <branch2> --output <output.json> [--skip-low-risk true]
+ * 用法：node get-diff-files.js --branch1 BRANCH1 --branch2 BRANCH2 --output OUTPUT_JSON [--skip-low-risk true] [--update-mode local-ff|remote|local]
  *
  * 输出 JSON 格式：
  * {
  *   "branch1": "feature/user-service",
- *   "branch2": "master",
+ *   "branch2": "BASE_BRANCH",
  *   "generated_at": "2026-04-06T10:00:00.000Z",
  *   "total_files": 18,
  *   "total_changed_lines": 1560,
@@ -30,6 +30,7 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { assertPhase1Complete } = require('./require-phase1');
+const { prepareGitRefs, formatSyncFailure } = require('./git-ref-sync');
 
 function parseArgs(args) {
   const result = {};
@@ -164,36 +165,35 @@ function main() {
   assertPhase1Complete({ force: args.force === true || args.force === 'true' });
 
   if (!args.branch1 || !args.branch2) {
-    console.error('用法: node get-diff-files.js --branch1 <branch1> --branch2 <branch2> --output <output.json>');
+    console.error('用法: node get-diff-files.js --branch1 BRANCH1 --branch2 BRANCH2 --output OUTPUT_JSON [--update-mode local-ff|remote|local]');
     process.exit(1);
   }
 
   const { branch1, branch2, output } = args;
   const outputPath = output || '.codereview/file-inventory.json';
   const skipLowRisk = String(args['skip-low-risk'] || '').toLowerCase() === 'true';
+  const updateMode = args['update-mode'] || 'local-ff';
+  const remote = args.remote || 'auto';
 
   console.log(`正在分析分支差异: ${branch1} vs ${branch2} ...`);
+  console.log(`分支更新模式: ${updateMode}`);
 
-  // 验证分支存在：使用 execFileSync 传参，不依赖 bash/cmd/PowerShell 的解析规则。
-  const b1Exists = execGit(['rev-parse', '--verify', branch1]);
-  const b2Exists = execGit(['rev-parse', '--verify', branch2]);
-
-  if (!b1Exists) {
-    console.error(`错误：分支 "${branch1}" 不存在`);
-    process.exit(1);
-  }
-  if (!b2Exists) {
-    console.error(`错误：分支 "${branch2}" 不存在`);
+  let gitRefs;
+  try {
+    gitRefs = prepareGitRefs({ branch1, branch2, updateMode, remote, cwd: process.cwd() });
+  } catch (error) {
+    console.error(formatSyncFailure(error, branch1, branch2, updateMode));
     process.exit(1);
   }
 
   // 获取变动文件列表（含状态）
-  const revisionRange = `${branch2}...${branch1}`;
+  const revisionRange = gitRefs.revision_range;
   const diffNameStatus = execGit(['diff', '--name-status', revisionRange]);
   if (!diffNameStatus) {
     console.log('两个分支之间没有差异。');
     const emptyResult = {
       branch1, branch2,
+      git_refs: gitRefs,
       generated_at: new Date().toISOString(),
       total_files: 0,
       total_changed_lines: 0,
@@ -284,6 +284,7 @@ function main() {
   const result = {
     branch1,
     branch2,
+    git_refs: gitRefs,
     generated_at: new Date().toISOString(),
     total_files: files.length,
     total_changed_lines: totalChangedLines,

@@ -14,6 +14,7 @@ const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { assertPhase1Complete } = require('./require-phase1');
+const { refsFromInventory } = require('./git-ref-sync');
 
 function parseArgs(args) {
   const result = {};
@@ -91,8 +92,9 @@ function main() {
   }
 
   const inventory = JSON.parse(fs.readFileSync(inventoryPath, 'utf8'));
-  const branch1 = inventory.branch1;
-  const branch2 = inventory.branch2;
+  const resolvedRefs = refsFromInventory(inventory);
+  const branch1 = resolvedRefs.branch1;
+  const branch2 = resolvedRefs.branch2;
   const batches = inventory.batches || [];
 
   if (!branch1 || !branch2) {
@@ -103,8 +105,11 @@ function main() {
   ensureDir(outputDir);
 
   const manifest = {
-    branch1,
-    branch2,
+    branch1: inventory.branch1 || branch1,
+    branch2: inventory.branch2 || branch2,
+    git_refs: inventory.git_refs || null,
+    diff_branch1: branch1,
+    diff_branch2: branch2,
     generated_at: new Date().toISOString(),
     patches: [],
   };

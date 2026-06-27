@@ -3,8 +3,8 @@
  * 解析 issue 变更行的 git 提交人，并汇总本次 diff 参与开发者。
  *
  * 用法：
- *   node scripts/git-line-authors.js --branch1 REVIEW_BRANCH --branch2 BASE_BRANCH --results .codereview/results/ --output .codereview/line-authors.json
- *   node scripts/git-line-authors.js --branch1 REVIEW_BRANCH --branch2 BASE_BRANCH --issues issues.json --output .codereview/line-authors.json
+ *   node scripts/git-line-authors.js --inventory .codereview/file-inventory.json --results .codereview/results/ --output .codereview/line-authors.json
+ *   node scripts/git-line-authors.js --inventory .codereview/file-inventory.json --issues issues.json --output .codereview/line-authors.json
  *
  * issues.json 格式：[{ "id": "SEC-004", "file": "src/.../Foo.java", "line": 52 }, ...]
  */
@@ -13,6 +13,7 @@
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { refsFromInventory } = require('./git-ref-sync');
 
 function parseArgs(argv) {
   const out = {
@@ -20,6 +21,7 @@ function parseArgs(argv) {
     branch2: 'master',
     results: null,
     issues: null,
+    inventory: null,
     output: '.codereview/line-authors.json',
     cwd: process.cwd(),
   };
@@ -29,10 +31,11 @@ function parseArgs(argv) {
     else if (a === '--branch2') out.branch2 = argv[++i];
     else if (a === '--results') out.results = argv[++i];
     else if (a === '--issues') out.issues = argv[++i];
+    else if (a === '--inventory') out.inventory = argv[++i];
     else if (a === '--output') out.output = argv[++i];
     else if (a === '--cwd') out.cwd = argv[++i];
   }
-  if (!out.branch1) {
+  if (!out.branch1 && !out.inventory) {
     console.error('缺少 --branch1');
     process.exit(1);
   }
@@ -44,7 +47,12 @@ function parseArgs(argv) {
 }
 
 function runGit(args, cwd) {
-  return execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 10 * 1024 * 1024 }).trim();
+  return execFileSync('git', args, {
+    cwd,
+    encoding: 'utf8',
+    maxBuffer: 10 * 1024 * 1024,
+    env: { ...process.env, GIT_PAGER: 'cat', GIT_TERMINAL_PROMPT: '0' },
+  }).trim();
 }
 
 function listContributors(branch1, branch2, cwd) {
@@ -62,15 +70,96 @@ function blameAuthor(branch1, file, line, cwd) {
   const n = Number(line);
   if (!file || !Number.isFinite(n) || n < 1) return null;
   try {
-    const out = runGit(['blame', '-L', `${n},${n}`, branch1, '--', file], cwd);
-    const m = out.match(/\(([^(\n]+?)\s+\d{4}-\d{2}-\d{2}/);
-    if (m) return m[1].trim();
-    const porcelain = runGit(['blame', '-L', `${n},${n}`, '--line-porcelain', branch1, '--', file], cwd);
+    const porcelain = runGit(['blame', '--line-porcelain', '-L', `${n},${n}`, branch1, '--', file], cwd);
     const authorLine = porcelain.split('\n').find((l) => l.startsWith('author '));
     return authorLine ? authorLine.slice(7).trim() : null;
   } catch {
     return null;
   }
+}
+
+function normalizeIssues(rawIssues) {
+  const issues = [];
+  for (const issue of rawIssues || []) {
+    const id = issue.issue_id || issue.id;
+    const file = issue.file || issue.path || issue.file_path;
+    const line = issue.line ?? issue.start_line ?? issue.line_number;
+    if (id && file && line != null) {
+      issues.push({ id, file, line: parseLineNumber(line) });
+    }
+  }
+  return issues;
+}
+
+function buildLineRanges(lines, maxSpan = 200) {
+  const sorted = [...new Set(lines)]
+    .filter((n) => Number.isFinite(n) && n >= 1)
+    .sort((a, b) => a - b);
+  const ranges = [];
+  let start = null;
+  let end = null;
+  for (const line of sorted) {
+    if (start == null) {
+      start = line;
+      end = line;
+      continue;
+    }
+    if (line - start <= maxSpan) {
+      end = line;
+      continue;
+    }
+    ranges.push([start, end]);
+    start = line;
+    end = line;
+  }
+  if (start != null) ranges.push([start, end]);
+  return ranges;
+}
+
+function parseBlamePorcelain(text) {
+  const authorsByLine = new Map();
+  let currentLine = null;
+  for (const line of String(text || '').split('\n')) {
+    const header = line.match(/^[0-9a-f^]{8,64}\s+\d+\s+(\d+)(?:\s+\d+)?$/i);
+    if (header) {
+      currentLine = Number(header[1]);
+      continue;
+    }
+    if (currentLine != null && line.startsWith('author ')) {
+      authorsByLine.set(currentLine, line.slice(7).trim());
+    }
+  }
+  return authorsByLine;
+}
+
+function blameAuthors(branch1, issues, cwd) {
+  const grouped = new Map();
+  for (const issue of issues) {
+    if (!issue.file || !Number.isFinite(issue.line) || issue.line < 1) continue;
+    if (!grouped.has(issue.file)) grouped.set(issue.file, new Set());
+    grouped.get(issue.file).add(issue.line);
+  }
+
+  const lineAuthors = {};
+  for (const [file, lineSet] of grouped) {
+    const lines = [...lineSet];
+    const found = new Map();
+    for (const [start, end] of buildLineRanges(lines)) {
+      try {
+        const out = runGit(['blame', '--line-porcelain', '-L', `${start},${end}`, branch1, '--', file], cwd);
+        for (const [line, author] of parseBlamePorcelain(out)) {
+          found.set(line, author);
+        }
+      } catch {
+        // Fall back per line below so one bad range does not lose the whole file.
+      }
+    }
+    for (const line of lines) {
+      const key = `${file}:${line}`;
+      lineAuthors[key] = found.get(line) || blameAuthor(branch1, file, line, cwd);
+    }
+  }
+  return lineAuthors;
 }
 
 function parseLineNumber(line) {
@@ -87,14 +176,7 @@ function loadIssuesFromResults(resultsDir) {
   const issues = [];
   for (const f of files) {
     const data = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
-    for (const issue of data.issues || []) {
-      const id = issue.issue_id || issue.id;
-      const file = issue.file || issue.path || issue.file_path;
-      const line = issue.line ?? issue.start_line ?? issue.line_number;
-      if (id && file && line != null) {
-        issues.push({ id, file, line: parseLineNumber(line) });
-      }
-    }
+    issues.push(...normalizeIssues(data.issues || []));
   }
   return issues;
 }
@@ -102,20 +184,27 @@ function loadIssuesFromResults(resultsDir) {
 function main() {
   const args = parseArgs(process.argv);
   const cwd = path.resolve(args.cwd);
+  const inventory = args.inventory ? JSON.parse(fs.readFileSync(path.resolve(args.inventory), 'utf8')) : null;
+  if (inventory) {
+    const refs = refsFromInventory(inventory);
+    args.branch1 = args.branch1 || refs.branch1;
+    args.branch2 = args.branch2 || refs.branch2;
+  }
+  if (!args.branch1 || !args.branch2) {
+    console.error('缺少 --branch1 / --branch2，或 inventory 中缺少可用分支信息');
+    process.exit(1);
+  }
   const issues = args.issues
-    ? JSON.parse(fs.readFileSync(path.resolve(args.issues), 'utf8'))
+    ? normalizeIssues(JSON.parse(fs.readFileSync(path.resolve(args.issues), 'utf8')))
     : loadIssuesFromResults(args.results);
 
-  const lineAuthors = {};
+  const lineAuthors = blameAuthors(args.branch1, issues, cwd);
   const issueAuthors = {};
   const authorSet = new Set();
 
   for (const issue of issues) {
     const lineNum = typeof issue.line === 'number' ? issue.line : parseLineNumber(issue.line);
     const key = `${issue.file}:${lineNum}`;
-    if (!lineAuthors[key]) {
-      lineAuthors[key] = blameAuthor(args.branch1, issue.file, lineNum, cwd);
-    }
     const author = lineAuthors[key] || '—';
     issueAuthors[issue.id] = author;
     if (author && author !== '—') authorSet.add(author);
@@ -131,8 +220,11 @@ function main() {
   }
 
   const payload = {
-    branch1: args.branch1,
-    branch2: args.branch2,
+    branch1: inventory ? inventory.branch1 : args.branch1,
+    branch2: inventory ? inventory.branch2 : args.branch2,
+    git_refs: inventory ? inventory.git_refs || null : null,
+    diff_branch1: args.branch1,
+    diff_branch2: args.branch2,
     generated_at: new Date().toISOString(),
     contributors,
     issue_authors: issueAuthors,

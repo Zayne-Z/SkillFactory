@@ -19,7 +19,7 @@
 
 ## 检视范围（增量 diff，强制）
 
-1. **优先**读取 `{{DIFF_PATCH_PATH}}`（若存在且非空）；否则对每个文件：`git --no-pager diff {{BRANCH2}}...{{BRANCH1}} -- <file_path>`。
+1. **优先**读取 `{{DIFF_PATCH_PATH}}`（若存在且非空）；否则对每个文件：`git --no-pager diff {{DIFF_BRANCH2}}...{{DIFF_BRANCH1}} -- <file_path>`。
 2. **仅**报告与本次 diff hunk 直接相关的问题；可读变更行前后约 15 行；**禁止**通读全文件。
 3. 若无问题：`issues: []`，`summary.total_issues` 为 `0`。
 
@@ -38,7 +38,7 @@
 
 ## 输入变量
 
-- `{{BATCH_ID}}`、`{{BATCH_FILES}}`、`{{BRANCH1}}`、`{{BRANCH2}}`
+- `{{BATCH_ID}}`、`{{BATCH_FILES}}`、`{{BRANCH1}}`、`{{BRANCH2}}`、`{{DIFF_BRANCH1}}`、`{{DIFF_BRANCH2}}`
 - `{{DIFF_PATCH_PATH}}`、`{{SEVERITY_MODE}}`
 - `{{DEEP_DOUBT_ANALYSIS}}`：是否允许对疑问代码读取所属源文件局部窗口 / 有界引用下钻，默认 `true`
 - `{{TECH_STACK}}`（可选）

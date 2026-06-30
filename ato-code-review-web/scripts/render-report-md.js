@@ -337,6 +337,94 @@ function rangesNear(a, b, tolerance = 1) {
   return a.start <= b.end + tolerance && b.start <= a.end + tolerance;
 }
 
+function normalizeIdentityText(value) {
+  return String(value ?? '').replace(/\r\n/g, '\n').replace(/[ \t]+/g, ' ').trim();
+}
+
+function issueContentKey(issue) {
+  return [
+    issue.domain,
+    issue.file,
+    issue.line,
+    issue.symbol,
+    issue.severity,
+    issue.category,
+    issue.title,
+    issue.description,
+    issue.code,
+  ].map(normalizeIdentityText).join('\u0001');
+}
+
+function mergedFromKey(entry) {
+  return [
+    entry.issue_id || entry.id || '',
+    entry.expert || '',
+    entry.severity || '',
+    entry.summary || entry.title || entry.description || '',
+  ].map(normalizeIdentityText).join('\u0001');
+}
+
+function mergeMergedFrom(existing, duplicate) {
+  const merged = [];
+  const seen = new Set();
+  const add = (entry) => {
+    if (!entry) return;
+    const hasContent = entry.issue_id || entry.id || entry.expert || entry.summary || entry.title || entry.description;
+    if (!hasContent) return;
+    const key = mergedFromKey(entry);
+    if (seen.has(key)) return;
+    seen.add(key);
+    merged.push(entry);
+  };
+
+  for (const entry of existing.mergedFrom || []) add(entry);
+  for (const entry of duplicate.mergedFrom || []) add(entry);
+  const duplicateId = duplicate.originalId || duplicate.id;
+  if (duplicateId && duplicateId !== existing.id) {
+    add({
+      issue_id: duplicateId,
+      expert: duplicate.sourceExpert || duplicate.domain,
+      severity: duplicate.severity,
+      summary: duplicate.title || duplicate.description || '',
+    });
+  }
+  return merged;
+}
+
+function mergeIssueAliases(existing, duplicate) {
+  const aliasIds = new Set([
+    ...(existing.aliasIds || []),
+    existing.id,
+    existing.originalId,
+    ...(duplicate.aliasIds || []),
+    duplicate.id,
+    duplicate.originalId,
+  ].filter(Boolean));
+  return {
+    ...existing,
+    aliasIds: [...aliasIds],
+    mergedFrom: mergeMergedFrom(existing, duplicate),
+    code: existing.code || duplicate.code,
+    recommendation: existing.recommendation || duplicate.recommendation,
+  };
+}
+
+function dedupeExactIssueContent(issues) {
+  const result = [];
+  const byContent = new Map();
+  for (const issue of issues) {
+    const key = issueContentKey(issue);
+    const existingIndex = byContent.get(key);
+    if (existingIndex === undefined) {
+      byContent.set(key, result.length);
+      result.push(issue);
+      continue;
+    }
+    result[existingIndex] = mergeIssueAliases(result[existingIndex], issue);
+  }
+  return result;
+}
+
 function normalizeIssue(raw, sourceExpert, config, batchId) {
   const id = raw.issue_id || raw.id;
   if (!id) return null;
@@ -344,6 +432,8 @@ function normalizeIssue(raw, sourceExpert, config, batchId) {
   const domain = normalizeDomain(raw.domain || raw.primary_expert || raw.expert || sourceExpert, config);
   return {
     id,
+    originalId: id,
+    aliasIds: [id],
     batchId,
     domain,
     sourceExpert: raw.primary_expert || raw.expert || sourceExpert || domain,
@@ -358,6 +448,47 @@ function normalizeIssue(raw, sourceExpert, config, batchId) {
     recommendation: raw.recommendation || raw.suggestion || raw.fix_suggestion || '',
     mergedFrom: Array.isArray(raw.merged_from) ? raw.merged_from : [],
   };
+}
+
+function nextIssueId(originalId, taken, reserved) {
+  const m = String(originalId || '').match(/^([A-Z]+-)(\d+)$/);
+  if (!m) {
+    let idx = 1;
+    let candidate = `ISSUE-${String(idx).padStart(3, '0')}`;
+    while (taken.has(candidate) || reserved.has(candidate)) {
+      idx++;
+      candidate = `ISSUE-${String(idx).padStart(3, '0')}`;
+    }
+    return candidate;
+  }
+
+  const prefix = m[1];
+  const width = m[2].length;
+  let n = Number.parseInt(m[2], 10) + 1;
+  let candidate = `${prefix}${String(n).padStart(width, '0')}`;
+  while (taken.has(candidate) || reserved.has(candidate)) {
+    n++;
+    candidate = `${prefix}${String(n).padStart(width, '0')}`;
+  }
+  return candidate;
+}
+
+function ensureUniqueIssueIds(issues) {
+  const reserved = new Set(issues.map((issue) => issue.id).filter(Boolean));
+  const taken = new Set();
+  return issues.map((issue) => {
+    if (!taken.has(issue.id)) {
+      taken.add(issue.id);
+      return issue;
+    }
+    const uniqueId = nextIssueId(issue.id, taken, reserved);
+    taken.add(uniqueId);
+    return {
+      ...issue,
+      id: uniqueId,
+      duplicateOf: issue.originalId || issue.id,
+    };
+  });
 }
 
 function listBatchIds(inventory, resultsDir) {
@@ -390,12 +521,26 @@ function collectExpertIssues(resultsDir, batchId, config) {
 }
 
 function issueIdsForLookup(issue) {
-  const ids = new Set([issue.id]);
+  const ids = new Set([issue.id, issue.originalId, ...(issue.aliasIds || [])].filter(Boolean));
   for (const merged of issue.mergedFrom || []) {
     const id = merged.issue_id || merged.id;
     if (id) ids.add(id);
   }
   return ids;
+}
+
+function firstMapValue(map, ids) {
+  for (const id of ids) {
+    if (map.has(id)) return map.get(id);
+  }
+  return '';
+}
+
+function firstObjectValue(obj, ids) {
+  for (const id of ids) {
+    if (obj && Object.prototype.hasOwnProperty.call(obj, id)) return obj[id];
+  }
+  return '';
 }
 
 function sameSymbol(a, b) {
@@ -576,7 +721,7 @@ function buildIssueDetails(issues, fixes, config) {
       const emoji = SEVERITY_EMOJI[issue.severity];
       const must = issue.severity === 'critical' || issue.severity === 'high' ? ' · 必改' : '';
       const merged = issue.mergedFrom.length ? `\n\n（已合并 ${issue.mergedFrom.length} 个其他视角）` : '';
-      const fix = fixes.get(issue.id) || issue.recommendation || '请结合上下文修复该问题。';
+      const fix = firstMapValue(fixes, issueIdsForLookup(issue)) || issue.recommendation || '请结合上下文修复该问题。';
       return `<a id="issue-${issue.id}"></a>
 
 ##### ${issue.id} · ${emoji} ${sev}${must}
@@ -605,7 +750,7 @@ function buildIssueTableRows(issues, authors) {
   if (!issues.length) return '| - | 无 | - | - | - | - | - | 否 | - | 本次未发现问题 | - | - | - |';
   return issues.map((issue, idx) => {
     const must = issue.severity === 'critical' || issue.severity === 'high' ? '是' : '否';
-    const author = authors[issue.id] || '-';
+    const author = firstObjectValue(authors, issueIdsForLookup(issue)) || '-';
     return `| ${idx + 1} | ${tableCell(issue.id)} | \`${tableCell(issue.file)}\` | ${tableCell(issue.line)} | \`${tableCell(issue.symbol)}\` | ${tableCell(author)} | ${SEVERITY_LABEL[issue.severity]} | ${must} | ${tableCell(issue.domain)} | ${tableCell(issue.title)} | 否 | 否 | [查看](#issue-${issue.id}) |`;
   }).join('\n');
 }
@@ -730,9 +875,10 @@ function buildReportMarkdown(opts) {
   const config = CONFIGS[kind];
   const lineAuthors = readJson(path.join(path.dirname(statePath), 'line-authors.json'), {});
   const collected = collectIssues(resultsDir, inventory, config);
-  const issues = state.review_options?.severity_mode === 'critical_high_only'
+  const scopedIssues = state.review_options?.severity_mode === 'critical_high_only'
     ? collected.issues.filter((issue) => issue.severity === 'critical' || issue.severity === 'high')
     : collected.issues;
+  const issues = ensureUniqueIssueIds(dedupeExactIssueContent(scopedIssues));
   const { missingBatches } = collected;
   const fixes = collectFixes(resultsDir);
   const vars = buildVars({ state, inventory, tech, lineAuthors, issues, fixes, config, kind });

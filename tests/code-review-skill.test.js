@@ -614,6 +614,58 @@ for (const skill of SKILLS) {
     assert.match(html, /ato-codereview-html-end/);
   });
 
+  test(`${skill} render-report-md makes duplicate issue IDs unique before HTML rendering`, () => {
+    const workspace = makeWorkspace(skill);
+    const curatedPath = path.join(workspace, '.codereview/results/batch-001-curated.json');
+    const curated = readJson(curatedPath);
+    curated.issues.push({
+      ...curated.issues[0],
+      issue_id: 'COR-001',
+      file: 'src/SecondExample.java',
+      line: '43',
+      symbol: 'SecondExample#duplicateId',
+      title: '重复 issue ID 的第二个问题',
+      description: '第二条问题错误复用了 COR-001，报告生成需要稳定改写为唯一 ID。',
+      code_snippet: 'private void duplicateId() {}',
+    });
+    curated.summary.total_issues = 2;
+    curated.summary.high = 2;
+    writeJson(curatedPath, curated);
+
+    const mdPath = renderReport(skill, workspace, 'report_duplicate_issue_ids.md');
+    const md = fs.readFileSync(mdPath, 'utf8');
+    assert.match(md, /<a id="issue-COR-001"><\/a>/);
+    assert.match(md, /<a id="issue-COR-002"><\/a>/);
+    assert.doesNotMatch(md, /<a id="issue-COR-001"><\/a>[\s\S]*<a id="issue-COR-001"><\/a>/);
+
+    const htmlPath = renderHtml(skill, workspace, mdPath);
+    const html = fs.readFileSync(htmlPath, 'utf8');
+    const rowIds = [...html.matchAll(/<details class="issue-row[^"]*" data-issue-id="([^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(rowIds, ['COR-001', 'COR-002']);
+    assert.equal(new Set(rowIds).size, rowIds.length);
+  });
+
+  test(`${skill} render-report-md deduplicates repeated issue content`, () => {
+    const workspace = makeWorkspace(skill);
+    const curatedPath = path.join(workspace, '.codereview/results/batch-001-curated.json');
+    const curated = readJson(curatedPath);
+    curated.issues.push({ ...curated.issues[0] });
+    curated.summary.total_issues = 2;
+    curated.summary.high = 2;
+    writeJson(curatedPath, curated);
+
+    const mdPath = renderReport(skill, workspace, 'report_duplicate_issue_content.md');
+    const md = fs.readFileSync(mdPath, 'utf8');
+    assert.match(md, /<a id="issue-COR-001"><\/a>/);
+    assert.doesNotMatch(md, /<a id="issue-COR-002"><\/a>/);
+    assert.equal((md.match(/新增函数未被引用/g) || []).length, 1);
+
+    const htmlPath = renderHtml(skill, workspace, mdPath);
+    const html = fs.readFileSync(htmlPath, 'utf8');
+    const rowIds = [...html.matchAll(/<details class="issue-row[^"]*" data-issue-id="([^"]+)"/g)].map((m) => m[1]);
+    assert.deepEqual(rowIds, ['COR-001']);
+  });
+
   test(`${skill} render-report-md derives changed line totals when summary totals are zero`, () => {
     const workspace = makeWorkspace(skill);
     const inventoryPath = path.join(workspace, '.codereview/file-inventory.json');

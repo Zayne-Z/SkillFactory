@@ -597,6 +597,20 @@ test('issue curators normalize expert id fields to issue_id', () => {
   }
 });
 
+test('completed state still requires explicit resume or restart choice', () => {
+  for (const skill of SKILLS) {
+    const skillDoc = fs.readFileSync(path.join(ROOT, skill, 'SKILL.md'), 'utf8');
+    const stateDoc = fs.readFileSync(path.join(ROOT, skill, 'docs/state-structure.md'), 'utf8');
+    const opencodeReadme = fs.readFileSync(path.join(ROOT, skill, 'opencode/README.md'), 'utf8');
+
+    assert.match(skillDoc, /即使 current_phase == "completed" 且报告文件存在，也必须先问续跑 \/ 重新检视/);
+    assert.match(skillDoc, /只有用户明确选择“续跑”后，才可在 completed 状态交付已有报告路径/);
+    assert.match(stateDoc, /completed 也不例外：不得因报告文件存在而绕过续跑 \/ 重新检视选择/);
+    assert.match(opencodeReadme, /completed 状态也必须先问续跑 \/ 重新检视/);
+    assert.doesNotMatch(skillDoc, /若为 completed：告知报告路径/);
+  }
+});
+
 for (const skill of SKILLS) {
   test(`${skill} render-report-md writes full issue table rows`, () => {
     const workspace = makeWorkspace(skill);

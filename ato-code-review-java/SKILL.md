@@ -47,6 +47,8 @@ git --version
 2) 重新检视 — 清除过程文件（保留 memory.json），从头开始
 ```
 
+- 即使 current_phase == "completed" 且报告文件存在，也必须先问续跑 / 重新检视；不得因 `synthesis.report_path` / `synthesis.html_report_path` 指向的文件存在就直接宣告检视完成
+- 只有用户明确选择“续跑”后，才可在 completed 状态交付已有报告路径；选择“重新检视”时必须 reset 后从头开始
 - 选 **续跑** → 读 state，按 §2.2 跳转；`current_phase === completed` 时输出 `synthesis.report_path`，**不**自动重跑
 - 选 **重新检视** → **必须**执行：
 
@@ -192,10 +194,10 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 ```
 1. 确认 {SKILL_ROOT} 绝对路径（读取本 SKILL.md 的目录）
 2. 若 .codereview/state.json 存在 → 执行 §0.0（续跑 / 重新检视）；不存在 → §0.1 init
-3. 读取 .codereview/state.json
+3. 读取 .codereview/state.json（§0.0 已让用户二选一；下列跳转仅在用户选「续跑」时执行，选「重新检视」则先 reset 再从头）
    ├─ 不存在 → 进入 Phase 0（初始化）
    └─ 存在   → 读取 current_phase
-       ├─ completed     → 按 synthesis.html_status 三态输出报告路径（见 Phase 7 / 7.5 完成后说明）
+       ├─ completed     → 经用户选「续跑」后，按 synthesis.html_status 三态输出报告路径（见 Phase 7 / 7.5 完成后说明）；**严禁**未经用户选择就凭报告文件存在直接宣告完成
        └─ 其它          → 跳转到对应 Phase 继续
 4. 兼容性补丁：
    a. 若 state.json 不含 review_options 字段

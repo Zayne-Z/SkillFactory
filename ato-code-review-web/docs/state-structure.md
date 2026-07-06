@@ -125,8 +125,10 @@ Phase 7 优先运行 `render-report-md.js` 机械合成 Markdown。通过条件�
 
 | 用户选择 | 动作 |
 |----------|------|
-| 续跑 | 读 state 跳转；`completed` 时交付 `synthesis.report_path` |
+| 续跑（仅用户明确选择后） | 读 state 跳转；`completed` 时交付 `synthesis.report_path` |
 | 重新检视 | `reset-run.js`：删过程文件，**保留** `memory.json`，再 `--init` state |
+
+completed 也不例外：不得因报告文件存在而绕过续跑 / 重新检视选择。只有用户选择“续跑”后，主编排器才可在 completed 状态交付既有报告路径。
 
 `.codereview/memory.json`：项目规则，详见 `docs/memory-system.md`。
 

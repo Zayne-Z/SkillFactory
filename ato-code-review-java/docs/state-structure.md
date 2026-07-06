@@ -175,14 +175,16 @@ Phase 4 完成后，主编排器根据 `task-plan.json` 初始化：
 
 | 用户选择 | 动作 |
 |----------|------|
-| 续跑 | 读 state，`current_phase` 跳转；`completed` 时交付 `synthesis.report_path` |
+| 续跑（仅用户明确选择后） | 读 state，`current_phase` 跳转；`completed` 时交付 `synthesis.report_path` |
 | 重新检视 | `reset-run.js`：删 state/diffs/results 等，**保留** `memory.json`，再 `--init` state |
+
+completed 也不例外：不得因报告文件存在而绕过续跑 / 重新检视选择。只有用户选择“续跑”后，主编排器才可在 completed 状态交付既有报告路径。
 
 `.codereview/memory.json`：项目规则，用户手动维护；详见 `docs/memory-system.md`。
 
 ```
-1. 若 state.json 存在 → §0.0 问续跑 / 重新检视
-2. 读取 state.json，根据 current_phase 跳转到对应 Phase
+1. 若 state.json 存在 → §0.0 问续跑 / 重新检视；用户未选择前不得读取报告路径并宣告完成
+2. 仅当用户选择“续跑”后，读取 state.json，根据 current_phase 跳转到对应 Phase
 3. 若 current_phase == "reviewing"：
    a. 扫描 review_progress（批次顺序与 task-plan / inventory 一致）
    b. 对每个批次按专家顺序（core → security → spring → data → curator → fix）查找：**第一个**状态为 `pending` 或 `in_progress` 的专家；`completed` / `skipped` / `failed` 均跳过（`failed` 为终态，不再自动改 pending）

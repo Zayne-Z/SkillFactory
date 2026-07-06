@@ -16,6 +16,7 @@
 
 - 启动时**仅**检测 `.codereview/state.json`（不探测 `codereview/` 历史报告）
 - 存在则问：续跑 / 重新检视
+- completed 状态也必须先问续跑 / 重新检视；只有用户明确选择续跑后才交付已有报告路径
 - 重新检视：`node scripts/reset-run.js`（保留 `memory.json`，清除过程文件）
 
 ## Phase 1 六问 + 脚本门禁

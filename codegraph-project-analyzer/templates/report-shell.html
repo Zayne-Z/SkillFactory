@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>{{REPORT_TITLE}}</title>
+  <style>
+    :root { color-scheme: light; --ink: #17202a; --muted: #5f6b7a; --line: #d8dee8; --soft: #f6f8fb; --accent: #1463ff; }
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); background: #ffffff; }
+    header { padding: 28px 32px 18px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #f9fbff, #fff); }
+    main { max-width: 1120px; margin: 0 auto; padding: 24px 28px 56px; }
+    h1 { margin: 0; font-size: 30px; line-height: 1.2; }
+    h2 { margin-top: 30px; padding-bottom: 8px; border-bottom: 1px solid var(--line); font-size: 22px; }
+    h3 { margin-top: 22px; font-size: 17px; }
+    p, li { line-height: 1.7; }
+    .meta { color: var(--muted); margin-top: 8px; }
+    table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 14px; display: block; overflow-x: auto; }
+    th, td { border: 1px solid var(--line); padding: 8px 10px; text-align: left; vertical-align: top; }
+    thead th { background: var(--soft); font-weight: 600; }
+    tbody tr:nth-child(even) { background: #fbfcfe; }
+    blockquote { margin: 12px 0; padding: 8px 14px; border-left: 3px solid var(--accent); background: var(--soft); color: var(--muted); }
+    hr { border: none; border-top: 1px solid var(--line); margin: 28px 0; }
+    a { color: var(--accent); }
+    code { background: var(--soft); padding: 1px 4px; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>{{REPORT_TITLE}}</h1>
+    <div class="meta">Generated at {{GENERATED_AT}}</div>
+  </header>
+  <main>
+{{BODY_HTML}}
+  </main>
+</body>
+</html>
+<!-- codegraph-project-analyzer-html-end -->

@@ -1,0 +1,52 @@
+{
+  "mcpServers": {
+    "codegraph": {
+      "command": "npx",
+      "args": ["-y", "@pa/codegraph-mcp-wrapper@latest", "serve", "--mcp"],
+      "env": {
+        "CODEGRAPH_PROJECT_ROOT": "/absolute/path/to/project",
+        "NPM_CONFIG_REGISTRY": "https://your-company-npm-registry.example.com"
+      }
+    },
+    "mcp_server_mysql": {
+      "command": "npx",
+      "args": ["-y", "@benborla29/mcp-server-mysql"],
+      "env": {
+        "MYSQL_HOST": "127.0.0.1",
+        "MYSQL_PORT": "3306",
+        "MYSQL_USER": "readonly_user",
+        "MYSQL_PASS": "replace_with_secret",
+        "MYSQL_DB": "app_db"
+      }
+    }
+  },
+  "agents": {
+    "project-analysis-module-summarizer": {
+      "prompt": "codegraph-project-analyzer/prompts/module-summarizer.md"
+    },
+    "project-analysis-entrypoints-routes": {
+      "prompt": "codegraph-project-analyzer/prompts/entrypoints-routes.md"
+    },
+    "project-analysis-domain-data-model": {
+      "prompt": "codegraph-project-analyzer/prompts/domain-data-model.md"
+    },
+    "project-analysis-dependency-hotspots": {
+      "prompt": "codegraph-project-analyzer/prompts/dependency-hotspots.md"
+    },
+    "project-analysis-config-runtime": {
+      "prompt": "codegraph-project-analyzer/prompts/config-runtime.md"
+    },
+    "project-analysis-reading-path": {
+      "prompt": "codegraph-project-analyzer/prompts/reading-path.md"
+    },
+    "project-analysis-feature-implementation": {
+      "prompt": "codegraph-project-analyzer/prompts/feature-implementation.md"
+    },
+    "project-analysis-curator": {
+      "prompt": "codegraph-project-analyzer/prompts/analysis-curator.md"
+    },
+    "project-analysis-report-html": {
+      "prompt": "codegraph-project-analyzer/prompts/report-html.md"
+    }
+  }
+}

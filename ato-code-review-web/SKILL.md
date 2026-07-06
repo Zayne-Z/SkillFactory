@@ -47,6 +47,8 @@ git --version
 2) 重新检视 — 清除过程文件（保留 memory.json），从头开始
 ```
 
+- 即使 current_phase == "completed" 且报告文件存在，也必须先问续跑 / 重新检视；不得因 `synthesis.report_path` / `synthesis.html_report_path` 指向的文件存在就直接宣告检视完成
+- 只有用户明确选择“续跑”后，才可在 completed 状态交付已有报告路径；选择“重新检视”时必须 reset 后从头开始
 - **续跑** → 读 state；`completed` 时输出报告路径，不自动重跑
 - **重新检视** → `node "{SKILL_ROOT}/scripts/reset-run.js"`，再 §0.1
 
@@ -137,10 +139,11 @@ codereview/   ← 多版本 report_*.md / *.html（不参与启动探测）
 ```
 1. 确认 {SKILL_ROOT} 绝对路径
 2. 若 .codereview/state.json 存在 → §0.0 续跑/重新检视；否则 §0.1 init
-3. 读取 .codereview/state.json
+3. 读取 .codereview/state.json（§0.0 已让用户二选一；下列跳转仅在用户选「续跑」时执行，选「重新检视」则先 reset 再从头）
    - 不存在：Phase 0 初始化
    - 存在：读取 current_phase
-     - 若为 completed：告知报告路径；否则跳到对应 Phase
+     - completed：经用户选「续跑」后按 completed 输出文案交付报告路径；**严禁**未经用户选择就凭报告文件存在直接宣告完成
+     - 其它：跳到对应 Phase
 4. 兼容性补丁：
    - 若缺少 review_options → 补 severity_mode / skip_low_risk_files / generate_html_report / max_lines_per_batch(1200) / deep_doubt_analysis(true) / user_confirmed
    - 若 review_progress[*] 缺少 curator → 补 `curator: "pending"`

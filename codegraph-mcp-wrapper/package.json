@@ -1,6 +1,6 @@
 {
   "name": "@pa/codegraph-mcp-wrapper",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Company wrapper for CodeGraph MCP with policy-aware project initialization.",
   "private": false,
   "type": "commonjs",

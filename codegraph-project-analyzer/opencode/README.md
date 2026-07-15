@@ -10,7 +10,7 @@
 - 首次运行先生成 overview 报告和 `.projectanalysis/deep-tasks.json`，然后在 `deep_scope_confirm` 询问用户是否深挖。
 - 深挖使用 `prompts/feature-implementation.md`，按 `.projectanalysis/deep-tasks.json` 分批写 `.projectanalysis/deep-results/*.json`。
 - HTML 报告优先由 `scripts/render-report-html.js` 生成；`prompts/report-html.md` 仅作失败兜底。
-- `opencode.example.json` 里的 `codegraph` 与 `mcp_server_mysql` 为可选增强：在 `environment_check` 探测并写入 `state.mcp.*`，检测不到则静默降级，主流程不依赖它们。`codegraph` 默认使用 `@pa/codegraph-mcp-wrapper@latest`，会先连接 MCP；若缺少 `.codegraph/`，agent 按 `options.codegraph_policy` 决定询问、等待后台初始化或跳过。用户拒绝时调用 `pa_codegraph_init_skip`。详见 `../docs/mcp-integration.md`。
+- `opencode.example.json` 里的 `codegraph` 与 `mcp_server_mysql` 为可选增强：在 `environment_check` 探测并写入 `state.mcp.*`，检测不到则静默降级，主流程不依赖它们。`codegraph` 默认使用 `@pa/codegraph-mcp-wrapper@latest`，会先连接 MCP；若缺少健康的本地 `.codegraph/`，agent 按 `options.codegraph_policy` 决定询问、阻塞等待初始化、后台初始化或跳过。用户拒绝时调用 `pa_codegraph_init_skip`。详见 `../docs/mcp-integration.md`。
 
 示例命令：
 

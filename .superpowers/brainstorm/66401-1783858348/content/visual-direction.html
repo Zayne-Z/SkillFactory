@@ -1,0 +1,65 @@
+<h2>代码检视 Skill 看板：哪种表达最像你们团队？</h2>
+<p class="subtitle">三种方向都使用真实统计：520 个问题、214 个有效问题、41.2% 有效率、6 个版本。点击你偏好的方案。</p>
+
+<div class="cards">
+  <div class="card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:18px;background:#0b1220;color:#e8f0ff;min-height:310px;font-family:system-ui">
+      <div style="display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #263248;padding-bottom:12px">
+        <strong style="letter-spacing:.12em">REVIEW PULSE</strong><span style="font-size:11px;color:#87a0c8">APR — JUL 2026</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1.35fr .65fr;gap:12px;margin-top:14px">
+        <div style="border:1px solid #263248;border-radius:14px;padding:16px;background:#111b2d">
+          <div style="font-size:11px;color:#87a0c8">被 Skill 提前拦截的问题</div>
+          <div style="font-size:52px;font-weight:750;line-height:1.1;color:#f4f8ff">520</div>
+          <div style="height:70px;display:flex;align-items:end;gap:7px;margin-top:12px">
+            <i style="height:35%;width:14%;background:#42577b"></i><i style="height:55%;width:14%;background:#5974a1"></i><i style="height:47%;width:14%;background:#4c668d"></i><i style="height:18%;width:14%;background:#334968"></i><i style="height:44%;width:14%;background:#4c668d"></i><i style="height:88%;width:14%;background:#49d7ac"></i>
+          </div>
+        </div>
+        <div style="display:grid;gap:10px">
+          <div style="border-radius:14px;padding:14px;background:#16392f;border:1px solid #27745d"><small style="color:#7ce3c2">确认有效</small><b style="display:block;font-size:30px">214</b></div>
+          <div style="border-radius:14px;padding:14px;background:#281e31;border:1px solid #584063"><small style="color:#cba5db">团队有效率</small><b style="display:block;font-size:30px">41.2%</b></div>
+        </div>
+      </div>
+      <div style="margin-top:12px;padding:12px;border-radius:12px;background:#111b2d;border:1px solid #263248;font-size:12px;color:#b6c5df">本期信号：7 月检出 166 项，88 项被确认有效，Skill 价值进入加速区。</div>
+    </div>
+    <div class="card-body">
+      <h3>A · 工程指挥舱</h3>
+      <p>深色、高密度、强指标感。适合技术周会和大屏展示，最像工程团队自己的“质量雷达”。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="b" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:18px;background:#eef4f7;color:#18343c;min-height:310px;font-family:system-ui">
+      <div style="display:flex;justify-content:space-between;align-items:end">
+        <div><div style="font-size:11px;letter-spacing:.18em;color:#52737c">QUALITY OBSERVATORY</div><strong style="font-size:25px">把风险看在发布之前</strong></div><span style="font-size:11px">6 个版本</span>
+      </div>
+      <div style="margin-top:18px;border-radius:80px 80px 18px 18px;padding:25px 22px 15px;background:#fff;border:1px solid #cadde2;box-shadow:0 12px 30px #b8ced544">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div><small style="color:#65858d">问题发现</small><b style="display:block;font-size:44px;color:#073c45">520</b></div>
+          <div style="width:100px;height:100px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(#18a17b 0 41.2%,#dce8e9 41.2%);position:relative"><span style="width:70px;height:70px;border-radius:50%;background:#fff;display:grid;place-items:center;font-weight:700">41.2%</span></div>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-top:16px;text-align:center"><span style="background:#eff8f4;padding:10px;border-radius:10px"><b>214</b><small style="display:block">有效问题</small></span><span style="background:#fff5ea;padding:10px;border-radius:10px"><b>99</b><small style="display:block">严重问题</small></span><span style="background:#eef3ff;padding:10px;border-radius:10px"><b>53%</b><small style="display:block">最新有效率</small></span></div>
+      </div>
+      <div style="font-size:12px;margin-top:14px;color:#52737c">不是“多报问题”，而是更早提供可行动的质量信号。</div>
+    </div>
+    <div class="card-body">
+      <h3>B · 质量观测站</h3>
+      <p>浅色、克制、可信赖。适合向管理层汇报，把复杂检视数据翻译成团队质量价值。</p>
+    </div>
+  </div>
+
+  <div class="card" data-choice="c" onclick="toggleSelect(this)">
+    <div class="card-image" style="padding:18px;background:#f5f1ff;color:#281a55;min-height:310px;font-family:system-ui;overflow:hidden;position:relative">
+      <div style="position:absolute;width:220px;height:220px;border-radius:50%;background:#7657ff22;right:-80px;top:-80px"></div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:.14em;color:#7058c5">SKILL IMPACT / 2026</div>
+      <div style="font-size:30px;font-weight:800;line-height:1.08;margin-top:12px;max-width:290px">每一次检视，<br>都在缩短风险<br>到反馈的距离。</div>
+      <div style="display:flex;align-items:center;gap:10px;margin:24px 0"><span style="font-size:54px;font-weight:800;color:#5b3fe1">214</span><span style="font-size:12px;max-width:95px">个问题被团队确认有效或已修复</span></div>
+      <div style="display:flex;gap:6px;align-items:center;font-size:11px"><span style="padding:7px 10px;background:#fff;border-radius:99px">发现 520</span><span>→</span><span style="padding:7px 10px;background:#6b4ee8;color:#fff;border-radius:99px">确认 214</span><span>→</span><span style="padding:7px 10px;background:#fff;border-radius:99px">持续改进</span></div>
+      <div style="position:absolute;bottom:14px;right:16px;font-size:10px;color:#776a9c">TEAM QUALITY STORY</div>
+    </div>
+    <div class="card-body">
+      <h3>C · 价值叙事墙</h3>
+      <p>更有品牌感和故事性，突出“从发现到修复”的作用链路；适合成果展示，但明细密度较低。</p>
+    </div>
+  </div>
+</div>

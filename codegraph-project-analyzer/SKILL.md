@@ -78,7 +78,7 @@ node "{SKILL_ROOT}/scripts/update-state.js" --set scope.user_confirmed=true --ph
    - `codegraph-first`：检测到 wrapper 且项目缺索引时，先初始化并等待完成，再继续分析；适合大仓、小上下文、要求调用链准确的任务。
    - `ask`：默认。缺索引时询问用户；用户确认后走 `codegraph-first`，拒绝则走 `no-codegraph`。
 3. **探测可选 MCP**：检查当前 agent runtime 的可用工具，判定并落盘：
-   - 见到 `pa_codegraph_check` 表示使用 wrapper；按策略调用 `pa_codegraph_check`、`pa_codegraph_init_start`、`pa_codegraph_init_status`、`pa_codegraph_init_skip`；
+   - 见到 `pa_codegraph_check` 表示使用 wrapper；按策略调用 `pa_codegraph_check`、`pa_codegraph_init_wait`（优先阻塞等待）、`pa_codegraph_init_start` / `pa_codegraph_init_status`（旧版回退）、`pa_codegraph_init_skip`；
    - 见到 `codegraph_*` 工具（如 `codegraph_explore`）且索引可用 → `mcp.codegraph=available`，否则 `unavailable`；
    - 见到 `mysql_query` 工具或 `mysql://tables` 资源 → `mcp.mysql=available`，否则 `unavailable`；
    - 无法判定时保守写 `unavailable`。探测本身出错也不得中断流程。
@@ -93,8 +93,8 @@ node "{SKILL_ROOT}/scripts/update-state.js" --set mcp.codegraph=available --set 
 
 - `no-codegraph`：写 `mcp.codegraph=unavailable`，继续。
 - `codegraph-enhanced`：若已有 `codegraph_*` 且可查询，写 `available`；否则写 `unavailable`，继续。
-- `codegraph-first`：若有 wrapper 工具且 `pa_codegraph_check.recommend_init_prompt=true`，调用 `pa_codegraph_init_start`，轮询 `pa_codegraph_init_status` 到 `completed` 后继续；失败则写 `unavailable` 并继续。
-- `ask`：若 `pa_codegraph_check.recommend_init_prompt=true`，询问用户“是否先后台初始化 CodeGraph，以减少后续读源码 token 并提高调用链准确性？”；确认后按 `codegraph-first` 等待完成，拒绝后调用 `pa_codegraph_init_skip` 并继续。
+- `codegraph-first`：若有 wrapper 工具且 `pa_codegraph_check.recommend_init_prompt=true`，优先调用 `pa_codegraph_init_wait` 并只在返回 `status=completed` 后继续；若没有该工具，则调用 `pa_codegraph_init_start` 并轮询 `pa_codegraph_init_status`。失败或超时则写 `unavailable` 并继续。
+- `ask`：若 `pa_codegraph_check.recommend_init_prompt=true`，询问用户“是否先初始化 CodeGraph 并等待完成，以减少后续读源码 token 并提高调用链准确性？”；确认后按 `codegraph-first` 等待完成，拒绝后调用 `pa_codegraph_init_skip` 并继续。
 
 ## 4. 确定性脚本阶段
 
@@ -250,5 +250,5 @@ node "{SKILL_ROOT}/scripts/mcp-server.js" --index ".projectanalysis/index"
 
 ### 11.2 外部 MCP 增强（可用时）
 
-- **CodeGraph MCP（`colbymchenry/codegraph`）**：默认工具 `codegraph_explore`（勘察/流程/影响半径），可选开启 `codegraph_search`/`codegraph_callers`/`codegraph_callees`/`codegraph_impact` 等。用于核对调用链与影响面。推荐 MCP 配置使用 `@pa/codegraph-mcp-wrapper@latest`，由 wrapper 先代理原生工具，再通过 `pa_codegraph_check` / `pa_codegraph_init_start` / `pa_codegraph_init_status` 支持用户确认后的后台初始化；未挂载或初始化失败时降级到 §11.1 的内置 JSON index。
+- **CodeGraph MCP（`colbymchenry/codegraph`）**：默认工具 `codegraph_explore`（勘察/流程/影响半径），可选开启 `codegraph_search`/`codegraph_callers`/`codegraph_callees`/`codegraph_impact` 等。用于核对调用链与影响面。推荐 MCP 配置使用 `@pa/codegraph-mcp-wrapper@latest`，由 wrapper 先代理原生工具，再通过 `pa_codegraph_check` / `pa_codegraph_init_wait` 支持阻塞初始化，或通过 `pa_codegraph_init_start` / `pa_codegraph_init_status` 支持后台初始化；未挂载或初始化失败时降级到 §11.1 的内置 JSON index。
 - **MySQL MCP（`@benborla29/mcp-server-mysql`）**：资源 `mysql://tables` 浏览表结构 + 只读 `mysql_query`（`SHOW TABLES`/`DESCRIBE`/带 `LIMIT` 的 `SELECT`）。用于对齐真实数据模型；不可用时降级到代码侧（entity/mapper/SQL/配置）推断。只用只读账号，不把原始业务数据写入报告。

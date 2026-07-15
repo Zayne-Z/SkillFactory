@@ -6,7 +6,7 @@
 
 - 维护 `.projectanalysis/state.json`，所有阶段推进都通过 `scripts/update-state.js` 落盘。
 - 范围确认完成前不得扫描项目。
-- `environment_check` 阶段读取 `options.codegraph_policy`，按 `no-codegraph` / `codegraph-enhanced` / `codegraph-first` / `ask` 处理 CodeGraph；wrapper 可用时使用 `pa_codegraph_check`、`pa_codegraph_init_start`、`pa_codegraph_init_status`、`pa_codegraph_init_skip`。
+- `environment_check` 阶段读取 `options.codegraph_policy`，按 `no-codegraph` / `codegraph-enhanced` / `codegraph-first` / `ask` 处理 CodeGraph；wrapper 可用时优先使用 `pa_codegraph_check`、`pa_codegraph_init_wait`、`pa_codegraph_init_skip`，旧版 wrapper 回退到 `pa_codegraph_init_start` + `pa_codegraph_init_status`。
 - 同阶段探测可选 MCP（`codegraph_*` / `mysql_query`），把结果写入 `mcp.codegraph` / `mcp.mysql`；检测不到就静默降级，绝不因缺 MCP 中断主流程。
 - 运行确定性脚本生成 `files.json`、`symbols.jsonl`、`edges.jsonl`、`entrypoints.json`、`modules.json` 与 context packs。
 - 首次只生成项目导览：并行拉起模块摘要、入口路由、领域模型、依赖热点、配置运行时、阅读路线子 Builder。

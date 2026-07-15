@@ -7,8 +7,24 @@ function escapeHtml(text) {
   return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
+function statusBadge(text) {
+  const value = String(text).trim();
+  const classes = {
+    '已分析': 'completed',
+    '待分析': 'pending',
+    '已选择': 'selected',
+    '分析中': 'in-progress',
+    '失败': 'failed',
+    '已跳过': 'skipped',
+  };
+  if (!classes[value]) return '';
+  return `<span class="status-badge status-${classes[value]}">${escapeHtml(value)}</span>`;
+}
+
 // 行内格式：`code`、**bold**、[text](url)、字面 <br> 换行
 function inlineFormat(text) {
+  const badge = statusBadge(text);
+  if (badge) return badge;
   const parts = String(text).split(/(`[^`]+`)/);
   return parts.map((part) => {
     if (part.startsWith('`') && part.endsWith('`') && part.length >= 2) {
@@ -56,6 +72,8 @@ function inlineMd(md) {
   const html = [];
   let inList = false;
   let listTag = '';
+  let inCode = false;
+  let codeLines = [];
   const closeList = () => {
     if (inList) {
       html.push(`</${listTag}>`);
@@ -63,9 +81,22 @@ function inlineMd(md) {
       listTag = '';
     }
   };
+  const closeCode = () => {
+    if (inCode) {
+      html.push(`<pre><code>${escapeHtml(codeLines.join('\n'))}</code></pre>`);
+      codeLines = [];
+      inCode = false;
+    }
+  };
   for (let i = 0; i < lines.length; i += 1) {
     const line = lines[i];
-    if (line.startsWith('|')) {
+    if (line.trim().startsWith('```')) {
+      closeList();
+      if (inCode) closeCode();
+      else inCode = true;
+    } else if (inCode) {
+      codeLines.push(line);
+    } else if (line.startsWith('|')) {
       closeList();
       const rows = [];
       while (i < lines.length && lines[i].startsWith('|')) {
@@ -108,6 +139,7 @@ function inlineMd(md) {
       else if (line.trim()) html.push(`<p>${inlineFormat(line)}</p>`);
     }
   }
+  closeCode();
   closeList();
   return html.join('\n');
 }

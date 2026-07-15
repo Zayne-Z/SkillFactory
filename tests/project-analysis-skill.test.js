@@ -1,4 +1,5 @@
 const assert = require('node:assert/strict');
+const crypto = require('node:crypto');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
@@ -192,6 +193,11 @@ function runWrapper(args, cwd, extraEnv = {}) {
     stdio: ['pipe', 'pipe', 'pipe'],
     env: { ...process.env, ...extraEnv },
   });
+}
+
+function wrapperInitLock(projectRoot) {
+  const hash = crypto.createHash('sha256').update(fs.realpathSync(projectRoot)).digest('hex').slice(0, 24);
+  return path.join(os.tmpdir(), `pa-codegraph-init-${hash}.lock`);
 }
 
 async function withWrapperMcp(args, cwd, extraEnv, fn) {
@@ -443,9 +449,13 @@ test('standalone pipeline produces deliverables without starting the MCP server'
   const resultPath = path.join(workspace, '.projectanalysis/analysis-result.json');
   write(resultPath, JSON.stringify({
     project_name: 'orders-no-mcp',
-    summary: 'Pipeline runs from JSON artifacts only.',
-    architecture_map: [{ module_id: 'module-com-acme-orders', purpose: 'Order flow', key_files: ['src/main/java/com/acme/orders/OrderController.java'] }],
-    key_scenarios: [{ title: '查询订单', steps: ['HTTP request hits OrderController', 'Controller calls OrderService'] }],
+    summary: { text: 'Pipeline runs from JSON artifacts only.', owner: 'platform' },
+    architecture_map: [{
+      module_id: 'module-com-acme-orders',
+      purpose: { text: 'Order flow', domain: 'order' },
+      key_files: [{ path: 'src/main/java/com/acme/orders/OrderController.java', role: 'HTTP entry' }],
+    }],
+    key_scenarios: [{ title: '查询订单', steps: [{ step: 'HTTP request hits OrderController' }, { step: 'Controller calls OrderService' }] }],
     feature_implementations: [{
       feature: '后台轮询过滤',
       business_goal: '持续拉取外部接口并过滤结果。',
@@ -466,19 +476,59 @@ test('standalone pipeline produces deliverables without starting the MCP server'
       confidence: 'high',
       open_questions: [],
     }],
-    reading_path: ['Read OrderController', 'Read OrderService'],
+    reading_path: [{ step: 'Read OrderController', why: 'HTTP entry' }, 'Read OrderService'],
+    concepts: [{ name: '订单', description: '核心业务对象' }],
+    risks: [{ level: 'medium', description: '需要补充功能深挖' }],
+  }, null, 2));
+  const deepTasks = path.join(workspace, '.projectanalysis/deep-tasks.json');
+  write(deepTasks, JSON.stringify({
+    version: '1.0',
+    selection: { status: 'awaiting_user', instruction: '请选择全部、模块或任务。' },
+    tasks: [
+      {
+        task_id: 'feature-order-query',
+        module_id: 'module-com-acme-orders',
+        title: '订单查询功能',
+        task_type: 'feature_implementation',
+        priority: 'high',
+        status: 'completed',
+        selected: true,
+        report_html: 'project-analysis/features/feature-order-query.html',
+      },
+      {
+        task_id: 'feature-order-submit',
+        module_id: 'module-com-acme-orders',
+        title: '订单提交流程',
+        task_type: 'entrypoint_flow',
+        priority: 'medium',
+        status: 'pending',
+        selected: false,
+      },
+    ],
   }, null, 2));
   const md = path.join(workspace, 'project-analysis/report_orders_no_mcp.md');
   const html = md.replace(/\.md$/, '.html');
 
-  run('render-report-md.js', ['--analysis', resultPath, '--index', path.join(workspace, '.projectanalysis/index'), '--template', path.join(SKILL, 'templates/report-template.md'), '--out', md], workspace);
+  run('render-report-md.js', ['--analysis', resultPath, '--index', path.join(workspace, '.projectanalysis/index'), '--deep-tasks', deepTasks, '--template', path.join(SKILL, 'templates/report-template.md'), '--out', md], workspace);
   run('render-report-html.js', ['--md', md, '--shell', path.join(SKILL, 'templates/report-shell.html'), '--out', html], workspace);
 
-  assert.match(fs.readFileSync(md, 'utf8'), /orders-no-mcp 项目导览/);
-  assert.match(fs.readFileSync(md, 'utf8'), /功能实现详解/);
-  assert.match(fs.readFileSync(md, 'utf8'), /后台轮询过滤/);
-  assert.match(fs.readFileSync(md, 'utf8'), /Redis key sync:state/);
-  assert.match(fs.readFileSync(html, 'utf8'), /codegraph-project-analyzer-html-end/);
+  const mdText = fs.readFileSync(md, 'utf8');
+  const htmlText = fs.readFileSync(html, 'utf8');
+  assert.match(mdText, /orders-no-mcp 项目导览/);
+  assert.match(mdText, /功能清单/);
+  assert.match(mdText, /订单查询功能/);
+  assert.match(mdText, /已分析/);
+  assert.match(mdText, /待分析/);
+  assert.match(mdText, /深入分析操作/);
+  assert.match(mdText, /架构清单/);
+  assert.match(mdText, /功能实现详解/);
+  assert.match(mdText, /后台轮询过滤/);
+  assert.match(mdText, /Redis key sync:state/);
+  assert.doesNotMatch(mdText, /\[object Object\]/i);
+  assert.match(htmlText, /class="layout-shell"/);
+  assert.match(htmlText, /class="status-badge status-completed"/);
+  assert.match(htmlText, /codegraph-project-analyzer-html-end/);
+  assert.doesNotMatch(htmlText, /\[object Object\]/i);
 });
 
 test('plan-deep-tasks creates resumable fine-grained feature analysis tasks', () => {
@@ -572,6 +622,51 @@ test('merge-deep-results writes feature implementations back into analysis resul
   assert.equal(analysis.feature_implementations[0].state_storage[0], 'Redis key sync:state');
 });
 
+test('render-feature-reports creates one standalone report per analyzed feature', () => {
+  const workspace = makeDeepFeatureWorkspace();
+  buildIndex(workspace);
+  const tasksPath = path.join(workspace, '.projectanalysis/deep-tasks.json');
+  run('plan-deep-tasks.js', ['--index', path.join(workspace, '.projectanalysis/index'), '--output', tasksPath], workspace);
+  const plan = readJson(tasksPath);
+  const task = plan.tasks.find((item) => item.module_id === 'module-com-acme-sync' && item.task_type === 'feature_implementation');
+  write(path.join(workspace, task.output), JSON.stringify({
+    task_id: task.task_id,
+    module_id: task.module_id,
+    feature: '库存同步',
+    business_goal: '后台拉取库存并暂存状态。',
+    triggers: ['POST /sync/start'],
+    implementation_flow: ['Controller 启动', 'Service 后台调用外部接口', 'Redis 暂存状态', 'Mapper 写入临时表'],
+    async_mechanism: '@Async',
+    external_calls: ['RestTemplate'],
+    state_storage: ['Redis key sync:state'],
+    data_writes: ['SyncMapper.insertTemp'],
+    cleanup_jobs: ['SyncService.cleanupTemp'],
+    key_code: ['src/main/java/com/acme/sync/SyncService.java#startSync'],
+    evidence: ['SyncService.java'],
+    confidence: 'high',
+    open_questions: [],
+  }, null, 2));
+
+  run('render-feature-reports.js', [
+    '--tasks', tasksPath,
+    '--results-dir', path.join(workspace, '.projectanalysis/deep-results'),
+    '--out-dir', path.join(workspace, 'project-analysis/features'),
+    '--shell', path.join(SKILL, 'templates/report-shell.html'),
+  ], workspace);
+
+  const updated = readJson(tasksPath);
+  const updatedTask = updated.tasks.find((item) => item.task_id === task.task_id);
+  assert.equal(updatedTask.status, 'completed');
+  assert.ok(updatedTask.report_md.endsWith(`${task.task_id}.md`));
+  assert.ok(updatedTask.report_html.endsWith(`${task.task_id}.html`));
+  const featureMd = fs.readFileSync(path.join(workspace, updatedTask.report_md), 'utf8');
+  const featureHtml = fs.readFileSync(path.join(workspace, updatedTask.report_html), 'utf8');
+  assert.match(featureMd, /# 库存同步/);
+  assert.match(featureMd, /Redis key sync:state/);
+  assert.match(featureHtml, /class="layout-shell"/);
+  assert.doesNotMatch(featureHtml, /\[object Object\]/i);
+});
+
 test('CodeGraph wrapper lists CodeGraph and pa management tools without startup init', async () => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-'));
   write(path.join(workspace, 'pom.xml'), '<project />\n');
@@ -589,13 +684,78 @@ test('CodeGraph wrapper lists CodeGraph and pa management tools without startup 
     assert.ok(names.includes('codegraph_explore'));
     assert.ok(names.includes('pa_codegraph_check'));
     assert.ok(names.includes('pa_codegraph_init_start'));
+    assert.ok(names.includes('pa_codegraph_init_wait'));
     assert.ok(names.includes('pa_codegraph_init_status'));
     assert.ok(names.includes('pa_codegraph_init_skip'));
   });
 
   const calls = fs.readFileSync(callLog, 'utf8').trim().split(/\r?\n/).map(JSON.parse);
   assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0].argv, ['-y', '@colbymchenry/codegraph@latest', 'serve', '--mcp']);
+  assert.deepEqual(calls[0].argv, ['-y', '@colbymchenry/codegraph@1.3.0', 'serve', '--mcp']);
+});
+
+test('CodeGraph wrapper can spawn npx through the Windows shell path', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-win-'));
+  write(path.join(workspace, 'package.json'), '{}\n');
+  const fakeBin = makeFakeNpxBin();
+  const callLog = path.join(workspace, 'calls.jsonl');
+
+  await withWrapperMcp(['serve', '--mcp'], workspace, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    FAKE_NPX_CALL_LOG: callLog,
+    FAKE_NPX_MCP_PROXY: '1',
+    PA_CODEGRAPH_FORCE_WIN32: '1',
+  }, async ({ send, waitFor }) => {
+    send({ jsonrpc: '2.0', id: 30, method: 'tools/list' });
+    const response = await waitFor(30);
+    const names = response.result.tools.map((tool) => tool.name);
+    assert.ok(names.includes('codegraph_explore'));
+    assert.ok(names.includes('pa_codegraph_check'));
+  });
+
+  const calls = fs.readFileSync(callLog, 'utf8').trim().split(/\r?\n/).map(JSON.parse);
+  assert.ok(calls.some((call) => call.argv.join(' ') === '-y @colbymchenry/codegraph@1.3.0 serve --mcp'));
+});
+
+test('CodeGraph wrapper keeps the implicit project root at the exact cwd', async () => {
+  const outer = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-root-'));
+  write(path.join(outer, 'package.json'), '{}\n');
+  fs.mkdirSync(path.join(outer, '.codegraph'), { recursive: true });
+  const workspace = path.join(outer, 'nested', 'target');
+  fs.mkdirSync(workspace, { recursive: true });
+  write(path.join(workspace, 'main.js'), 'console.log("target");\n');
+  const fakeBin = makeFakeNpxBin();
+
+  await withWrapperMcp(['serve', '--mcp'], workspace, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    FAKE_NPX_MCP_PROXY: '1',
+  }, async ({ send, waitFor }) => {
+    send({ jsonrpc: '2.0', id: 31, method: 'tools/call', params: { name: 'pa_codegraph_check', arguments: {} } });
+    const response = await waitFor(31);
+    assert.equal(response.result.structuredContent.project_root, fs.realpathSync(workspace));
+    assert.equal(response.result.structuredContent.has_codegraph_index, false);
+  });
+});
+
+test('CodeGraph wrapper requires a healthy local index before reporting initialization complete', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-health-'));
+  write(path.join(workspace, 'package.json'), '{}\n');
+  fs.mkdirSync(path.join(workspace, '.codegraph'), { recursive: true });
+  const fakeBin = makeFakeNpxBin();
+
+  await withWrapperMcp(['serve', '--mcp'], workspace, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    FAKE_NPX_CALL_LOG: path.join(workspace, 'calls.jsonl'),
+    FAKE_NPX_MCP_PROXY: '1',
+    FAKE_NPX_STATUS_FAIL: '1',
+  }, async ({ send, waitFor }) => {
+    send({ jsonrpc: '2.0', id: 32, method: 'tools/call', params: { name: 'pa_codegraph_check', arguments: {} } });
+    const response = await waitFor(32);
+    assert.equal(response.result.structuredContent.has_codegraph_directory, true);
+    assert.equal(response.result.structuredContent.has_codegraph_index, false);
+    assert.equal(response.result.structuredContent.codegraph_status, 'unhealthy');
+    assert.equal(response.result.structuredContent.recommend_init_prompt, true);
+  });
 });
 
 test('CodeGraph wrapper check reports code repo and missing index for user confirmation', async () => {
@@ -624,7 +784,7 @@ test('CodeGraph wrapper check reports code repo and missing index for user confi
     assert.ok(calls.length <= 1);
     if (calls[0]) {
       assert.equal(calls[0].cwd, fs.realpathSync(cliRoot));
-      assert.deepEqual(calls[0].argv, ['-y', '@colbymchenry/codegraph@latest', 'serve', '--mcp']);
+      assert.deepEqual(calls[0].argv, ['-y', '@colbymchenry/codegraph@1.3.0', 'serve', '--mcp']);
     }
   }
   assert.equal(fs.existsSync(path.join(envRoot, '.codegraph')), false);
@@ -656,8 +816,104 @@ test('CodeGraph wrapper starts background init only after tool call', async () =
   });
 
   const calls = fs.readFileSync(callLog, 'utf8').trim().split(/\r?\n/).map(JSON.parse);
-  assert.ok(calls.some((call) => call.argv.join(' ') === '-y @colbymchenry/codegraph@latest serve --mcp'));
-  assert.ok(calls.some((call) => call.argv.join(' ') === '-y @colbymchenry/codegraph@latest init'));
+  assert.ok(calls.some((call) => call.argv.join(' ') === '-y @colbymchenry/codegraph@1.3.0 serve --mcp'));
+  assert.ok(calls.some((call) => call.argv.join(' ') === '-y @colbymchenry/codegraph@1.3.0 init'));
+});
+
+test('CodeGraph wrapper can block until initialization completes', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-wait-'));
+  write(path.join(workspace, 'package.json'), '{}\n');
+  const fakeBin = makeFakeNpxBin();
+  const callLog = path.join(workspace, 'calls.jsonl');
+
+  await withWrapperMcp(['serve', '--mcp'], workspace, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    FAKE_NPX_CALL_LOG: callLog,
+    FAKE_NPX_MCP_PROXY: '1',
+    FAKE_NPX_INIT_DELAY_MS: '300',
+  }, async ({ send, waitFor }) => {
+    const startedAt = Date.now();
+    send({
+      jsonrpc: '2.0',
+      id: 33,
+      method: 'tools/call',
+      params: { name: 'pa_codegraph_init_wait', arguments: { timeout_ms: 3000 } },
+    });
+    const response = await waitFor(33, 5000);
+    assert.ok(Date.now() - startedAt >= 250);
+    assert.equal(response.result.structuredContent.status, 'completed');
+    assert.equal(response.result.structuredContent.has_codegraph_index, true);
+    assert.equal(response.result.structuredContent.wait_timed_out, false);
+  });
+
+  const calls = fs.readFileSync(callLog, 'utf8').trim().split(/\r?\n/).map(JSON.parse);
+  assert.ok(calls.some((call) => call.argv.join(' ') === '-y @colbymchenry/codegraph@1.3.0 init'));
+  assert.ok(calls.some((call) => call.argv.join(' ') === '-y @colbymchenry/codegraph@1.3.0 status'));
+});
+
+test('CodeGraph wrapper reports a blocking wait timeout without marking init complete', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-wait-timeout-'));
+  write(path.join(workspace, 'package.json'), '{}\n');
+  const fakeBin = makeFakeNpxBin();
+
+  await withWrapperMcp(['serve', '--mcp'], workspace, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    FAKE_NPX_CALL_LOG: path.join(workspace, 'calls.jsonl'),
+    FAKE_NPX_MCP_PROXY: '1',
+    FAKE_NPX_INIT_DELAY_MS: '1000',
+  }, async ({ send, waitFor }) => {
+    send({
+      jsonrpc: '2.0',
+      id: 35,
+      method: 'tools/call',
+      params: { name: 'pa_codegraph_init_wait', arguments: { timeout_ms: 100 } },
+    });
+    const response = await waitFor(35, 3000);
+    assert.equal(response.result.structuredContent.status, 'running');
+    assert.equal(response.result.structuredContent.has_codegraph_index, false);
+    assert.equal(response.result.structuredContent.wait_timed_out, true);
+    assert.equal(response.result.structuredContent.wait_timeout_ms, 100);
+  });
+});
+
+test('CodeGraph wrapper blocking init converges after an external init lock is released', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-external-wait-'));
+  write(path.join(workspace, 'package.json'), '{}\n');
+  const fakeBin = makeFakeNpxBin();
+  const callLog = path.join(workspace, 'calls.jsonl');
+  const lockDir = wrapperInitLock(workspace);
+  fs.mkdirSync(lockDir);
+  write(path.join(lockDir, 'owner'), 'external\n');
+
+  try {
+    await withWrapperMcp(['serve', '--mcp'], workspace, {
+      PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+      FAKE_NPX_CALL_LOG: callLog,
+      FAKE_NPX_MCP_PROXY: '1',
+    }, async ({ send, waitFor }) => {
+      setTimeout(() => {
+        fs.mkdirSync(path.join(workspace, '.codegraph'), { recursive: true });
+        fs.rmSync(lockDir, { recursive: true, force: true });
+      }, 300);
+      send({
+        jsonrpc: '2.0',
+        id: 34,
+        method: 'tools/call',
+        params: { name: 'pa_codegraph_init_wait', arguments: { timeout_ms: 3000 } },
+      });
+      const response = await waitFor(34, 5000);
+      assert.equal(response.result.structuredContent.status, 'completed');
+      assert.equal(response.result.structuredContent.external_lock, false);
+      assert.equal(response.result.structuredContent.has_codegraph_index, true);
+      assert.equal(response.result.structuredContent.wait_timed_out, false);
+    });
+  } finally {
+    fs.rmSync(lockDir, { recursive: true, force: true });
+  }
+
+  const calls = fs.readFileSync(callLog, 'utf8').trim().split(/\r?\n/).map(JSON.parse);
+  assert.equal(calls.some((call) => call.argv.includes('init')), false);
+  assert.ok(calls.some((call) => call.argv.join(' ') === '-y @colbymchenry/codegraph@1.3.0 status'));
 });
 
 test('CodeGraph wrapper records explicit skip without starting init', async () => {
@@ -685,8 +941,8 @@ test('CodeGraph wrapper records explicit skip without starting init', async () =
   });
 
   const calls = fs.readFileSync(callLog, 'utf8').trim().split(/\r?\n/).map(JSON.parse);
-  assert.ok(calls.some((call) => call.argv.join(' ') === '-y @colbymchenry/codegraph@latest serve --mcp'));
-  assert.equal(calls.some((call) => call.argv.join(' ') === '-y @colbymchenry/codegraph@latest init'), false);
+  assert.ok(calls.some((call) => call.argv.join(' ') === '-y @colbymchenry/codegraph@1.3.0 serve --mcp'));
+  assert.equal(calls.some((call) => call.argv.join(' ') === '-y @colbymchenry/codegraph@1.3.0 init'), false);
 });
 
 test('CodeGraph wrapper proxies codegraph CLI commands without global install', () => {
@@ -702,7 +958,7 @@ test('CodeGraph wrapper proxies codegraph CLI commands without global install', 
 
   const calls = fs.readFileSync(callLog, 'utf8').trim().split(/\r?\n/).map(JSON.parse);
   assert.equal(calls.length, 1);
-  assert.deepEqual(calls[0].argv, ['-y', '@colbymchenry/codegraph@latest', 'sync', '--quiet']);
+  assert.deepEqual(calls[0].argv, ['-y', '@colbymchenry/codegraph@1.3.0', 'sync', '--quiet']);
   assert.equal(calls.some((call) => call.argv.includes('install') || call.argv.includes('-g')), false);
 });
 
@@ -773,6 +1029,7 @@ test('skill package exposes runner docs, state docs, schema docs, and bounded wo
   assert.match(opencodeConfig, /@benborla29\/mcp-server-mysql/);
   const mcpDoc = fs.readFileSync(path.join(SKILL, 'docs/mcp-integration.md'), 'utf8');
   assert.match(mcpDoc, /CodeGraph MCP/);
+  assert.match(mcpDoc, /pa_codegraph_init_wait/);
   assert.match(mcpDoc, /pa_codegraph_init_skip/);
   assert.match(mcpDoc, /codegraph_policy/);
   assert.match(mcpDoc, /codegraph init/);
@@ -803,6 +1060,7 @@ test('project analyzer state defaults to ask-before-CodeGraph policy', () => {
 test('standalone CodeGraph wrapper package is publishable and separate from the skill', () => {
   const pkg = readJson(path.join(WRAPPER, 'package.json'));
   assert.equal(pkg.name, '@pa/codegraph-mcp-wrapper');
+  assert.equal(pkg.version, '0.4.0');
   assert.equal(pkg.bin['pa-codegraph-mcp'], 'bin/pa-codegraph-mcp.js');
   assert.equal(fs.existsSync(path.join(WRAPPER, 'README.md')), true);
   assert.equal(fs.existsSync(path.join(SKILL, 'wrappers/codegraph-mcp-wrapper/package.json')), false);

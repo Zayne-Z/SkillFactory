@@ -27,7 +27,7 @@
 
 基于 tree-sitter 的 AST 级代码知识图谱，可弥补内置正则索引的精度短板（真实调用者/被调者/影响半径）。
 
-**推荐接入**：公司内网发布 `@pa/codegraph-mcp-wrapper` 后，用户只需配置 MCP。wrapper 会自动下载/更新 `@colbymchenry/codegraph@latest` 并立即代理真正的 `serve --mcp`，同时额外暴露 `pa_codegraph_check` / `pa_codegraph_init_start` / `pa_codegraph_init_status` / `pa_codegraph_init_skip`。目标项目缺少 `.codegraph/` 时，agent 按 `options.codegraph_policy` 决定是否初始化。
+**推荐接入**：公司内网发布 `@pa/codegraph-mcp-wrapper` 后，用户只需配置 MCP。wrapper 会使用默认的 `@colbymchenry/codegraph@1.3.0` 并立即代理真正的 `serve --mcp`，同时额外暴露 `pa_codegraph_check` / `pa_codegraph_init_start` / `pa_codegraph_init_wait` / `pa_codegraph_init_status` / `pa_codegraph_init_skip`。目标项目缺少健康的本地 `.codegraph/` 时，agent 按 `options.codegraph_policy` 决定是否初始化。
 
 裸接入时，目标项目需先建索引，否则 MCP 工具不返回图数据。上游当前推荐命令是 `codegraph init`，它会创建 `.codegraph/` 并构建完整 graph；之后 CodeGraph 默认 auto-sync。
 
@@ -47,18 +47,19 @@
 
 - `no-codegraph`：始终跳过外部 CodeGraph，只用内置 JSON 索引。
 - `codegraph-enhanced`：只在已有 `.codegraph/` 且 MCP 可查询时使用；不等待初始化。
-- `codegraph-first`：检测到 wrapper 且缺索引时，先后台初始化并等待完成，再进入 inventory；失败则降级。
+- `codegraph-first`：检测到 wrapper 且缺索引时，阻塞等待初始化完成后再进入 inventory；失败或超时则降级。
 - `ask`：默认。缺索引时询问用户；用户确认则按 `codegraph-first`，拒绝则调用 `pa_codegraph_init_skip` 并继续。
 
 推荐默认 `ask`。对大仓、DeepSeek Flash 等小上下文模型、或要求准确调用链的分析，可在范围确认时设置 `codegraph-first`。
 
 ### `@pa/codegraph-mcp-wrapper` 行为
 
-- 项目根定位优先级：`--project-root` → `CODEGRAPH_PROJECT_ROOT` → 从 MCP cwd 向上查找 `.git`/`pom.xml`/`package.json`/`build.gradle` → cwd。
-- 默认底层包：`@colbymchenry/codegraph@latest`，由公司 npm 镜像负责同步与治理 latest。
+- 项目根定位优先级：`--project-root` → `CODEGRAPH_PROJECT_ROOT` → MCP 进程的精确 cwd。wrapper 不再向父目录搜索，避免误用外层仓库的 `.codegraph/`。
+- 默认底层包：`@colbymchenry/codegraph@1.3.0`。如需升级或回退，使用 `CODEGRAPH_PACKAGE` 覆盖。
 - 默认启动不执行 `codegraph init`，避免大仓阻塞 MCP 握手。
-- 通过 `pa_codegraph_check` 检测是否是代码仓库、是否已有 `.codegraph/`，并给出是否建议询问用户。
+- 通过 `pa_codegraph_check` 检测是否是代码仓库，并仅在项目根本地存在 `.codegraph/` 时执行 `codegraph status`；目录存在但状态失败仍视为未完成初始化。
 - 用户确认后调用 `pa_codegraph_init_start`，wrapper 会 spawn 后台子进程执行 `codegraph init` 并立即返回；Skill 可用 `pa_codegraph_init_status` 轮询并等待完成。
+- 后续步骤强依赖 CodeGraph 时调用 `pa_codegraph_init_wait`，它会启动或加入现有初始化并阻塞到完成、失败或超时。旧版 wrapper 则回退到 `pa_codegraph_init_start` + `pa_codegraph_init_status` 轮询。
 - 用户拒绝时调用 `pa_codegraph_init_skip`，显式记录本次不初始化。
 - 初始化日志只写 stderr 或 `CODEGRAPH_WRAPPER_LOG`，不会污染 MCP stdout。
 - 初始化失败时只影响 CodeGraph 增强；主 Skill 仍按“外部 MCP 不可用”降级。
@@ -66,8 +67,10 @@
 可选环境变量：
 
 - `CODEGRAPH_PROJECT_ROOT`：显式项目根。
-- `CODEGRAPH_PACKAGE`：覆盖底层包，默认 `@colbymchenry/codegraph@latest`。
+- `CODEGRAPH_PACKAGE`：覆盖底层包，默认 `@colbymchenry/codegraph@1.3.0`。
 - `CODEGRAPH_AUTO_INIT_MODE=before-serve`：兼容旧的小项目模式，MCP 启动前同步执行 `codegraph init`；大仓不推荐。
+- `CODEGRAPH_INIT_WAIT_TIMEOUT_MS`：阻塞初始化默认超时，未设置时为 30 分钟；也可由工具参数 `timeout_ms` 覆盖。
+- `CODEGRAPH_INIT_WAIT_POLL_MS`：阻塞初始化状态轮询间隔，未设置时为 250 ms。
 - `CODEGRAPH_WRAPPER_LOG`：额外日志文件路径。
 
 ## MySQL MCP（`@benborla29/mcp-server-mysql`）

@@ -32,6 +32,7 @@
 ## 输入变量
 
 - `{{BATCH_ID}}`、`{{BATCH_FILES}}`、`{{BRANCH1}}`、`{{BRANCH2}}`
+- `BATCH_FILES[].line_ranges`（若存在）是 issue 起始行的硬边界；fallback 整文件 diff 也必须按范围过滤。
 - `{{DIFF_PATCH_PATH}}`、`{{SEVERITY_MODE}}`、`{{TECH_STACK}}`
 - `{{DEEP_DOUBT_ANALYSIS}}`：是否允许对疑问代码读取所属源文件局部窗口 / 有界引用下钻，默认 `true`
 - `{{SKILL_ROOT}}`、`{{OUTPUT_PATH}}`（`.codereview/results/{{BATCH_ID}}-reliability.json`）

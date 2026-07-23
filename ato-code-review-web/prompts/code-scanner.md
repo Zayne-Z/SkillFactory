@@ -45,6 +45,7 @@
 ## 输入变量
 
 - `{{BATCH_ID}}`、`{{BATCH_FILES}}`、`{{BRANCH1}}`、`{{BRANCH2}}`、`{{DIFF_BRANCH1}}`、`{{DIFF_BRANCH2}}`
+- `BATCH_FILES[].line_ranges`（若存在）是 issue 起始行的硬边界；范围外 patch 内容只用于理解，不得报告。
 - `{{DIFF_PATCH_PATH}}`、`{{SEVERITY_MODE}}`
 - `{{DEEP_DOUBT_ANALYSIS}}`：是否允许对疑问代码读取所属源文件局部窗口 / 有界引用下钻，默认 `true`
 - `{{TECH_STACK}}`（可选）

@@ -8,7 +8,6 @@
  *   node init-memory.js --memory .codereview/memory.json
  */
 'use strict';
-
 const fs = require('fs');
 const path = require('path');
 

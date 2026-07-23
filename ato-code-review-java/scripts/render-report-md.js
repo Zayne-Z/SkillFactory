@@ -7,8 +7,11 @@
  */
 'use strict';
 
+
 const fs = require('fs');
 const path = require('path');
+const { detectRepoName, sanitizeForFilename } = require('./detect-repo-name');
+const { resolveIssues, writeResolvedArtifacts, isMissing: resolverValueMissing } = require('./issue-resolver');
 
 const SEVERITY_ORDER = { critical: 0, high: 1, medium: 2, low: 3 };
 const SEVERITY_LABEL = {
@@ -79,6 +82,8 @@ function parseArgs(argv) {
     techStack: '.codereview/tech-stack.json',
     template: null,
     out: null,
+    outDir: null,
+    issues: null,
   };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
@@ -94,10 +99,12 @@ function parseArgs(argv) {
     else if (a === '--tech-stack') opts.techStack = nextValue();
     else if (a === '--template') opts.template = nextValue();
     else if (a === '--out') opts.out = nextValue();
+    else if (a === '--out-dir') opts.outDir = nextValue();
+    else if (a === '--issues') opts.issues = nextValue();
     else throw new Error(`unknown argument: ${a}`);
   }
-  if (!opts.template || !opts.out) {
-    console.error('Usage: node render-report-md.js --template <report-template.md> --out <report.md> [--state path] [--results dir] [--inventory path] [--tech-stack path]');
+  if (!opts.template || (!opts.out && !opts.outDir)) {
+    console.error('Usage: node render-report-md.js --template <report-template.md> (--out <report.md> | --out-dir <dir>) [--issues resolved-issues.json]');
     process.exit(1);
   }
   return opts;
@@ -225,6 +232,23 @@ function deriveLineTotals(state, inventory) {
   return { additions, deletions };
 }
 
+const REPORT_TIME_ZONE = 'Asia/Shanghai';
+
+function formatInTimeZone(date, timeZone = REPORT_TIME_ZONE) {
+  return date.toLocaleString('sv-SE', { timeZone }).replace(',', '');
+}
+
+function localIso(date = new Date()) {
+
+  return `${formatInTimeZone(date).replace(' ', 'T')}+08:00`;
+}
+
+function formatLocalDateTime(iso) {
+  const d = iso ? new Date(iso) : new Date();
+  if (Number.isNaN(d.getTime())) return String(iso || '').replace('T', ' ').slice(0, 19);
+  return formatInTimeZone(d);
+}
+
 function codeFence(text, lang) {
   const body = String(text || '（无）').replace(/```/g, '``\\`');
   return `\`\`\`${lang || ''}\n${body}\n\`\`\``;
@@ -256,10 +280,13 @@ function compareIssues(a, b) {
   if (s !== 0) return s;
   const f = String(a.file).localeCompare(String(b.file));
   if (f !== 0) return f;
-  const aLine = Number.parseInt(a.line, 10);
-  const bLine = Number.parseInt(b.line, 10);
-  return (Number.isFinite(aLine) ? aLine : Number.MAX_SAFE_INTEGER) -
-    (Number.isFinite(bLine) ? bLine : Number.MAX_SAFE_INTEGER);
+  const firstLine = (line) => {
+    const m = String(line || '').match(/\d+/);
+    return m ? Number.parseInt(m[0], 10) : Number.MAX_SAFE_INTEGER;
+  };
+  const l = firstLine(a.line) - firstLine(b.line);
+  if (l !== 0) return l;
+  return String(a.sourceKey || a.id || '').localeCompare(String(b.sourceKey || b.id || ''));
 }
 
 function normalizeDomain(raw, config) {
@@ -432,21 +459,23 @@ function normalizeIssue(raw, sourceExpert, config, batchId) {
   const domain = normalizeDomain(raw.domain || raw.primary_expert || raw.expert || sourceExpert, config);
   return {
     id,
-    originalId: id,
-    aliasIds: [id],
-    batchId,
+    originalId: raw.originalId || raw.original_id || id,
+    aliasIds: [...new Set([id, ...(raw.aliasIds || [])])],
+    batchId: raw.batchId || raw.batch_id || batchId,
     domain,
     sourceExpert: raw.primary_expert || raw.expert || sourceExpert || domain,
-    file: raw.file || raw.path || '-',
+    file: raw.file || raw.path || raw.file_path || '-',
     line: String(raw.line || raw.lines || '-'),
-    symbol: raw.symbol || 'unknown',
+    symbol: raw.symbol || raw.function || raw.method || 'unknown',
     severity,
     category: raw.category || '',
-    title: raw.title || raw.summary || raw.description || id,
-    description: raw.description || raw.reason || raw.title || '',
-    code: extractIssueCode(raw),
+    title: raw.title || raw.summary || raw.message || raw.description || id,
+    description: raw.description || raw.reason || raw.details || raw.title || '',
+    code: raw.code || extractIssueCode(raw),
     recommendation: raw.recommendation || raw.suggestion || raw.fix_suggestion || '',
     mergedFrom: Array.isArray(raw.merged_from) ? raw.merged_from : [],
+    sourceKey: raw.sourceKey || raw.source_key || '',
+    evidence: raw.evidence || {},
   };
 }
 
@@ -527,13 +556,6 @@ function issueIdsForLookup(issue) {
     if (id) ids.add(id);
   }
   return ids;
-}
-
-function firstMapValue(map, ids) {
-  for (const id of ids) {
-    if (map.has(id)) return map.get(id);
-  }
-  return '';
 }
 
 function firstObjectValue(obj, ids) {
@@ -678,18 +700,65 @@ function collectIssues(resultsDir, inventory, config) {
   return { issues, missingBatches };
 }
 
+// 修复建议按「批次 + issue_id」隔离：不同批次的 curator 可能各自产出同名 ID（如都叫 COR-001），
+// 全局 Map 会被后一批覆盖，导致问题与修复建议错位。跨批次冲突的 ID 不再走全局兜底。
 function collectFixes(resultsDir) {
-  const fixes = new Map();
-  if (!fs.existsSync(resultsDir)) return fixes;
+  const perBatch = new Map();
+  const perSource = new Map();
+  const conflictedSource = new Set();
+  const global = new Map();
+  const conflicted = new Set();
+  const conflictedPerBatch = new Set();
+  const sourceBackedBatch = new Set();
+  if (!fs.existsSync(resultsDir)) return { perBatch, perSource, conflictedSource, global, conflicted, conflictedPerBatch, sourceBackedBatch };
   for (const name of fs.readdirSync(resultsDir)) {
-    if (!/^batch-\d+-fix\.json$/.test(name)) continue;
+    const m = name.match(/^(batch-\d+)-fix\.json$/);
+    if (!m) continue;
+    const batchId = m[1];
     const data = readJson(path.join(resultsDir, name), {});
     for (const fix of data.fixes || []) {
       if (!fix.issue_id) continue;
-      fixes.set(fix.issue_id, fix.fix_snippet || fix.code_snippet || fix.patch || fix.recommendation || fix.suggestion || '');
+      const snippet = fix.fix_snippet || fix.code_snippet || fix.patch || fix.recommendation || fix.suggestion || '';
+      const batchKey = `${batchId}\u0001${fix.issue_id}`;
+      if (fix.source_key) {
+        sourceBackedBatch.add(batchKey);
+        const sourceKey = `${batchId}\u0001${fix.source_key}`;
+        if (perSource.has(sourceKey)) {
+          perSource.delete(sourceKey);
+          conflictedSource.add(sourceKey);
+        } else if (!conflictedSource.has(sourceKey)) {
+          perSource.set(sourceKey, snippet);
+        }
+      }
+      if (perBatch.has(batchKey)) {
+        conflictedPerBatch.add(batchKey);
+        perBatch.delete(batchKey);
+      } else if (!conflictedPerBatch.has(batchKey)) {
+        perBatch.set(batchKey, snippet);
+      }
+      if (global.has(fix.issue_id)) conflicted.add(fix.issue_id);
+      else global.set(fix.issue_id, snippet);
     }
   }
-  return fixes;
+  return { perBatch, perSource, conflictedSource, global, conflicted, conflictedPerBatch, sourceBackedBatch };
+}
+
+function findFixForIssue(fixes, issue) {
+  const ids = issueIdsForLookup(issue);
+  if (issue.batchId && issue.sourceKey) {
+    const sourceKey = `${issue.batchId}\u0001${issue.sourceKey}`;
+    if (fixes.conflictedSource.has(sourceKey)) return '';
+    if (fixes.perSource.has(sourceKey)) return fixes.perSource.get(sourceKey);
+  }
+  // 仅允许同批 ID 回退；禁止全局 issue_id，避免跨批同名 ID 串用修复片段
+  if (issue.batchId) {
+    for (const id of ids) {
+      const key = `${issue.batchId}\u0001${id}`;
+      if (fixes.conflictedPerBatch.has(key)) return '';
+      if (fixes.perBatch.has(key)) return fixes.perBatch.get(key);
+    }
+  }
+  return '';
 }
 
 function buildFileRows(inventory) {
@@ -721,7 +790,7 @@ function buildIssueDetails(issues, fixes, config) {
       const emoji = SEVERITY_EMOJI[issue.severity];
       const must = issue.severity === 'critical' || issue.severity === 'high' ? ' · 必改' : '';
       const merged = issue.mergedFrom.length ? `\n\n（已合并 ${issue.mergedFrom.length} 个其他视角）` : '';
-      const fix = firstMapValue(fixes, issueIdsForLookup(issue)) || issue.recommendation || '请结合上下文修复该问题。';
+      const fix = findFixForIssue(fixes, issue) || issue.recommendation || '请结合上下文修复该问题。';
       return `<a id="issue-${issue.id}"></a>
 
 ##### ${issue.id} · ${emoji} ${sev}${must}
@@ -746,11 +815,22 @@ ${codeFence(fix, config.codeLang)}
   return vars;
 }
 
-function buildIssueTableRows(issues, authors) {
+// 提交人只按「文件:起始行」定位；禁止用可能跨批冲突的全局 issue ID 猜测。
+function authorForIssue(lineAuthors, issue) {
+  const byLine = lineAuthors.line_authors || {};
+  const range = lineRange(issue.line);
+  if (range && issue.file && issue.file !== '-') {
+    const key = `${issue.file}:${range.start}`;
+    if (byLine[key]) return byLine[key];
+  }
+  return '';
+}
+
+function buildIssueTableRows(issues, lineAuthors) {
   if (!issues.length) return '| - | 无 | - | - | - | - | - | 否 | - | 本次未发现问题 | - | - | - |';
   return issues.map((issue, idx) => {
     const must = issue.severity === 'critical' || issue.severity === 'high' ? '是' : '否';
-    const author = firstObjectValue(authors, issueIdsForLookup(issue)) || '-';
+    const author = authorForIssue(lineAuthors, issue) || '-';
     return `| ${idx + 1} | ${tableCell(issue.id)} | \`${tableCell(issue.file)}\` | ${tableCell(issue.line)} | \`${tableCell(issue.symbol)}\` | ${tableCell(author)} | ${SEVERITY_LABEL[issue.severity]} | ${must} | ${tableCell(issue.domain)} | ${tableCell(issue.title)} | 否 | 否 | [查看](#issue-${issue.id}) |`;
   }).join('\n');
 }
@@ -820,10 +900,18 @@ function diffRef(inventory, key, fallback) {
   return fallback || inventory[key] || '';
 }
 
-function buildVars({ state, inventory, tech, lineAuthors, issues, fixes, config, kind }) {
+function resolveRepoName(state, inventory, cwd = process.cwd()) {
+  return (
+    inventory.repository?.name ||
+    detectRepoName(cwd) ||
+    state.repository?.name ||
+    'repo'
+  );
+}
+
+function buildVars({ state, inventory, tech, lineAuthors, issues, fixes, config, kind, discardedIssueCount, workspaceRoot }) {
   const opts = state.review_options || {};
-  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
-  const generatedAt = (state.updated_at || now).replace('T', ' ').slice(0, 19);
+  const generatedAt = formatLocalDateTime(new Date().toISOString());
   const summary = inventory.summary || {};
   const lineTotals = deriveLineTotals(state, inventory);
   const contributors = Array.isArray(lineAuthors.contributors)
@@ -834,13 +922,15 @@ function buildVars({ state, inventory, tech, lineAuthors, issues, fixes, config,
     : '疑问代码下钻：开启，专家可对疑问代码读取所属源文件局部窗口或做必要下钻。';
 
   return {
+    REPO_NAME: resolveRepoName(state, inventory, workspaceRoot),
+    DISCARDED_ISSUE_COUNT: discardedIssueCount || 0,
     BRANCH1: state.branches?.branch1 || '',
     BRANCH2: state.branches?.branch2 || '',
     DIFF_BRANCH1: diffRef(inventory, 'branch1', state.branches?.branch1),
     DIFF_BRANCH2: diffRef(inventory, 'branch2', state.branches?.branch2),
     SEVERITY_MODE_LABEL: opts.severity_mode === 'critical_high_only' ? '仅 Critical + High' : '全部级别',
     LOW_RISK_SCOPE_LABEL: lowRiskLabel(state, inventory),
-    REVIEW_DATE: (state.updated_at || state.created_at || new Date().toISOString()).slice(0, 10),
+    REVIEW_DATE: formatLocalDateTime(state.updated_at || state.created_at).slice(0, 10),
     TECH_STACK_SUMMARY: techSummary(tech, kind),
     TOTAL_FILES: summary.total_files ?? inventory.total_files ?? (inventory.files || []).length,
     TOTAL_ADDITIONS: lineTotals.additions,
@@ -853,7 +943,7 @@ function buildVars({ state, inventory, tech, lineAuthors, issues, fixes, config,
     ORM_FRAMEWORK: tech.orm_framework || tech.ormFramework || tech.orm || 'ORM',
     CONTRIBUTORS: contributors,
     FILE_LIST_ROWS: buildFileRows(inventory),
-    ISSUE_TABLE_ROWS: buildIssueTableRows(issues, lineAuthors.issue_authors || {}),
+    ISSUE_TABLE_ROWS: buildIssueTableRows(issues, lineAuthors),
     ...buildStats(issues, config),
     ...buildIssueDetails(issues, fixes, config),
   };
@@ -865,23 +955,81 @@ function buildReportMarkdown(opts) {
   const inventoryPath = path.resolve(opts.inventory);
   const techPath = path.resolve(opts.techStack);
   const templatePath = path.resolve(opts.template);
-  const outPath = path.resolve(opts.out);
-
   const state = readJson(statePath, {}, { required: true });
   const inventory = readJson(inventoryPath, {}, { required: true });
   const tech = readJson(techPath, {}, { required: true });
   const template = fs.readFileSync(templatePath, 'utf8');
   const kind = detectKind(state, templatePath, template);
   const config = CONFIGS[kind];
+  const workspaceRoot = path.dirname(path.dirname(statePath));
+  const repoName = resolveRepoName(state, inventory, workspaceRoot);
+  const reviewDate = formatLocalDateTime(state.updated_at || state.created_at).slice(0, 10);
+  const generatedDate = formatLocalDateTime(new Date()).slice(0, 10);
+  const branchName = sanitizeForFilename(state.branches?.branch1 || inventory.branch1 || 'branch');
+  const autoName = `report_${sanitizeForFilename(repoName)}_${branchName}_${generatedDate}.md`;
+  const outPath = path.resolve(opts.out || path.join(opts.outDir, autoName));
   const lineAuthors = readJson(path.join(path.dirname(statePath), 'line-authors.json'), {});
-  const collected = collectIssues(resultsDir, inventory, config);
+  let resolvedData;
+  if (opts.issues) {
+    resolvedData = readJson(path.resolve(opts.issues), {}, { required: true });
+  } else {
+    resolvedData = resolveIssues({ state: statePath, inventory: inventoryPath, results: resultsDir, kind });
+    writeResolvedArtifacts(
+      resolvedData,
+      path.join(path.dirname(statePath), 'resolved-issues.json'),
+      path.join(path.dirname(statePath), 'discarded-issues.json')
+    );
+  }
+  const normalizedResolved = (resolvedData.issues || [])
+    .map((issue) => normalizeIssue(issue, issue.sourceExpert || 'resolver', config, issue.batchId))
+    .filter(Boolean)
+    .sort(compareIssues);
+  const incompleteIssues = [];
+  const completeIssues = normalizedResolved.filter((issue) => {
+    const missing = [];
+    if (!issue.file || issue.file === '-') missing.push('file');
+    if (!lineRange(issue.line)) missing.push('line');
+    if (resolverValueMissing(issue.symbol)) missing.push('symbol');
+    if (resolverValueMissing(issue.title, issue.id)) missing.push('title');
+    if (resolverValueMissing(issue.description, issue.id)) missing.push('description');
+    if (!hasRealIssueCode(issue.code)) missing.push('code');
+    if (missing.length) incompleteIssues.push({ batchId: issue.batchId, issueId: issue.id, missingFields: missing });
+    return missing.length === 0;
+  });
   const scopedIssues = state.review_options?.severity_mode === 'critical_high_only'
-    ? collected.issues.filter((issue) => issue.severity === 'critical' || issue.severity === 'high')
-    : collected.issues;
+    ? completeIssues.filter((issue) => issue.severity === 'critical' || issue.severity === 'high')
+    : completeIssues;
   const issues = ensureUniqueIssueIds(dedupeExactIssueContent(scopedIssues));
-  const { missingBatches } = collected;
+  const missingBatches = resolvedData.missing_batches || [];
+  const discardedIssues = [
+    ...(resolvedData.discarded_issues || []),
+    ...incompleteIssues.map((item) => ({ ...item, reason: 'invalid_resolved_issue' })),
+  ];
+  const discardedPath = path.join(path.dirname(statePath), 'discarded-issues.json');
+  fs.mkdirSync(path.dirname(discardedPath), { recursive: true });
+  fs.writeFileSync(discardedPath, `${JSON.stringify({
+    version: resolvedData.version || '1.0',
+    generated_at: new Date().toISOString(),
+    count: discardedIssues.length,
+    discarded_issues: discardedIssues,
+  }, null, 2)}\n`, 'utf8');
   const fixes = collectFixes(resultsDir);
-  const vars = buildVars({ state, inventory, tech, lineAuthors, issues, fixes, config, kind });
+  const issueSourceKeys = new Set(issues.map((issue) => `${issue.batchId}\u0001${issue.sourceKey}`));
+  const fixConflicts = [...fixes.conflictedSource]
+    .filter((key) => issueSourceKeys.has(key))
+    .map((key) => {
+      const [batchId, sourceKey] = key.split('\u0001');
+      return { batchId, sourceKey, reason: 'duplicate_fix_source_key' };
+    });
+  const issueBatchKeys = new Set(issues.flatMap((issue) =>
+    [...issueIdsForLookup(issue)].map((id) => `${issue.batchId}\u0001${id}`)
+  ));
+  for (const key of fixes.conflictedPerBatch) {
+    if (!issueBatchKeys.has(key) || fixes.sourceBackedBatch.has(key)) continue;
+    const [batchId, issueId] = key.split('\u0001');
+    fixConflicts.push({ batchId, issueId, reason: 'duplicate_fix_issue_id_without_source_key' });
+  }
+  const vars = buildVars({ state, inventory, tech, lineAuthors, issues, fixes, config, kind, discardedIssueCount: discardedIssues.length, workspaceRoot });
   const md = applyVars(template, vars);
   const unresolved = findPlaceholders(md);
   const missingCodeIssues = issues
@@ -889,7 +1037,8 @@ function buildReportMarkdown(opts) {
     .map((issue) => issue.id);
   const allIssueCodeMissing = issues.length > 0 && missingCodeIssues.length === issues.length;
 
-  const ok = unresolved.length === 0 && missingBatches.length === 0 && !allIssueCodeMissing;
+  const section6IssueRowsComplete = issues.length === 0 || buildIssueTableRows(issues, lineAuthors).split('\n').length === issues.length;
+  const ok = unresolved.length === 0 && missingBatches.length === 0 && fixConflicts.length === 0 && !allIssueCodeMissing && section6IssueRowsComplete;
   if (ok) {
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
     fs.writeFileSync(outPath, md, 'utf8');
@@ -901,8 +1050,13 @@ function buildReportMarkdown(opts) {
     kind,
     issues: issues.length,
     missingCodeIssues,
+    incompleteIssues,
+    discardedIssueCount: discardedIssues.length,
+    discardedIssues,
     allIssueCodeMissing,
+    section6IssueRowsComplete,
     missingBatches,
+    fixConflicts,
     unresolvedPlaceholders: unresolved,
   };
 }

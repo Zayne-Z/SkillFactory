@@ -1,11 +1,14 @@
 {
   "name": "@pa/codegraph-mcp-wrapper",
-  "version": "0.4.0",
-  "description": "Company wrapper for CodeGraph MCP with policy-aware project initialization.",
+  "version": "1.0.0",
+  "description": "CodeGraph MCP wrapper with explicit working-directory and configured project selection modes.",
   "private": false,
   "type": "commonjs",
   "bin": {
     "pa-codegraph-mcp": "bin/pa-codegraph-mcp.js"
+  },
+  "dependencies": {
+    "@colbymchenry/codegraph": "1.3.0"
   },
   "engines": {
     "node": ">=18"

@@ -136,19 +136,42 @@ const command = args[args.length - 1];
 if (args.includes('serve') && args.includes('--mcp') && process.env.FAKE_NPX_MCP_PROXY === '1') {
   const readline = require('node:readline');
   const rl = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
+  const requestLog = process.env.FAKE_NPX_MCP_REQUEST_LOG;
+  let deferredToolsList = null;
   function respond(id, result) {
     process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id, result }) + '\\n');
+  }
+  function toolsListResult() {
+    return {
+      tools: [{
+        name: 'codegraph_explore',
+        description: 'Explore fake codegraph.',
+        inputSchema: { type: 'object' },
+        outputSchema: { type: 'object', properties: { proxied: { type: 'string' } }, required: ['proxied'], additionalProperties: true },
+      }],
+    };
   }
   rl.on('line', (line) => {
     if (!line.trim()) return;
     const request = JSON.parse(line);
+    if (requestLog) fs.appendFileSync(requestLog, JSON.stringify(request) + '\\n');
+    if (!request.method && deferredToolsList && request.id === deferredToolsList.id) {
+      respond(deferredToolsList.id, toolsListResult());
+      deferredToolsList = null;
+      return;
+    }
     if (!Object.prototype.hasOwnProperty.call(request, 'id')) return;
     if (request.method === 'initialize') {
       respond(request.id, { protocolVersion: '2024-11-05', capabilities: { tools: {} }, serverInfo: { name: 'fake-codegraph' } });
     } else if (request.method === 'tools/list') {
-      respond(request.id, { tools: [{ name: 'codegraph_explore', description: 'Explore fake codegraph.', inputSchema: { type: 'object' } }] });
+      if (process.env.FAKE_NPX_SERVER_REQUEST_ON_TOOLS_LIST === '1') {
+        deferredToolsList = { id: request.id };
+        process.stdout.write(JSON.stringify({ jsonrpc: '2.0', id: request.id, method: 'sampling/createMessage', params: { messages: [] } }) + '\\n');
+      } else {
+        respond(request.id, toolsListResult());
+      }
     } else if (request.method === 'tools/call') {
-      respond(request.id, { content: [{ type: 'text', text: 'fake codegraph call' }], structuredContent: { proxied: request.params?.name } });
+      respond(request.id, { content: [{ type: 'text', text: 'fake codegraph call' }], structuredContent: { proxied: request.params?.name, arguments: request.params?.arguments } });
     }
   });
   return;
@@ -212,7 +235,7 @@ async function withWrapperMcp(args, cwd, extraEnv, fn) {
     lines.push(...String(chunk).trim().split(/\r?\n/).filter(Boolean));
   });
   const send = (message) => server.stdin.write(JSON.stringify(message) + '\n');
-  const waitFor = async (id, timeoutMs = 3000) => {
+  const waitFor = async (id, timeoutMs = 5000) => {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
       const responses = lines.map(JSON.parse);
@@ -683,15 +706,89 @@ test('CodeGraph wrapper lists CodeGraph and pa management tools without startup 
     const names = response.result.tools.map((tool) => tool.name);
     assert.ok(names.includes('codegraph_explore'));
     assert.ok(names.includes('pa_codegraph_check'));
+    assert.ok(names.includes('pa_codegraph_ensure'));
     assert.ok(names.includes('pa_codegraph_init_start'));
     assert.ok(names.includes('pa_codegraph_init_wait'));
     assert.ok(names.includes('pa_codegraph_init_status'));
     assert.ok(names.includes('pa_codegraph_init_skip'));
+    for (const tool of response.result.tools.filter((item) => item.name.startsWith('pa_codegraph_'))) {
+      assert.equal(tool.inputSchema.properties.working_directory.type, 'string');
+      assert.ok(tool.inputSchema.required.includes('working_directory'));
+      assert.equal(Object.hasOwn(tool.inputSchema.properties, 'project_root'), false);
+      assert.ok(tool.outputSchema.required.includes('project_root'));
+      assert.equal(tool.annotations.destructiveHint, false);
+      assert.equal(tool.annotations.idempotentHint, true);
+    }
+    const nativeTool = response.result.tools.find((tool) => tool.name === 'codegraph_explore');
+    assert.equal(nativeTool.inputSchema.properties.working_directory.type, 'string');
+    assert.ok(nativeTool.inputSchema.required.includes('working_directory'));
+    assert.equal(Object.hasOwn(nativeTool.inputSchema.properties, 'projectPath'), false);
+    assert.ok(nativeTool.outputSchema.required.includes('proxied'));
+    assert.ok(nativeTool.outputSchema.required.includes('project_root'));
+    const startTool = response.result.tools.find((tool) => tool.name === 'pa_codegraph_init_start');
+    assert.match(startTool.description, /running result is not completion/i);
+    assert.match(startTool.description, /node_modules/i);
   });
 
   const calls = fs.readFileSync(callLog, 'utf8').trim().split(/\r?\n/).map(JSON.parse);
   assert.equal(calls.length, 1);
   assert.deepEqual(calls[0].argv, ['-y', '@colbymchenry/codegraph@1.3.0', 'serve', '--mcp']);
+});
+
+test('CodeGraph wrapper keeps bidirectional JSON-RPC IDs isolated and forwards notifications', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-jsonrpc-'));
+  write(path.join(workspace, 'package.json'), '{}\n');
+  const fakeBin = makeFakeNpxBin();
+  const requestLog = path.join(workspace, 'mcp-requests.jsonl');
+
+  await withWrapperMcp(['serve', '--mcp'], workspace, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    FAKE_NPX_MCP_PROXY: '1',
+    FAKE_NPX_MCP_REQUEST_LOG: requestLog,
+    FAKE_NPX_SERVER_REQUEST_ON_TOOLS_LIST: '1',
+  }, async ({ send, lines }) => {
+    send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    send({ jsonrpc: '2.0', id: 57, method: 'tools/list' });
+
+    let serverRequest;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      serverRequest = lines.map(JSON.parse).find((message) => message.id === 57 && message.method === 'sampling/createMessage');
+      if (serverRequest) break;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert.ok(serverRequest);
+
+    send({ jsonrpc: '2.0', id: 57, result: { model: 'test-response' } });
+    let toolsResponse;
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      toolsResponse = lines.map(JSON.parse).find((message) => message.id === 57 && Array.isArray(message.result?.tools));
+      if (toolsResponse) break;
+      await new Promise((resolve) => setTimeout(resolve, 25));
+    }
+    assert.ok(toolsResponse.result.tools.some((tool) => tool.name === 'pa_codegraph_ensure'));
+  });
+
+  const forwarded = fs.readFileSync(requestLog, 'utf8').trim().split(/\r?\n/).map(JSON.parse);
+  assert.ok(forwarded.some((message) => message.method === 'notifications/initialized'));
+  assert.ok(forwarded.some((message) => message.id === 57 && !message.method && message.result?.model === 'test-response'));
+});
+
+test('CodeGraph wrapper adds management tools only to the first tools page', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-tools-page-'));
+  write(path.join(workspace, 'package.json'), '{}\n');
+  const fakeBin = makeFakeNpxBin();
+
+  await withWrapperMcp(['serve', '--mcp'], workspace, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    FAKE_NPX_MCP_PROXY: '1',
+  }, async ({ send, waitFor }) => {
+    send({ jsonrpc: '2.0', id: 58, method: 'tools/list', params: { cursor: 'next-page' } });
+    const response = await waitFor(58);
+    assert.equal(response.result.tools.some((tool) => tool.name.startsWith('pa_codegraph_')), false);
+    const nativeTool = response.result.tools.find((tool) => tool.name === 'codegraph_explore');
+    assert.ok(nativeTool.inputSchema.required.includes('working_directory'));
+    assert.ok(nativeTool.outputSchema.required.includes('project_root'));
+  });
 });
 
 test('CodeGraph wrapper can spawn npx through the Windows shell path', async () => {
@@ -717,7 +814,7 @@ test('CodeGraph wrapper can spawn npx through the Windows shell path', async () 
   assert.ok(calls.some((call) => call.argv.join(' ') === '-y @colbymchenry/codegraph@1.3.0 serve --mcp'));
 });
 
-test('CodeGraph wrapper keeps the implicit project root at the exact cwd', async () => {
+test('CodeGraph wrapper never treats cwd, parent index, or configured roots as the project in default mode', async () => {
   const outer = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-root-'));
   write(path.join(outer, 'package.json'), '{}\n');
   fs.mkdirSync(path.join(outer, '.codegraph'), { recursive: true });
@@ -729,11 +826,45 @@ test('CodeGraph wrapper keeps the implicit project root at the exact cwd', async
   await withWrapperMcp(['serve', '--mcp'], workspace, {
     PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
     FAKE_NPX_MCP_PROXY: '1',
+    CODEGRAPH_PROJECT_ROOT: outer,
   }, async ({ send, waitFor }) => {
     send({ jsonrpc: '2.0', id: 31, method: 'tools/call', params: { name: 'pa_codegraph_check', arguments: {} } });
     const response = await waitFor(31);
-    assert.equal(response.result.structuredContent.project_root, fs.realpathSync(workspace));
-    assert.equal(response.result.structuredContent.has_codegraph_index, false);
+    assert.equal(response.result.isError, true);
+    assert.equal(response.result.structuredContent.status, 'needs_working_directory');
+    assert.equal(response.result.structuredContent.project_selection_mode, 'working-directory');
+    assert.equal(response.result.structuredContent.working_directory, null);
+    assert.equal(response.result.structuredContent.project_root, null);
+    assert.equal(response.result.structuredContent.confirmation_required, true);
+  });
+});
+
+test('CodeGraph wrapper ignores MCP roots and still requires working_directory', async () => {
+  const serverCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-server-cwd-'));
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-mcp-root-'));
+  write(path.join(workspace, 'package.json'), '{}\n');
+  const fakeBin = makeFakeNpxBin();
+
+  await withWrapperMcp(['serve', '--mcp'], serverCwd, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    FAKE_NPX_MCP_PROXY: '1',
+  }, async ({ send, waitFor, lines }) => {
+    send({
+      jsonrpc: '2.0',
+      id: 40,
+      method: 'initialize',
+      params: { protocolVersion: '2024-11-05', capabilities: { roots: { listChanged: true } }, clientInfo: { name: 'test', version: '1' } },
+    });
+    await waitFor(40);
+    send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    assert.equal(lines.map(JSON.parse).some((message) => message.method === 'roots/list'), false);
+
+    send({ jsonrpc: '2.0', id: 41, method: 'tools/call', params: { name: 'pa_codegraph_check', arguments: {} } });
+    const response = await waitFor(41);
+    assert.equal(response.result.isError, true);
+    assert.equal(response.result.structuredContent.status, 'needs_working_directory');
+    assert.equal(response.result.structuredContent.project_root, null);
   });
 });
 
@@ -749,7 +880,7 @@ test('CodeGraph wrapper requires a healthy local index before reporting initiali
     FAKE_NPX_MCP_PROXY: '1',
     FAKE_NPX_STATUS_FAIL: '1',
   }, async ({ send, waitFor }) => {
-    send({ jsonrpc: '2.0', id: 32, method: 'tools/call', params: { name: 'pa_codegraph_check', arguments: {} } });
+    send({ jsonrpc: '2.0', id: 32, method: 'tools/call', params: { name: 'pa_codegraph_check', arguments: { working_directory: workspace } } });
     const response = await waitFor(32);
     assert.equal(response.result.structuredContent.has_codegraph_directory, true);
     assert.equal(response.result.structuredContent.has_codegraph_index, false);
@@ -758,10 +889,14 @@ test('CodeGraph wrapper requires a healthy local index before reporting initiali
   });
 });
 
-test('CodeGraph wrapper check reports code repo and missing index for user confirmation', async () => {
+test('CodeGraph wrapper resolves a Git repository root from a child working directory', async () => {
   const envRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-env-'));
   const cliRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-cli-'));
-  write(path.join(cliRoot, 'package.json'), '{}\n');
+  const callRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-call-'));
+  const childDirectory = path.join(callRoot, 'src', 'feature');
+  fs.mkdirSync(childDirectory, { recursive: true });
+  execFileSync('git', ['init', '--quiet'], { cwd: callRoot });
+  write(path.join(callRoot, 'package.json'), '{}\n');
   const fakeBin = makeFakeNpxBin();
   const callLog = path.join(cliRoot, 'calls.jsonl');
 
@@ -771,9 +906,13 @@ test('CodeGraph wrapper check reports code repo and missing index for user confi
     CODEGRAPH_PROJECT_ROOT: envRoot,
     FAKE_NPX_MCP_PROXY: '1',
   }, async ({ send, waitFor }) => {
-    send({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'pa_codegraph_check', arguments: {} } });
+    send({ jsonrpc: '2.0', id: 2, method: 'tools/call', params: { name: 'pa_codegraph_check', arguments: { working_directory: childDirectory } } });
     const response = await waitFor(2);
-    assert.equal(response.result.structuredContent.project_root, fs.realpathSync(cliRoot));
+    assert.equal(response.result.structuredContent.project_root, fs.realpathSync(callRoot));
+    assert.equal(response.result.structuredContent.project_root_source, 'tool_argument');
+    assert.equal(response.result.structuredContent.working_directory, fs.realpathSync(childDirectory));
+    assert.equal(response.result.structuredContent.project_selection_mode, 'working-directory');
+    assert.equal(response.result.structuredContent.resolution_method, 'git');
     assert.equal(response.result.structuredContent.is_code_repo, true);
     assert.equal(response.result.structuredContent.has_codegraph_index, false);
     assert.equal(response.result.structuredContent.recommend_init_prompt, true);
@@ -783,11 +922,174 @@ test('CodeGraph wrapper check reports code repo and missing index for user confi
     const calls = fs.readFileSync(callLog, 'utf8').trim().split(/\r?\n/).filter(Boolean).map(JSON.parse);
     assert.ok(calls.length <= 1);
     if (calls[0]) {
-      assert.equal(calls[0].cwd, fs.realpathSync(cliRoot));
+      assert.equal(calls[0].cwd, fs.realpathSync(envRoot));
       assert.deepEqual(calls[0].argv, ['-y', '@colbymchenry/codegraph@1.3.0', 'serve', '--mcp']);
     }
   }
   assert.equal(fs.existsSync(path.join(envRoot, '.codegraph')), false);
+});
+
+test('CodeGraph wrapper resolves the nearest project marker for a non-Git project', async () => {
+  const serverCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-marker-server-'));
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-marker-'));
+  const childDirectory = path.join(workspace, 'src', 'nested');
+  fs.mkdirSync(childDirectory, { recursive: true });
+  write(path.join(workspace, 'pyproject.toml'), '[project]\nname = "marker-test"\n');
+  const fakeBin = makeFakeNpxBin();
+
+  await withWrapperMcp(['serve', '--mcp'], serverCwd, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    FAKE_NPX_MCP_PROXY: '1',
+  }, async ({ send, waitFor }) => {
+    send({ jsonrpc: '2.0', id: 46, method: 'tools/call', params: { name: 'pa_codegraph_check', arguments: { working_directory: childDirectory } } });
+    const response = await waitFor(46);
+    assert.equal(response.result.structuredContent.project_root, fs.realpathSync(workspace));
+    assert.equal(response.result.structuredContent.working_directory, fs.realpathSync(childDirectory));
+    assert.equal(response.result.structuredContent.resolution_method, 'project-marker');
+    assert.equal(response.result.structuredContent.project_marker, 'pyproject.toml');
+  });
+});
+
+test('CodeGraph wrapper configured mode uses CLI project root over the environment', async () => {
+  const envRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-config-env-'));
+  const cliRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-config-cli-'));
+  write(path.join(envRoot, 'package.json'), '{}\n');
+  write(path.join(cliRoot, 'package.json'), '{}\n');
+  const fakeBin = makeFakeNpxBin();
+
+  await withWrapperMcp(['serve', '--mcp', '--project-selection', 'configured', '--project-root', cliRoot], envRoot, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    CODEGRAPH_PROJECT_ROOT: envRoot,
+    FAKE_NPX_MCP_PROXY: '1',
+  }, async ({ send, waitFor }) => {
+    send({ jsonrpc: '2.0', id: 47, method: 'tools/list' });
+    const listed = await waitFor(47);
+    for (const tool of listed.result.tools) {
+      assert.equal(Object.hasOwn(tool.inputSchema.properties || {}, 'working_directory'), false);
+      assert.equal(Object.hasOwn(tool.inputSchema.properties || {}, 'projectPath'), false);
+    }
+
+    send({ jsonrpc: '2.0', id: 48, method: 'tools/call', params: { name: 'pa_codegraph_check', arguments: {} } });
+    const response = await waitFor(48);
+    assert.equal(response.result.structuredContent.project_selection_mode, 'configured');
+    assert.equal(response.result.structuredContent.working_directory, null);
+    assert.equal(response.result.structuredContent.project_root, fs.realpathSync(cliRoot));
+    assert.equal(response.result.structuredContent.project_root_source, 'cli_argument');
+    assert.equal(response.result.structuredContent.resolution_method, 'configured');
+  });
+});
+
+test('CodeGraph wrapper configured mode fails without a fixed root', async () => {
+  const serverCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-config-missing-'));
+  write(path.join(serverCwd, 'package.json'), '{}\n');
+  const fakeBin = makeFakeNpxBin();
+
+  await withWrapperMcp(['serve', '--mcp', '--project-selection', 'configured'], serverCwd, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    CODEGRAPH_PROJECT_ROOT: '',
+    FAKE_NPX_MCP_PROXY: '1',
+  }, async ({ send, waitFor }) => {
+    send({ jsonrpc: '2.0', id: 49, method: 'tools/call', params: { name: 'pa_codegraph_check', arguments: { working_directory: serverCwd } } });
+    const response = await waitFor(49);
+    assert.equal(response.result.isError, true);
+    assert.equal(response.result.structuredContent.status, 'configured_project_root_missing');
+    assert.equal(response.result.structuredContent.project_root, null);
+  });
+});
+
+test('CodeGraph wrapper rejects invalid selection modes and working directories before status or init', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-invalid-'));
+  write(path.join(workspace, 'package.json'), '{}\n');
+  const fakeBin = makeFakeNpxBin();
+  const callLog = path.join(workspace, 'calls.jsonl');
+
+  assert.throws(() => runWrapper(['serve', '--mcp', '--project-selection', 'automatic'], workspace, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    FAKE_NPX_CALL_LOG: callLog,
+  }), /Invalid project selection mode/);
+
+  await withWrapperMcp(['serve', '--mcp'], workspace, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    FAKE_NPX_CALL_LOG: callLog,
+    FAKE_NPX_MCP_PROXY: '1',
+  }, async ({ send, waitFor }) => {
+    send({ jsonrpc: '2.0', id: 50, method: 'tools/call', params: { name: 'pa_codegraph_check', arguments: { working_directory: 'relative/path' } } });
+    const response = await waitFor(50);
+    assert.equal(response.result.isError, true);
+    assert.equal(response.result.structuredContent.status, 'invalid_working_directory');
+  });
+
+  const calls = fs.existsSync(callLog)
+    ? fs.readFileSync(callLog, 'utf8').trim().split(/\r?\n/).filter(Boolean).map(JSON.parse)
+    : [];
+  assert.equal(calls.some((call) => call.argv.includes('status') || call.argv.includes('init')), false);
+});
+
+test('CodeGraph wrapper rejects unsafe or unpinned CodeGraph package specs before spawning a shell', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-package-spec-'));
+  write(path.join(workspace, 'package.json'), '{}\n');
+  const fakeBin = makeFakeNpxBin();
+  const callLog = path.join(workspace, 'calls.jsonl');
+
+  assert.throws(() => runWrapper(['serve', '--mcp'], workspace, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    FAKE_NPX_CALL_LOG: callLog,
+    CODEGRAPH_PACKAGE: '@colbymchenry/codegraph@1.3.0&echo-bad',
+    PA_CODEGRAPH_FORCE_WIN32: '1',
+  }), (error) => {
+    assert.match(error.stderr, /exact npm version/);
+    return true;
+  });
+  assert.throws(() => runWrapper(['serve', '--mcp'], workspace, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    FAKE_NPX_CALL_LOG: callLog,
+    CODEGRAPH_PACKAGE: '@colbymchenry/codegraph@latest',
+  }), (error) => {
+    assert.match(error.stderr, /exact npm version/);
+    return true;
+  });
+  assert.equal(fs.existsSync(callLog), false);
+});
+
+test('CodeGraph wrapper rejects missing CLI option values', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-option-value-'));
+  assert.throws(() => runWrapper(['serve', '--mcp', '--project-selection'], workspace), (error) => {
+    assert.match(error.stderr, /--project-selection requires a value/);
+    return true;
+  });
+});
+
+test('CodeGraph wrapper only runs before-serve initialization in configured mode', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-before-serve-'));
+  write(path.join(workspace, 'package.json'), '{}\n');
+  const fakeBin = makeFakeNpxBin();
+  const defaultLog = path.join(workspace, 'default-calls.jsonl');
+
+  await withWrapperMcp(['serve', '--mcp'], workspace, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    CODEGRAPH_PROJECT_ROOT: workspace,
+    CODEGRAPH_AUTO_INIT_MODE: 'before-serve',
+    FAKE_NPX_CALL_LOG: defaultLog,
+    FAKE_NPX_MCP_PROXY: '1',
+  }, async ({ send, waitFor }) => {
+    send({ jsonrpc: '2.0', id: 51, method: 'tools/list' });
+    await waitFor(51);
+  });
+  const defaultCalls = fs.readFileSync(defaultLog, 'utf8').trim().split(/\r?\n/).map(JSON.parse);
+  assert.equal(defaultCalls.some((call) => call.argv.includes('init')), false);
+
+  const configuredLog = path.join(workspace, 'configured-calls.jsonl');
+  await withWrapperMcp(['serve', '--mcp', '--project-selection', 'configured', '--project-root', workspace], workspace, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    CODEGRAPH_AUTO_INIT_MODE: 'before-serve',
+    FAKE_NPX_CALL_LOG: configuredLog,
+    FAKE_NPX_MCP_PROXY: '1',
+  }, async ({ send, waitFor }) => {
+    send({ jsonrpc: '2.0', id: 52, method: 'tools/list' });
+    await waitFor(52);
+  });
+  const configuredCalls = fs.readFileSync(configuredLog, 'utf8').trim().split(/\r?\n/).map(JSON.parse);
+  assert.ok(configuredCalls.some((call) => call.argv.includes('init')));
 });
 
 test('CodeGraph wrapper starts background init only after tool call', async () => {
@@ -800,15 +1102,20 @@ test('CodeGraph wrapper starts background init only after tool call', async () =
     PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
     FAKE_NPX_CALL_LOG: callLog,
     FAKE_NPX_MCP_PROXY: '1',
+    FAKE_NPX_INIT_DELAY_MS: '300',
   }, async ({ send, waitFor }) => {
-    send({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'pa_codegraph_init_start', arguments: {} } });
+    send({ jsonrpc: '2.0', id: 3, method: 'tools/call', params: { name: 'pa_codegraph_init_start', arguments: { working_directory: workspace } } });
     const started = await waitFor(3);
     assert.equal(started.result.structuredContent.status, 'running');
+    assert.equal(started.result.structuredContent.initialization_complete, false);
+    assert.equal(started.result.structuredContent.next_tool, 'pa_codegraph_init_wait');
+    assert.match(started.result.structuredContent.instruction, /node_modules/);
 
     let status;
-    for (let id = 4; id < 12; id += 1) {
+    const statusDeadline = Date.now() + 5000;
+    for (let id = 4; Date.now() < statusDeadline; id += 1) {
       await new Promise((resolve) => setTimeout(resolve, 150));
-      send({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'pa_codegraph_init_status', arguments: {} } });
+      send({ jsonrpc: '2.0', id, method: 'tools/call', params: { name: 'pa_codegraph_init_status', arguments: { working_directory: workspace } } });
       status = await waitFor(id);
       if (status.result.structuredContent.status === 'completed') break;
     }
@@ -818,6 +1125,38 @@ test('CodeGraph wrapper starts background init only after tool call', async () =
   const calls = fs.readFileSync(callLog, 'utf8').trim().split(/\r?\n/).map(JSON.parse);
   assert.ok(calls.some((call) => call.argv.join(' ') === '-y @colbymchenry/codegraph@1.3.0 serve --mcp'));
   assert.ok(calls.some((call) => call.argv.join(' ') === '-y @colbymchenry/codegraph@1.3.0 init'));
+});
+
+test('CodeGraph wrapper reports init failure through wrapper wait instead of requiring a manual CLI', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-start-fail-'));
+  write(path.join(workspace, 'package.json'), '{}\n');
+  const fakeBin = makeFakeNpxBin();
+
+  await withWrapperMcp(['serve', '--mcp'], workspace, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    FAKE_NPX_MCP_PROXY: '1',
+    FAKE_NPX_INIT_FAIL: '1',
+    CODEGRAPH_INIT_START_SETTLE_MS: '300',
+  }, async ({ send, waitFor }) => {
+    send({ jsonrpc: '2.0', id: 53, method: 'tools/call', params: { name: 'pa_codegraph_init_start', arguments: { working_directory: workspace } } });
+    let response = await waitFor(53);
+    if (response.result.structuredContent.status === 'running') {
+      send({
+        jsonrpc: '2.0',
+        id: 55,
+        method: 'tools/call',
+        params: { name: 'pa_codegraph_init_wait', arguments: { working_directory: workspace, timeout_ms: 3000 } },
+      });
+      response = await waitFor(55);
+    }
+    assert.equal(response.result.isError, true);
+    assert.equal(response.result.structuredContent.status, 'failed');
+    assert.equal(response.result.structuredContent.initialization_complete, false);
+    assert.equal(response.result.structuredContent.exit_code, 42);
+    assert.equal(response.result.structuredContent.codegraph_launcher_source, 'npx_fallback');
+    assert.match(response.result.structuredContent.instruction, /do not bypass the wrapper/i);
+    assert.match(response.result.structuredContent.instruction, /node_modules/i);
+  });
 });
 
 test('CodeGraph wrapper can block until initialization completes', async () => {
@@ -837,7 +1176,7 @@ test('CodeGraph wrapper can block until initialization completes', async () => {
       jsonrpc: '2.0',
       id: 33,
       method: 'tools/call',
-      params: { name: 'pa_codegraph_init_wait', arguments: { timeout_ms: 3000 } },
+      params: { name: 'pa_codegraph_init_wait', arguments: { working_directory: workspace, timeout_ms: 3000 } },
     });
     const response = await waitFor(33, 5000);
     assert.ok(Date.now() - startedAt >= 250);
@@ -849,6 +1188,64 @@ test('CodeGraph wrapper can block until initialization completes', async () => {
   const calls = fs.readFileSync(callLog, 'utf8').trim().split(/\r?\n/).map(JSON.parse);
   assert.ok(calls.some((call) => call.argv.join(' ') === '-y @colbymchenry/codegraph@1.3.0 init'));
   assert.ok(calls.some((call) => call.argv.join(' ') === '-y @colbymchenry/codegraph@1.3.0 status'));
+});
+
+test('CodeGraph wrapper ensure performs check and blocking initialization in one call', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-ensure-'));
+  write(path.join(workspace, 'package.json'), '{}\n');
+  const fakeBin = makeFakeNpxBin();
+
+  await withWrapperMcp(['serve', '--mcp'], workspace, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    FAKE_NPX_MCP_PROXY: '1',
+  }, async ({ send, waitFor }) => {
+    send({
+      jsonrpc: '2.0',
+      id: 36,
+      method: 'tools/call',
+      params: { name: 'pa_codegraph_ensure', arguments: { working_directory: workspace, timeout_ms: 3000 } },
+    });
+    const response = await waitFor(36, 5000);
+    assert.equal(response.result.structuredContent.status, 'completed');
+    assert.equal(response.result.structuredContent.auto_initialized, true);
+    assert.equal(response.result.structuredContent.has_codegraph_index, true);
+    assert.equal(response.result.structuredContent.project_root_source, 'tool_argument');
+    assert.equal(response.result.structuredContent.resolution_method, 'project-marker');
+  });
+});
+
+test('CodeGraph wrapper hides projectPath and injects it for native tools', async () => {
+  const serverCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-native-server-'));
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-native-target-'));
+  write(path.join(workspace, 'package.json'), '{}\n');
+  const fakeBin = makeFakeNpxBin();
+  const callLog = path.join(serverCwd, 'calls.jsonl');
+
+  await withWrapperMcp(['serve', '--mcp'], serverCwd, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    FAKE_NPX_CALL_LOG: callLog,
+    FAKE_NPX_MCP_PROXY: '1',
+  }, async ({ send, waitFor }) => {
+    send({
+      jsonrpc: '2.0',
+      id: 37,
+      method: 'tools/call',
+      params: { name: 'codegraph_explore', arguments: { query: 'main', working_directory: workspace, projectPath: serverCwd } },
+    });
+    const response = await waitFor(37, 5000);
+    assert.equal(response.result.structuredContent.proxied, 'codegraph_explore');
+    assert.equal(response.result.structuredContent.arguments.projectPath, fs.realpathSync(workspace));
+    assert.equal(Object.hasOwn(response.result.structuredContent.arguments, 'working_directory'), false);
+    assert.equal(response.result.structuredContent.project_selection_mode, 'working-directory');
+    assert.equal(response.result.structuredContent.working_directory, fs.realpathSync(workspace));
+    assert.equal(response.result.structuredContent.project_root, fs.realpathSync(workspace));
+    assert.equal(response.result.structuredContent.resolution_method, 'project-marker');
+  });
+
+  assert.equal(fs.existsSync(path.join(workspace, '.codegraph')), true);
+  assert.equal(fs.existsSync(path.join(serverCwd, '.codegraph')), false);
+  const calls = fs.readFileSync(callLog, 'utf8').trim().split(/\r?\n/).map(JSON.parse);
+  assert.ok(calls.some((call) => call.cwd === fs.realpathSync(workspace) && call.argv.includes('init')));
 });
 
 test('CodeGraph wrapper reports a blocking wait timeout without marking init complete', async () => {
@@ -866,7 +1263,7 @@ test('CodeGraph wrapper reports a blocking wait timeout without marking init com
       jsonrpc: '2.0',
       id: 35,
       method: 'tools/call',
-      params: { name: 'pa_codegraph_init_wait', arguments: { timeout_ms: 100 } },
+      params: { name: 'pa_codegraph_init_wait', arguments: { working_directory: workspace, timeout_ms: 100 } },
     });
     const response = await waitFor(35, 3000);
     assert.equal(response.result.structuredContent.status, 'running');
@@ -899,7 +1296,7 @@ test('CodeGraph wrapper blocking init converges after an external init lock is r
         jsonrpc: '2.0',
         id: 34,
         method: 'tools/call',
-        params: { name: 'pa_codegraph_init_wait', arguments: { timeout_ms: 3000 } },
+        params: { name: 'pa_codegraph_init_wait', arguments: { working_directory: workspace, timeout_ms: 3000 } },
       });
       const response = await waitFor(34, 5000);
       assert.equal(response.result.structuredContent.status, 'completed');
@@ -911,9 +1308,139 @@ test('CodeGraph wrapper blocking init converges after an external init lock is r
     fs.rmSync(lockDir, { recursive: true, force: true });
   }
 
-  const calls = fs.readFileSync(callLog, 'utf8').trim().split(/\r?\n/).map(JSON.parse);
+  const calls = fs.existsSync(callLog)
+    ? fs.readFileSync(callLog, 'utf8').trim().split(/\r?\n/).filter(Boolean).map(JSON.parse)
+    : [];
   assert.equal(calls.some((call) => call.argv.includes('init')), false);
   assert.ok(calls.some((call) => call.argv.join(' ') === '-y @colbymchenry/codegraph@1.3.0 status'));
+});
+
+test('CodeGraph wrapper removes a stale background init lock before starting', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-stale-lock-'));
+  write(path.join(workspace, 'package.json'), '{}\n');
+  const fakeBin = makeFakeNpxBin();
+  const callLog = path.join(workspace, 'calls.jsonl');
+  const lockDir = wrapperInitLock(workspace);
+  fs.mkdirSync(lockDir);
+  write(path.join(lockDir, 'owner'), 'stale\n');
+  const old = new Date(Date.now() - 60_000);
+  fs.utimesSync(lockDir, old, old);
+
+  try {
+    await withWrapperMcp(['serve', '--mcp'], workspace, {
+      PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+      FAKE_NPX_CALL_LOG: callLog,
+      FAKE_NPX_MCP_PROXY: '1',
+      CODEGRAPH_INIT_LOCK_STALE_MS: '10',
+    }, async ({ send, waitFor }) => {
+      send({
+        jsonrpc: '2.0',
+        id: 54,
+        method: 'tools/call',
+        params: { name: 'pa_codegraph_init_wait', arguments: { working_directory: workspace, timeout_ms: 3000 } },
+      });
+      const response = await waitFor(54, 5000);
+      assert.equal(response.result.structuredContent.status, 'completed');
+      assert.equal(response.result.structuredContent.external_lock, false);
+    });
+  } finally {
+    fs.rmSync(lockDir, { recursive: true, force: true });
+  }
+
+  const calls = fs.readFileSync(callLog, 'utf8').trim().split(/\r?\n/).map(JSON.parse);
+  assert.ok(calls.some((call) => call.argv.includes('init')));
+});
+
+test('CodeGraph wrapper does not steal an old lock owned by a live process', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-live-lock-'));
+  write(path.join(workspace, 'package.json'), '{}\n');
+  const fakeBin = makeFakeNpxBin();
+  const callLog = path.join(workspace, 'calls.jsonl');
+  const lockDir = wrapperInitLock(workspace);
+  fs.mkdirSync(lockDir);
+  write(path.join(lockDir, 'owner'), `${process.pid}\nlive\n`);
+  const old = new Date(Date.now() - 60_000);
+  fs.utimesSync(lockDir, old, old);
+
+  try {
+    await withWrapperMcp(['serve', '--mcp'], workspace, {
+      PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+      FAKE_NPX_CALL_LOG: callLog,
+      FAKE_NPX_MCP_PROXY: '1',
+      CODEGRAPH_INIT_LOCK_STALE_MS: '10',
+    }, async ({ send, waitFor }) => {
+      send({
+        jsonrpc: '2.0',
+        id: 59,
+        method: 'tools/call',
+        params: { name: 'pa_codegraph_init_wait', arguments: { working_directory: workspace, timeout_ms: 100 } },
+      });
+      const response = await waitFor(59);
+      assert.equal(response.result.isError, true);
+      assert.equal(response.result.structuredContent.status, 'running');
+      assert.equal(response.result.structuredContent.external_lock, true);
+      assert.equal(response.result.structuredContent.wait_timed_out, true);
+    });
+  } finally {
+    fs.rmSync(lockDir, { recursive: true, force: true });
+  }
+
+  const calls = fs.existsSync(callLog)
+    ? fs.readFileSync(callLog, 'utf8').trim().split(/\r?\n/).filter(Boolean).map(JSON.parse)
+    : [];
+  assert.equal(calls.some((call) => call.argv.includes('init')), false);
+});
+
+test('CodeGraph wrapper status detects when a completed index is removed', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-index-removed-'));
+  write(path.join(workspace, 'package.json'), '{}\n');
+  const fakeBin = makeFakeNpxBin();
+
+  await withWrapperMcp(['serve', '--mcp'], workspace, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    FAKE_NPX_MCP_PROXY: '1',
+  }, async ({ send, waitFor }) => {
+    send({
+      jsonrpc: '2.0',
+      id: 60,
+      method: 'tools/call',
+      params: { name: 'pa_codegraph_init_wait', arguments: { working_directory: workspace, timeout_ms: 3000 } },
+    });
+    const initialized = await waitFor(60);
+    assert.equal(initialized.result.structuredContent.status, 'completed');
+    fs.rmSync(path.join(workspace, '.codegraph'), { recursive: true, force: true });
+
+    send({ jsonrpc: '2.0', id: 61, method: 'tools/call', params: { name: 'pa_codegraph_init_status', arguments: { working_directory: workspace } } });
+    const status = await waitFor(61);
+    assert.equal(status.result.isError, true);
+    assert.equal(status.result.structuredContent.status, 'failed');
+    assert.match(status.result.structuredContent.error, /was removed/);
+    assert.equal(status.result.structuredContent.has_codegraph_index, false);
+  });
+});
+
+test('CodeGraph wrapper refuses initialization for a configured non-code directory', async () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-not-code-'));
+  const fakeBin = makeFakeNpxBin();
+  const callLog = path.join(workspace, 'calls.jsonl');
+
+  await withWrapperMcp(['serve', '--mcp', '--project-selection', 'configured', '--project-root', workspace], workspace, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    FAKE_NPX_CALL_LOG: callLog,
+    FAKE_NPX_MCP_PROXY: '1',
+    CODEGRAPH_AUTO_INIT_MODE: 'before-serve',
+  }, async ({ send, waitFor }) => {
+    send({ jsonrpc: '2.0', id: 62, method: 'tools/call', params: { name: 'pa_codegraph_init_start', arguments: {} } });
+    const response = await waitFor(62);
+    assert.equal(response.result.isError, true);
+    assert.equal(response.result.structuredContent.status, 'not_code_repo');
+    assert.equal(response.result.structuredContent.codegraph_status, 'not_checked');
+  });
+
+  const calls = fs.existsSync(callLog)
+    ? fs.readFileSync(callLog, 'utf8').trim().split(/\r?\n/).filter(Boolean).map(JSON.parse)
+    : [];
+  assert.equal(calls.some((call) => call.argv.includes('init') || call.argv.includes('status')), false);
 });
 
 test('CodeGraph wrapper records explicit skip without starting init', async () => {
@@ -930,11 +1457,11 @@ test('CodeGraph wrapper records explicit skip without starting init', async () =
     send({ jsonrpc: '2.0', id: 19, method: 'tools/list' });
     await waitFor(19);
 
-    send({ jsonrpc: '2.0', id: 20, method: 'tools/call', params: { name: 'pa_codegraph_init_skip', arguments: {} } });
+    send({ jsonrpc: '2.0', id: 20, method: 'tools/call', params: { name: 'pa_codegraph_init_skip', arguments: { working_directory: workspace } } });
     const skipped = await waitFor(20);
     assert.equal(skipped.result.structuredContent.status, 'skipped');
 
-    send({ jsonrpc: '2.0', id: 21, method: 'tools/call', params: { name: 'pa_codegraph_init_status', arguments: {} } });
+    send({ jsonrpc: '2.0', id: 21, method: 'tools/call', params: { name: 'pa_codegraph_init_status', arguments: { working_directory: workspace } } });
     const status = await waitFor(21);
     assert.equal(status.result.structuredContent.status, 'skipped');
     assert.equal(status.result.structuredContent.has_codegraph_index, false);
@@ -943,6 +1470,62 @@ test('CodeGraph wrapper records explicit skip without starting init', async () =
   const calls = fs.readFileSync(callLog, 'utf8').trim().split(/\r?\n/).map(JSON.parse);
   assert.ok(calls.some((call) => call.argv.join(' ') === '-y @colbymchenry/codegraph@1.3.0 serve --mcp'));
   assert.equal(calls.some((call) => call.argv.join(' ') === '-y @colbymchenry/codegraph@1.3.0 init'), false);
+});
+
+test('CodeGraph wrapper keeps initialization state isolated per resolved project root', async () => {
+  const serverCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-state-server-'));
+  const rootA = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-state-a-'));
+  const rootB = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-state-b-'));
+  write(path.join(rootA, 'package.json'), '{}\n');
+  write(path.join(rootB, 'package.json'), '{}\n');
+  const fakeBin = makeFakeNpxBin();
+
+  await withWrapperMcp(['serve', '--mcp'], serverCwd, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    FAKE_NPX_MCP_PROXY: '1',
+  }, async ({ send, waitFor }) => {
+    send({ jsonrpc: '2.0', id: 42, method: 'tools/call', params: { name: 'pa_codegraph_init_skip', arguments: { working_directory: rootA } } });
+    const skipped = await waitFor(42);
+    assert.equal(skipped.result.structuredContent.status, 'skipped');
+
+    send({ jsonrpc: '2.0', id: 43, method: 'tools/call', params: { name: 'pa_codegraph_init_status', arguments: { working_directory: rootB } } });
+    const other = await waitFor(43);
+    assert.equal(other.result.structuredContent.status, 'idle');
+    assert.equal(other.result.structuredContent.project_root, fs.realpathSync(rootB));
+  });
+});
+
+test('CodeGraph wrapper honors a per-project skip before native auto initialization', async () => {
+  const serverCwd = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-skip-native-server-'));
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-wrapper-skip-native-target-'));
+  write(path.join(workspace, 'package.json'), '{}\n');
+  const fakeBin = makeFakeNpxBin();
+  const callLog = path.join(serverCwd, 'calls.jsonl');
+
+  await withWrapperMcp(['serve', '--mcp'], serverCwd, {
+    PATH: `${fakeBin}${path.delimiter}${process.env.PATH}`,
+    FAKE_NPX_CALL_LOG: callLog,
+    FAKE_NPX_MCP_PROXY: '1',
+  }, async ({ send, waitFor }) => {
+    send({ jsonrpc: '2.0', id: 44, method: 'tools/call', params: { name: 'pa_codegraph_init_skip', arguments: { working_directory: workspace } } });
+    await waitFor(44);
+
+    send({
+      jsonrpc: '2.0',
+      id: 45,
+      method: 'tools/call',
+      params: { name: 'codegraph_explore', arguments: { query: 'main', working_directory: workspace } },
+    });
+    const response = await waitFor(45);
+    assert.equal(response.result.isError, true);
+    assert.equal(response.result.structuredContent.status, 'skipped');
+  });
+
+  const calls = fs.existsSync(callLog)
+    ? fs.readFileSync(callLog, 'utf8').trim().split(/\r?\n/).filter(Boolean).map(JSON.parse)
+    : [];
+  assert.equal(calls.some((call) => call.argv.includes('init')), false);
+  assert.equal(fs.existsSync(path.join(workspace, '.codegraph')), false);
 });
 
 test('CodeGraph wrapper proxies codegraph CLI commands without global install', () => {
@@ -1022,33 +1605,48 @@ test('skill package exposes runner docs, state docs, schema docs, and bounded wo
   assert.match(skillDoc, /@benborla29\/mcp-server-mysql/);
   assert.match(skillDoc, /mysql_query/);
   assert.match(skillDoc, /检测不到.*继续/);
+  assert.match(skillDoc, /严禁搜索或执行目标项目 `node_modules`/);
   assert.match(fs.readFileSync(path.join(SKILL, 'vscode-main-builder.md'), 'utf8'), /读取同目录 `SKILL\.md`/);
   assert.match(fs.readFileSync(path.join(SKILL, 'opencode/README.md'), 'utf8'), /prompts\/analysis-curator\.md/);
   const opencodeConfig = fs.readFileSync(path.join(SKILL, 'opencode/opencode.example.json'), 'utf8');
-  assert.match(opencodeConfig, /@pa\/codegraph-mcp-wrapper@latest/);
-  assert.match(opencodeConfig, /@benborla29\/mcp-server-mysql/);
+  assert.match(opencodeConfig, /@pa\/codegraph-mcp-wrapper@1\.0\.0/);
+  assert.doesNotMatch(opencodeConfig, /@benborla29\/mcp-server-mysql/);
+  assert.doesNotMatch(opencodeConfig, /MYSQL_PASS/);
+  assert.match(opencodeConfig, /"mcp"\s*:/);
+  assert.match(opencodeConfig, /"type"\s*:\s*"local"/);
+  assert.match(opencodeConfig, /http:\/\/maven\.paic\.com\.cn\/repository\/npm/);
+  assert.doesNotMatch(opencodeConfig, /"mcpServers"\s*:/);
   const mcpDoc = fs.readFileSync(path.join(SKILL, 'docs/mcp-integration.md'), 'utf8');
-  assert.match(mcpDoc, /CodeGraph MCP/);
-  assert.match(mcpDoc, /pa_codegraph_init_wait/);
+  assert.match(mcpDoc, /Gateway 只接受公司 wrapper/);
+  assert.match(mcpDoc, /只有裸 `codegraph_\*` 不算 wrapper 可用/);
+  assert.match(mcpDoc, /standalone CLI/);
+  assert.match(mcpDoc, /--skip-sync/);
+  assert.match(mcpDoc, /pa-mysql-readonly` 1\.1\.0/);
+  assert.match(mcpDoc, /config status --json/);
+  assert.match(mcpDoc, /PA_MYSQL_CONFIG_FILE/);
+  assert.match(mcpDoc, /pa_codegraph_ensure/);
   assert.match(mcpDoc, /pa_codegraph_init_skip/);
   assert.match(mcpDoc, /codegraph_policy/);
   assert.match(mcpDoc, /codegraph init/);
   assert.doesNotMatch(mcpDoc, /codegraph init -i/);
   assert.doesNotMatch(mcpDoc, /codegraph index/);
+  assert.doesNotMatch(mcpDoc, /"command": "codegraph"/);
   assert.match(fs.readFileSync(path.join(SKILL, 'docs/mcp-integration.md'), 'utf8'), /MySQL MCP/);
   assert.match(fs.readFileSync(path.join(SKILL, 'docs/mcp-integration.md'), 'utf8'), /mysql:\/\/tables/);
-  assert.match(fs.readFileSync(path.join(SKILL, 'prompts/dependency-hotspots.md'), 'utf8'), /CodeGraph MCP/);
+  assert.match(fs.readFileSync(path.join(SKILL, 'prompts/dependency-hotspots.md'), 'utf8'), /Gateway.*wrapper MCP.*standalone/s);
   assert.match(fs.readFileSync(path.join(SKILL, 'prompts/feature-implementation.md'), 'utf8'), /Redis|定时任务|后台线程|外部接口/);
   assert.match(fs.readFileSync(path.join(SKILL, 'prompts/domain-data-model.md'), 'utf8'), /mysql_query/);
   assert.match(fs.readFileSync(path.join(SKILL, 'prompts/config-runtime.md'), 'utf8'), /mysql:\/\/tables/);
 });
 
-test('project analyzer state defaults to ask-before-CodeGraph policy', () => {
+test('project analyzer state defaults to automatic CodeGraph-first policy', () => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'project-analyzer-state-policy-'));
   run('update-state.js', ['--init'], workspace);
   const state = readJson(path.join(workspace, '.projectanalysis/state.json'));
-  assert.equal(state.options.codegraph_policy, 'ask');
+  assert.equal(state.options.codegraph_policy, 'codegraph-first');
   assert.equal(state.mcp.codegraph, 'unknown');
+  assert.equal(state.mcp.codegraph_source, 'unknown');
+  assert.equal(state.mcp.mysql_source, 'unknown');
   assert.ok(state.phase_order.includes('overview_rendering'));
   assert.ok(state.phase_order.includes('deep_scope_confirm'));
   assert.ok(state.phase_order.includes('deep_parallel_analysis'));
@@ -1060,8 +1658,9 @@ test('project analyzer state defaults to ask-before-CodeGraph policy', () => {
 test('standalone CodeGraph wrapper package is publishable and separate from the skill', () => {
   const pkg = readJson(path.join(WRAPPER, 'package.json'));
   assert.equal(pkg.name, '@pa/codegraph-mcp-wrapper');
-  assert.equal(pkg.version, '0.4.0');
+  assert.equal(pkg.version, '1.0.0');
   assert.equal(pkg.bin['pa-codegraph-mcp'], 'bin/pa-codegraph-mcp.js');
+  assert.equal(pkg.dependencies['@colbymchenry/codegraph'], '1.3.0');
   assert.equal(fs.existsSync(path.join(WRAPPER, 'README.md')), true);
   assert.equal(fs.existsSync(path.join(SKILL, 'wrappers/codegraph-mcp-wrapper/package.json')), false);
 });

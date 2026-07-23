@@ -2,6 +2,12 @@
 
 本目录提供 `ato-code-review-web` 在 opencode 中使用的示例配置。
 
+## 运行时要求
+
+- **Node.js**（推荐 22+；低于 22 时环境检查只输出 `NODE_VERSION_RECOMMENDED` 警告，不阻止执行）
+- Git 可用
+- 启动后主编排须先执行：`node "{SKILL_ROOT}/scripts/check-env.js"`（见 `SKILL.md` §0）
+
 ## 使用方式
 
 1. 将 `opencode.example.json` 的 `agent` 配置合并到项目根目录的 `opencode.json`，或按需复制到全局配置。
@@ -19,7 +25,7 @@
 
 ## Phase 1 六问
 
-分支、检视深度、跳过低风险、是否 HTML、**每批最大行数**、是否深入分析疑问代码都必须有值；可以分多轮问，不要求一次性发完。用户跳过时用默认值：当前分支 / `master`、`critical_high_only`、`true`、`true`、`1200`、`true`。详见 `SKILL.md` §0.2。
+分支、检视深度、跳过低风险、是否 HTML、**每批最大行数**、是否深入分析疑问代码都必须有值；可以分多轮问，不要求一次性发完。用户跳过时用默认值：当前分支 / `master`、`critical_high_only`、`true`、`true`、`2000`、`true`。详见 `SKILL.md` §0.2。
 
 ## 项目记忆
 
@@ -36,4 +42,4 @@
 
 ## 升级提示
 
-合并 `opencode.example.json` 中新增子执行器；旧 `state.json` 启动时自动补字段（含 `max_lines_per_batch: 1200`）。
+合并 `opencode.example.json` 中新增子执行器；旧 `state.json` 启动时自动补字段（含 `max_lines_per_batch: 2000`）。

@@ -10,10 +10,19 @@
 - 首次运行先生成 overview 报告和 `.projectanalysis/deep-tasks.json`，然后在 `deep_scope_confirm` 询问用户是否深挖。
 - 深挖使用 `prompts/feature-implementation.md`，按 `.projectanalysis/deep-tasks.json` 分批写 `.projectanalysis/deep-results/*.json`。
 - HTML 报告优先由 `scripts/render-report-html.js` 生成；`prompts/report-html.md` 仅作失败兜底。
-- `opencode.example.json` 里的 `codegraph` 与 `mcp_server_mysql` 为可选增强：在 `environment_check` 探测并写入 `state.mcp.*`，检测不到则静默降级，主流程不依赖它们。`codegraph` 默认使用 `@pa/codegraph-mcp-wrapper@latest`，会先连接 MCP；若缺少健康的本地 `.codegraph/`，agent 按 `options.codegraph_policy` 决定询问、阻塞等待初始化、后台初始化或跳过。用户拒绝时调用 `pa_codegraph_init_skip`。详见 `../docs/mcp-integration.md`。
+- 安装 `pa-codegraph` Gateway 与 `pa-mysql-readonly` Skill。CodeGraph 优先使用 `opencode.example.json` 中的公司 wrapper MCP，以获得实时 watcher；MCP 不可用时 Gateway 才降级 standalone。MySQL 由 Skill 管理用户级多连接配置并启动一次性只读 MCP，不写入 OpenCode 配置。检测不到增强时静默降级，详见 `../docs/mcp-integration.md`。
 
 示例命令：
 
 ```text
 node "{SKILL_ROOT}/scripts/build-inventory.js" --root "{PROJECT_ROOT}" --output ".projectanalysis/index/files.json"
+```
+
+`opencode.example.json` 使用当前 OpenCode 的 `mcp` / `type: local` / 命令数组格式，并展示默认 `working-directory` 模式。固定单仓库时可将 CodeGraph 的 `environment` 改为：
+
+```json
+{
+  "CODEGRAPH_PROJECT_SELECTION": "configured",
+  "CODEGRAPH_PROJECT_ROOT": "/absolute/path/to/project"
+}
 ```

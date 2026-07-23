@@ -8,7 +8,6 @@
  * expert: core | framework | reliability | security | curator
  */
 'use strict';
-
 const fs = require('fs');
 const path = require('path');
 

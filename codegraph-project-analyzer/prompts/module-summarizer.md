@@ -15,7 +15,6 @@
 
 保持输出精简，适配小上下文模型。
 
-## 可选 MCP（仅当 state.mcp.codegraph=available）
+## 可选 CodeGraph 增强（仅当 state.mcp.codegraph=available）
 
-当内置 edges 不足以确认调用流时，可调 codegraph MCP（`codegraph_explore`，或已开启的 `codegraph_callers`/`codegraph_callees`）核对本模块关键符号的真实调用关系，再写 `key_flow`。MCP 未挂载/项目未建 `.codegraph/` 索引/调用失败时，直接用内置索引与源码判断。在输出加 `codegraph_mcp_used`（布尔）。
-
+当内置 edges 不足以确认调用流时，若 `state.mcp.codegraph_source=skill`，按 notes 中 `codegraph_backend` 使用 `pa-codegraph` Gateway 已选后端；若来源为 `mcp`，直接调用 wrapper 的 explore 或 callers/callees。MCP 传 `working_directory`，standalone 传 `--project` 且同一任务后续查询带 `--skip-sync`。不可用或失败时直接用内置索引与源码判断，并在 notes 记录实际来源。

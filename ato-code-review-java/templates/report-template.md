@@ -1,4 +1,4 @@
-# Java 后端代码检视报告
+# {{REPO_NAME}} · Java 后端代码检视报告
 
 > 本报告为单次检视的**完整交付物**，按下方章节顺序阅读即可；无需再查阅 `.codereview` 过程文件或其他说明文档。
 
@@ -8,6 +8,7 @@
 
 | 项目 | 内容 |
 |------|------|
+| 代码仓库 | {{REPO_NAME}} |
 | 检视分支 | `{{BRANCH1}}` |
 | 对比基准 | `{{BRANCH2}}` |
 | 检视深度 | {{SEVERITY_MODE_LABEL}} |
@@ -19,6 +20,7 @@
 | 检视批次 | {{TOTAL_BATCHES}} 批 |
 | 检视范围说明 | **仅针对各文件相对 `{{DIFF_BRANCH2}}...{{DIFF_BRANCH1}}` 的 diff 变更行**；未改动代码不在本次检视范围内 |
 | 报告生成时间 | {{GENERATED_AT}} |
+| 自动忽略无法定位候选 | {{DISCARDED_ISSUE_COUNT}} 条（诊断见 `.codereview/discarded-issues.json`） |
 
 ---
 

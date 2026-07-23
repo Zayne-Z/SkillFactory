@@ -1,0 +1,12 @@
+[
+  { "query": "看看 MySQL 测试库里 order_info 表的字段和索引。", "should_trigger": true },
+  { "query": "统计订单状态分布，只返回聚合数量。", "should_trigger": true },
+  { "query": "这条 MySQL 查询很慢，帮我看 EXPLAIN 和索引是否合理。", "should_trigger": true },
+  { "query": "对比 UserEntity 和线上 MySQL 表结构有没有差异。", "should_trigger": true },
+  { "query": "帮我执行 UPDATE order_info SET status='DONE'。", "should_trigger": true },
+  { "query": "查看 PostgreSQL 的 pg_stat_activity。", "should_trigger": false },
+  { "query": "分析 Java 项目中 OrderService 的调用链。", "should_trigger": false },
+  { "query": "整理这个 CSV 里的订单状态分布。", "should_trigger": false },
+  { "query": "给我设计一张新的用户表，但不要连接任何数据库。", "should_trigger": false },
+  { "query": "解释一下数据库索引的通用原理，不需要查看真实库。", "should_trigger": false }
+]

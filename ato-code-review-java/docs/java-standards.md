@@ -153,6 +153,57 @@ if ("hello".equals(str)) { ... }
 
 ---
 
+## 高频陷阱（增量 diff 优先对照）
+
+### 包装类型比较
+```java
+// ❌ Integer/Long 用 ==（缓存区间外必翻车）
+if (a == b) { ... }
+
+// ✅ equals；注意一侧可能为 null
+if (Objects.equals(a, b)) { ... }
+```
+
+### equals / hashCode
+- 重写 `equals` 必须同时重写 `hashCode`（否则 HashMap/HashSet 行为错误）
+- 用业务主键或 `Objects.equals` / `Objects.hash`；避免只比较部分可变字段却用于集合键
+
+### 金额与精度
+```java
+// ❌ double/float 表示金额
+double total = 0.1 + 0.2;
+
+// ✅ BigDecimal；用字符串构造，忌 new BigDecimal(0.1)
+BigDecimal total = new BigDecimal("0.1").add(new BigDecimal("0.2"));
+```
+
+### 日期时间与线程安全
+```java
+// ❌ SimpleDateFormat 作实例/静态字段共享（非线程安全）
+private static final SimpleDateFormat FMT = new SimpleDateFormat("yyyy-MM-dd");
+
+// ✅ DateTimeFormatter（不可变）或 Java time API
+private static final DateTimeFormatter FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd");
+```
+
+### 资源关闭
+```java
+// ✅ try-with-resources
+try (InputStream in = Files.newInputStream(path);
+     Connection conn = dataSource.getConnection()) {
+    // ...
+}
+```
+
+---
+
+## 误报控制
+
+- 测试代码中的魔法数字、包可见字段：**默认从宽**，除非影响生产路径可读性/契约。
+- 已用 `Objects.equals` / `BigDecimal` / `DateTimeFormatter` 的改动：**不**因「可用别的写法」空报。
+
+---
+
 ## 检视重点清单（通用 Java）
 
 - [ ] 类/方法/变量命名是否符合 camelCase/PascalCase 规范
@@ -160,7 +211,11 @@ if ("hello".equals(str)) { ... }
 - [ ] 是否存在魔法数字/魔法字符串
 - [ ] 返回值是否可能为 null 且未说明
 - [ ] 集合是否有空值保护
-- [ ] 字符串比较是否用 equals
+- [ ] 字符串比较是否用 equals；包装类型是否误用 `==`
 - [ ] 循环中是否有字符串拼接
 - [ ] 是否有不必要的原始类型使用
 - [ ] `boolean` 字段是否会引起 Lombok 序列化问题
+- [ ] 金额是否用 `BigDecimal`（禁止 double 累加）
+- [ ] 是否共享非线程安全的 `SimpleDateFormat`
+- [ ] IO/连接等是否用 try-with-resources 关闭
+- [ ] 重写 `equals` 是否同时重写 `hashCode`

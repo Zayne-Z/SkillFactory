@@ -2,6 +2,12 @@
 
 本目录提供 `ato-code-review-java` 在 opencode 中使用示例配置。
 
+## 运行时要求
+
+- **Node.js**（推荐 22+；低于 22 时环境检查只输出 `NODE_VERSION_RECOMMENDED` 警告，不阻止执行）
+- Git 可用
+- 启动后主编排须先执行：`node "{SKILL_ROOT}/scripts/check-env.js"`（见 `SKILL.md` §0）
+
 ## 使用方式
 
 1. 将 `opencode.example.json` 的 `agent` 配置合并到项目根目录的 `opencode.json`，或按需复制到全局配置。
@@ -21,7 +27,7 @@
 
 ## Phase 1 六问 + 脚本门禁
 
-- 主编排须按 `SKILL.md` §0.2 让分支、检视深度、跳过低风险、是否 HTML、每批最大行数、是否深入分析疑问代码都有值；可以分多轮问，不要求一次性发完。用户跳过时用默认值：当前分支 / `master`、`critical_high_only`、`true`、`true`、`1200`、`true`。
+- 主编排须按 `SKILL.md` §0.2 让分支、检视深度、跳过低风险、是否 HTML、每批最大行数、是否深入分析疑问代码都有值；可以分多轮问，不要求一次性发完。用户跳过时用默认值：当前分支 / `master`、`critical_high_only`、`true`、`true`、`2000`、`true`。
 - 未完成 Phase 1 时，`get-diff-files.js` 等会报 `PHASE1_REQUIRED` 并 exit 2（硬拦截，不依赖模型自觉）。
 - 复述确认后：`update-state.js` 设 `review_options.user_confirmed=true`，再跑 Phase 2。
 
@@ -46,4 +52,4 @@
 
 ## 升级提示
 
-合并 `opencode.example.json` 中新增子执行器（`issue-curator`、`report-html` 等）到现有配置；旧 `state.json` 由主编排启动时自动补字段（含 `max_lines_per_batch: 1200`）。
+合并 `opencode.example.json` 中新增子执行器（`issue-curator`、`report-html` 等）到现有配置；旧 `state.json` 由主编排启动时自动补字段（含 `max_lines_per_batch: 2000`）。

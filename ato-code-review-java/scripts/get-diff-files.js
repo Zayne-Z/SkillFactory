@@ -25,12 +25,12 @@
  *   ]
  * }
  */
-
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { assertPhase1Complete } = require('./require-phase1');
 const { prepareGitRefs, formatSyncFailure } = require('./git-ref-sync');
+const { detectRepoName } = require('./detect-repo-name');
 
 function parseArgs(args) {
   const result = {};
@@ -194,6 +194,7 @@ function main() {
     const emptyResult = {
       branch1, branch2,
       git_refs: gitRefs,
+      repository: { name: detectRepoName() },
       generated_at: new Date().toISOString(),
       total_files: 0,
       total_changed_lines: 0,
@@ -240,8 +241,10 @@ function main() {
     const parts = line.split('\t');
     const status = parts[0].trim();
     let filePath = parts[parts.length - 1].trim();
+    let oldPath = '';
 
     if (status.startsWith('R') || status.startsWith('C')) {
+      oldPath = parts[1].trim();
       filePath = parts[2].trim();
     }
 
@@ -269,6 +272,7 @@ function main() {
 
     files.push({
       path: filePath,
+      ...(oldPath ? { old_path: oldPath } : {}),
       type: fileType,
       status: status.charAt(0),
       additions: stats.additions,
@@ -285,6 +289,7 @@ function main() {
     branch1,
     branch2,
     git_refs: gitRefs,
+    repository: { name: detectRepoName() },
     generated_at: new Date().toISOString(),
     total_files: files.length,
     total_changed_lines: totalChangedLines,

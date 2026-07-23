@@ -10,8 +10,10 @@ Important fields:
 
 - `scope.user_confirmed`: false until the user confirms full-project Java/Web analysis defaults.
 - `options.index_storage`: V1 is `json`.
-- `options.codegraph_policy`: `ask` by default. Allowed values are `no-codegraph`, `codegraph-enhanced`, `codegraph-first`, and `ask`.
+- `options.codegraph_policy`: `codegraph-first` by default. Allowed values are `no-codegraph`, `codegraph-enhanced`, `codegraph-first`, and `ask`.
 - `mcp.codegraph`: `available` only when CodeGraph can answer graph queries for the target project; otherwise `unavailable`.
+- `mcp.codegraph_source`: `skill`, `mcp`, `builtin`, `none`, or `unknown`; prefer `skill` when `pa-codegraph` Gateway selects either wrapper MCP or standalone, and record `codegraph_backend=mcp|standalone` in notes.
+- `mcp.mysql_source`: `skill`, `mcp`, `code`, `none`, or `unknown`; prefer `skill` when standalone `pa-mysql-readonly` has a confirmed ready connection. Never store the connection profile name or endpoint in state.
 - `paths.deep_tasks`: resumable deep-analysis task plan at `.projectanalysis/deep-tasks.json`.
 - `paths.deep_results_dir`: one JSON result per selected deep task.
 - `deep_analysis.selection_mode`: `awaiting_user`, `selected_modules`, `selected_tasks`, `all`, or `skipped`.

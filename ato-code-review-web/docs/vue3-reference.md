@@ -133,6 +133,14 @@ const emit = defineEmits(['update:modelValue'])
 
 ---
 
+## 误报控制
+
+- setup 内创建的 `watch` / `watchEffect` 会随组件卸载自动停止：**不**因「未手动 stop」空报。
+- 已用 `toRefs` / `ref` 正确保持响应性的解构：**不**报响应性丢失。
+- 仅 Options → Composition 风格偏好差异、无正确性风险：**默认不报**。
+
+---
+
 ## 检视重点清单（Vue3 专用）
 
 - [ ] `beforeDestroy` 是否错误使用（应改为 `beforeUnmount`）

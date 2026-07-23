@@ -3,16 +3,15 @@
  * 将 Java 项目变动文件清单智能分批
  *
  * 用法：
- *   node batch-processor.js --inventory .codereview/file-inventory.json --max-lines 1200 --output .codereview/file-inventory.json
+ *   node batch-processor.js --inventory .codereview/file-inventory.json --max-lines 2000 --output .codereview/file-inventory.json
  *
  * 分批策略（Java 特化）：
  *  1. Mapper.xml 与对应 Mapper.java 优先放同一批（便于 SQL 专家跨文件分析）
  *  2. Controller 与同模块 Service 优先同批（便于框架/健壮性专家跨层分析）
- *  3. 每批变动行数不超过 max-lines（Java 默认 1200）
+ *  3. 每批变动行数不超过 max-lines（Java 默认 2000）
  *  4. 超过 max-lines 的单文件单独成批
  *  5. 纯 POJO/DTO 文件归为低优先级批次
  */
-
 const fs = require('fs');
 const path = require('path');
 const { assertPhase1Complete } = require('./require-phase1');
@@ -57,6 +56,11 @@ function getFilePriority(file) {
   return typeScores[file.type] || 3;
 }
 
+function changedLinesOf(file) {
+  const value = Number.parseInt(file && file.changed_lines, 10);
+  return Number.isFinite(value) && value > 0 ? value : 0;
+}
+
 
 // 找到与 Mapper.java 对应的 Mapper.xml（或反向）
 function findMapperPair(files) {
@@ -86,7 +90,7 @@ function main() {
   assertPhase1Complete({ force: args.force === true || args.force === 'true' });
 
   const inventoryPath = args.inventory || '.codereview/file-inventory.json';
-  const maxLines = parseInt(args['max-lines']) || 1200;
+  const maxLines = parseInt(args['max-lines']) || 2000;
   const outputPath = args.output || inventoryPath;
 
   if (!fs.existsSync(inventoryPath)) {
@@ -117,7 +121,7 @@ function main() {
   const sortedFiles = [...files].sort((a, b) => {
     const pd = getFilePriority(b) - getFilePriority(a);
     if (pd !== 0) return pd;
-    return b.changed_lines - a.changed_lines;
+    return changedLinesOf(b) - changedLinesOf(a);
   });
 
   // 辅助：将文件组加入批次
@@ -127,7 +131,7 @@ function main() {
 
     for (const file of filesToAdd) {
       if (processedPaths.has(file.path)) continue;
-      const lines = file.changed_lines || 0;
+      const lines = changedLinesOf(file);
 
       if (lines > maxLines) {
         // 超大文件单独成批
@@ -171,7 +175,9 @@ function main() {
 
     mapperPairs.forEach((pair) => {
       const pairFiles = [pair.java, pair.xml].filter(Boolean);
-      const pairLines = pairFiles.reduce((sum, f) => sum + (f.changed_lines || 0), 0);
+      // 超大 Mapper 文件交回通用分批逻辑，避免配对分支绕过 oversized 处理。
+      if (pairFiles.some((file) => changedLinesOf(file) > maxLines)) return;
+      const pairLines = pairFiles.reduce((sum, f) => sum + changedLinesOf(f), 0);
 
       if (currentLines + pairLines > maxLines && currentBatch.length > 0) {
         batches.push(createBatch(batchIndex++, currentBatch, currentLines));
@@ -182,7 +188,7 @@ function main() {
       pairFiles.forEach(f => {
         if (!processedPaths.has(f.path)) {
           currentBatch.push(f);
-          currentLines += f.changed_lines || 0;
+          currentLines += changedLinesOf(f);
           processedPaths.add(f.path);
         }
       });

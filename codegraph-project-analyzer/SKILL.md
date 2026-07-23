@@ -18,8 +18,8 @@ description: >-
 - **首次运行先出项目导览。** 不要一开始深挖全仓。先生成 overview 报告和模块地图，再询问用户是否继续深挖、选择哪些模块/任务，或分析全部。
 - **深挖任务可续跑。** 功能实现详解由 `.projectanalysis/deep-tasks.json` 驱动，任务粒度可细到入口链路、后台线程、外部接口、Redis/缓存、数据落库、临时表清理、重试补偿。每个任务独立写 `.projectanalysis/deep-results/*.json`。
 - **主流程零 MCP 依赖。** `inventory → JSON 索引 → context packs → overview → deep task planning → report` 的必经路径不依赖任何 MCP。没有 MCP 客户端时全流程仍须完整跑通。
-- **CodeGraph 是推荐增强，不是硬依赖。** 内置 JSON 索引是 baseline；`colbymchenry/codegraph` 用于大仓/小上下文/高精度调用链场景。默认通过 `@pa/codegraph-mcp-wrapper` 接入，按 `options.codegraph_policy` 决定是否先初始化并等待。检测不到或初始化失败时继续主流程。
-- **外部 MCP 必须可降级。** 检测到 CodeGraph 就用它校正调用链/影响面；检测到 `@benborla29/mcp-server-mysql` 就用真实 schema 增强数据模型分析。任一 MCP 不可用时都要继续，不得让报告生成失败。探测与降级规则见 `docs/mcp-integration.md`。
+- **CodeGraph 是推荐增强，不是硬依赖。** 内置 JSON 索引是 baseline；`pa-codegraph` Gateway Skill 优先路由公司 wrapper MCP，未连接时再降级固定版本 standalone CLI。两种入口都不可用时继续主流程。
+- **外部增强必须可降级。** CodeGraph 使用 MCP 优先、standalone 降级；MySQL 仍优先使用 `pa-mysql-readonly` standalone Skill。检测不到任一增强或调用不可用时都要继续，不得让报告生成失败。探测与降级规则见 `docs/mcp-integration.md`。
 
 ## 0. 启动清单
 
@@ -51,7 +51,7 @@ node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
 - 交付物：默认 Markdown + HTML + JSON 索引
 - 索引存储：V1 默认 `json`
 - context pack 上限：默认 `6000` 字符
-- CodeGraph 策略：默认 `ask`
+- CodeGraph 策略：默认 `codegraph-first`（自动检查当前项目，缺索引时阻塞初始化）
 
 确认后写盘：
 
@@ -72,19 +72,25 @@ node "{SKILL_ROOT}/scripts/update-state.js" --set scope.user_confirmed=true --ph
 范围确认后进入本阶段，做三件事：
 
 1. 确认 `node --version` 可用（不可用则停下报告用户）。
-2. 确认 `options.codegraph_policy`，默认 `ask`。允许值：
+2. 确认 `options.codegraph_policy`，默认 `codegraph-first`。允许值：
    - `no-codegraph`：不尝试外部 CodeGraph，只跑内置 JSON 索引。
    - `codegraph-enhanced`：只在已有 `.codegraph/` 或 CodeGraph 已可用时增强，不等待初始化。
-   - `codegraph-first`：检测到 wrapper 且项目缺索引时，先初始化并等待完成，再继续分析；适合大仓、小上下文、要求调用链准确的任务。
-   - `ask`：默认。缺索引时询问用户；用户确认后走 `codegraph-first`，拒绝则走 `no-codegraph`。
-3. **探测可选 MCP**：检查当前 agent runtime 的可用工具，判定并落盘：
-   - 见到 `pa_codegraph_check` 表示使用 wrapper；按策略调用 `pa_codegraph_check`、`pa_codegraph_init_wait`（优先阻塞等待）、`pa_codegraph_init_start` / `pa_codegraph_init_status`（旧版回退）、`pa_codegraph_init_skip`；
-   - 见到 `codegraph_*` 工具（如 `codegraph_explore`）且索引可用 → `mcp.codegraph=available`，否则 `unavailable`；
-   - 见到 `mysql_query` 工具或 `mysql://tables` 资源 → `mcp.mysql=available`，否则 `unavailable`；
+   - `codegraph-first`：通过 `pa-codegraph` Gateway 检测 wrapper MCP；缺失时询问安装并可降级 standalone。项目缺索引时初始化并等待完成，再继续分析。
+   - `ask`：需要用户控制是否创建索引时使用。缺索引时询问用户；用户确认后走 `codegraph-first`，拒绝则走 `no-codegraph`。
+3. **探测可选增强**：按 CodeGraph Gateway 与 MySQL standalone 的规则判定并落盘：
+   - `{PROJECT_ROOT}` 必须取 scope_confirm 已确认的当前项目绝对路径。不得拿 agent 启动目录、父目录或上次分析的仓库代替；
+   - 若运行时提供 `pa-codegraph` Skill，按其 Gateway 流程先检测同时存在的 `pa_codegraph_check` / `pa_codegraph_ensure`。MCP 可用时先检查并核对返回项目根；不可用时询问安装，未加载或拒绝安装时才调用 standalone。成功后写 `mcp.codegraph_source=skill`，并在 notes 记录 `codegraph_backend=mcp|standalone`；
+   - 若运行时提供 `pa-mysql-readonly` Skill，先调用 `config status --json`。`ready` 后按选中连接调用 `doctor/tables/schema/query`，并写 `mcp.mysql_source=skill`；`unconfigured` 或 `selection_required` 时询问用户是否配置或选择，用户拒绝则标记不可用。连接配置和凭据不进入 state/report；
+   - 没有 `pa-codegraph` Skill 时可直接探测公司 wrapper MCP。必须同时存在 `pa_codegraph_check` 和 `pa_codegraph_ensure`；只有裸 `codegraph_*` 不视为可用。默认按 `working-directory` 模式传 `working_directory: "{PROJECT_ROOT}"`，并写 `mcp.codegraph_source=mcp`。不得传旧的 `project_root` / `projectPath`；
+   - 先调用 `pa_codegraph_check` 并核对项目根。索引缺失时按策略征得用户同意，再调用 `pa_codegraph_ensure` 一次完成精确检查、自动初始化和阻塞等待；只有 `status=completed` 且 `initialization_complete=true` 才继续；
+   - wrapper 初始化失败、超时或返回 `failed` 时，Gateway 可降级到随附 standalone CLI；standalone 仍失败时记录错误并继续内置流程。严禁搜索或执行目标项目 `node_modules`、`.bin`、npm cache 中的 CodeGraph；
+   - wrapper 返回 `confirmation_required=true` 时，暂停 CodeGraph 步骤并询问用户“当前要分析的项目是否为 `<candidate>`？”。确认后用该绝对路径重试；不得继续接受父目录的 healthy 状态；
+   - Gateway 通过 wrapper MCP 或固定版本 standalone 成功查询当前项目 → `mcp.codegraph=available`，否则 `unavailable`；
+   - standalone `pa-mysql-readonly doctor` 成功，或见到 `mysql_query` / `mysql://tables` → `mcp.mysql=available`，否则 `unavailable`；
    - 无法判定时保守写 `unavailable`。探测本身出错也不得中断流程。
 
 ```text
-node "{SKILL_ROOT}/scripts/update-state.js" --set mcp.codegraph=available --set mcp.mysql=unavailable --phase inventory --checkpoint env_checked
+node "{SKILL_ROOT}/scripts/update-state.js" --set mcp.codegraph=available --set mcp.codegraph_source=skill --set mcp.mysql=unavailable --set mcp.mysql_source=none --phase inventory --checkpoint env_checked
 ```
 
 > codegraph 仅在目标项目已建 `.codegraph/` 索引时才返回图数据。`codegraph-first` 会在进入 inventory 前等待初始化完成；`codegraph-enhanced` 不等待；`ask` 必须尊重用户选择。未建索引且未初始化时等同 `unavailable`，退回内置 JSON 索引。
@@ -92,9 +98,9 @@ node "{SKILL_ROOT}/scripts/update-state.js" --set mcp.codegraph=available --set 
 ### CodeGraph 策略执行细则
 
 - `no-codegraph`：写 `mcp.codegraph=unavailable`，继续。
-- `codegraph-enhanced`：若已有 `codegraph_*` 且可查询，写 `available`；否则写 `unavailable`，继续。
-- `codegraph-first`：若有 wrapper 工具且 `pa_codegraph_check.recommend_init_prompt=true`，优先调用 `pa_codegraph_init_wait` 并只在返回 `status=completed` 后继续；若没有该工具，则调用 `pa_codegraph_init_start` 并轮询 `pa_codegraph_init_status`。失败或超时则写 `unavailable` 并继续。
-- `ask`：若 `pa_codegraph_check.recommend_init_prompt=true`，询问用户“是否先初始化 CodeGraph 并等待完成，以减少后续读源码 token 并提高调用链准确性？”；确认后按 `codegraph-first` 等待完成，拒绝后调用 `pa_codegraph_init_skip` 并继续。
+- `codegraph-enhanced`：通过 Gateway 先检查 wrapper MCP，必要时检查 standalone 现有索引；不得初始化。已有健康索引且可查询才写 `available`，否则继续内置流程。
+- `codegraph-first`：通过 Gateway 优先调用 wrapper `pa_codegraph_ensure({ working_directory: "{PROJECT_ROOT}" })`；MCP 不可用时询问安装，然后允许 standalone 自动初始化、同步和查询。失败或超时则写 `unavailable` 并继续。
+- `ask`：通过 Gateway 检查目标项目；缺索引时询问用户。确认后初始化；拒绝时 MCP 调用 `pa_codegraph_init_skip`，standalone 后续带 `--no-init`，然后继续内置流程。该策略覆盖 standalone 的默认自动初始化。
 
 ## 4. 确定性脚本阶段
 
@@ -137,7 +143,7 @@ node "{SKILL_ROOT}/scripts/build-json-index.js" --files ".projectanalysis/index/
 
 `overview_analysis` 阶段可并行拉起这些子执行器；每个子执行器默认读取索引、context pack（含 `code_outline`）和自己的 prompt，并写固定 JSON。**当仅凭 pack 无法确认关键逻辑时，允许用 Read 打开 pack 中列出的 1-3 个最重要源文件核对**（禁止把全仓源码塞进对话）：
 
-| agent | prompt | output | 可选 MCP（可用时） |
+| agent | prompt | output | 可选增强（可用时） |
 |-------|--------|--------|--------|
 | `module_summaries` | `prompts/module-summarizer.md` | `.projectanalysis/results/module-summaries.json` | codegraph：核对关键调用流 |
 | `entrypoints_routes` | `prompts/entrypoints-routes.md` | `.projectanalysis/results/entrypoints-routes.json` | codegraph：核对入口→处理器调用链 |
@@ -146,7 +152,7 @@ node "{SKILL_ROOT}/scripts/build-json-index.js" --files ".projectanalysis/index/
 | `config_runtime` | `prompts/config-runtime.md` | `.projectanalysis/results/config-runtime.json` | mysql：核对数据源/连接 |
 | `reading_path` | `prompts/reading-path.md` | `.projectanalysis/results/reading-path.json` | —（消费其它 agent 结果） |
 
-子执行器读到 `state.mcp.*=available` 才尝试对应 MCP；调用失败即视为不可用、退回内置索引，并在输出里记 `codegraph_mcp_used` / `mysql_mcp_used`。
+子执行器读到 `state.mcp.*=available` 才尝试对应增强来源；CodeGraph 按 notes 中的 `codegraph_backend=mcp|standalone` 使用 Gateway 已选后端。调用失败即视为不可用、退回内置索引，并在兼容字段 `codegraph_mcp_used` / `mysql_mcp_used` 中记录是否实际使用。
 
 并行前统一标记 `in_progress`，完成后按输出 JSON 合法性标记 `completed`。失败最多重试 2 次，仍失败则 `failed`，由 curator 记录缺口。
 
@@ -228,7 +234,7 @@ node "{SKILL_ROOT}/scripts/merge-deep-results.js" --analysis ".projectanalysis/a
 
 然后重新运行 Markdown/HTML 渲染，生成 full 报告。HTML 子执行器仅作兜底；不得让 AI 直接写完整 HTML 作为主路径。
 
-## 11. 查询适配器与 MCP
+## 11. 查询适配器与外部增强
 
 本节是可选增强，不参与主流程完成判定。详细配置、探测、降级与安全规则见 `docs/mcp-integration.md`。
 
@@ -248,7 +254,13 @@ node "{SKILL_ROOT}/scripts/mcp-server.js" --index ".projectanalysis/index"
 
 稳定工具名：`find_symbol`、`get_module_map`、`get_entrypoints`、`trace_callers`、`trace_callees`、`get_context_pack`、`find_impact_area`。
 
-### 11.2 外部 MCP 增强（可用时）
+### 11.2 Gateway / Standalone Skill 增强
 
-- **CodeGraph MCP（`colbymchenry/codegraph`）**：默认工具 `codegraph_explore`（勘察/流程/影响半径），可选开启 `codegraph_search`/`codegraph_callers`/`codegraph_callees`/`codegraph_impact` 等。用于核对调用链与影响面。推荐 MCP 配置使用 `@pa/codegraph-mcp-wrapper@latest`，由 wrapper 先代理原生工具，再通过 `pa_codegraph_check` / `pa_codegraph_init_wait` 支持阻塞初始化，或通过 `pa_codegraph_init_start` / `pa_codegraph_init_status` 支持后台初始化；未挂载或初始化失败时降级到 §11.1 的内置 JSON index。
+- **`pa-codegraph`**：优先使用公司 wrapper MCP 的实时 watcher；MCP 未安装、连接失败或当前会话尚未加载时，降级固定版本 wrapper CLI。standalone 第一次查询前自动同步，同一任务后续查询带 `--skip-sync`，实际改码后再执行一次 `sync`。
+- **`pa-mysql-readonly`**：无需 MCP 配置，通过用户级多连接 JSON 或旧 `MYSQL_*` 环境变量选择连接，再用一次性本地客户端读取 `mysql://tables` 或执行只读 SQL；脚本层强制关闭写权限并拒绝写语句。用于对齐真实 schema。
+- CodeGraph Skill 不发送自定义统计；MySQL Skill 的既有旁路统计不影响分析。
+
+### 11.3 外部 MCP 增强
+
+- **CodeGraph wrapper MCP**：Gateway 的首选后端。必须使用 `@pa/codegraph-mcp-wrapper@1.0.0` 和默认 `working-directory` 模式；裸 `colbymchenry/codegraph` MCP 不受支持。每次调用传当前项目绝对路径，无法确定目录时必须询问用户；未挂载时按 §11.2 降级 standalone。
 - **MySQL MCP（`@benborla29/mcp-server-mysql`）**：资源 `mysql://tables` 浏览表结构 + 只读 `mysql_query`（`SHOW TABLES`/`DESCRIBE`/带 `LIMIT` 的 `SELECT`）。用于对齐真实数据模型；不可用时降级到代码侧（entity/mapper/SQL/配置）推断。只用只读账号，不把原始业务数据写入报告。

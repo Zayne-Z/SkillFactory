@@ -8,7 +8,6 @@
  *   node reset-run.js --skill-root /path/to/ato-code-review-web
  */
 'use strict';
-
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
@@ -19,6 +18,8 @@ const REMOVE_FILES = [
   'tech-stack.json',
   'task-plan.json',
   'line-authors.json',
+  'resolved-issues.json',
+  'discarded-issues.json',
 ];
 
 const REMOVE_DIR_NAMES = ['diffs', 'results'];

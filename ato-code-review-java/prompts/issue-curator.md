@@ -1,6 +1,6 @@
 > **子执行器**：`java-codereview-issue-curator` | Phase 5.5
 > 将本文件内容用于 opencode subagent、Claude Code subagent/Task 或 VS Code 子 Builder 的系统提示词。
-> **完成约定**：执行完毕后必须将结果写入 `{{OUTPUT_PATH}}`。主编排器通过检查该文件是否存在且 JSON 合法来判断任务是否完成。若你遇到上下文超长，优先将**已完成的部分结果**写入文件，然后停止。
+> **完成约定**：只有全部 issue 策展完成后才能原子写入 `{{OUTPUT_PATH}}`。未完成内容只能写入 `{{OUTPUT_PATH}}.partial`，不得覆盖正式输出，也不得标记 completed。
 
 ---
 
@@ -14,7 +14,7 @@
 2. **函数体级关联复核**：对合并后剩余的每条 issue，先在其所在函数体（或 XML 最近 SQL 节点）范围内，判断该问题是否已在函数内/工具调用中被处理；若已处理则记入 `invalidated[]` 不再下发。
 3. **被调用关联函数下钻复核**：当 NPE / 资源 / 参数校验 / 异常类 issue 的安全性取决于问题行之前调用的某个**存量函数**（如调用 `validateUser(user)` 后再 `user.getName()`）时，在 `{{DEEP_DOUBT_ANALYSIS}} == true` 且预算内对该被调用函数体做一次有界下钻，确认其确实已处理后才移入 `invalidated[]`（见 Step 3.4）。
 
-策展结果是 fix-advisor 与最终报告合成官的**唯一输入源**（旧版 4 份原始 JSON 仅作断点续跑兜底）。
+策展结果是 **证据解析（`resolve-report-issues.js`）的输入**；fix-advisor 与最终报告**只消费** `{BATCH_ID}-resolved.json` / `.codereview/resolved-issues.json`。原始 4 份专家 JSON 仅作断点续跑兜底。
 
 ## 严格边界
 
@@ -27,6 +27,7 @@
 
 - `{{BATCH_ID}}`：当前批次 ID
 - `{{BATCH_FILES}}`：本批次文件列表（JSON 数组，含每个文件的仓库相对路径与类型）
+- 若文件条目含 `line_ranges`，候选 issue 起始行必须落在范围内；范围外候选移入诊断，不得保留到正式输出。
 - `{{BRANCH1}}`：被检视分支
 - `{{BRANCH2}}`：基准分支
 - `{{DIFF_BRANCH1}}` / `{{DIFF_BRANCH2}}`：实际用于 diff / show 的 resolved refs，来自 `.codereview/file-inventory.json.git_refs`
@@ -248,10 +249,10 @@
 
 ## 注意事项
 
-- 你的输出是 fix-advisor 的**唯一输入**，必须保证 `issues[].issue_id` 唯一且与原专家 ID 兼容（被合并的 ID 全部退至 `merged_from[]`）
-- 兼容原始专家 JSON 的 `id` 字段，但策展输出必须统一使用 `issue_id`，供 fix-advisor、line-authors 与报告合成按同一 ID 对齐
+- 你的输出写入 `{BATCH_ID}-curated.json`，供主编排器紧接着运行 `resolve-report-issues.js --batch`；必须保证 `issues[].issue_id` 在批内唯一且与原专家 ID 兼容（被合并的 ID 全部退至 `merged_from[]`）
+- 兼容原始专家 JSON 的 `id` 字段，但策展输出必须统一使用 `issue_id`，供 **resolver** 对齐专家结果；fix-advisor / line-authors / 报告合成只消费 resolved
 - `domain` 字段必须为 `core` / `spring` / `security` / `data` 之一，供合成官归类到报告 5.1/5.2/5.3/5.4
 - `line` 始终为字符串
-- `code_snippet` 必须随 issue 输出，供最终 Markdown/HTML 的「问题代码」块使用；不得在策展合并时丢弃
+- `code_snippet` 必须随 issue 输出，供 resolver 恢复证据与最终报告「问题代码」块；不得在策展合并时丢弃
 - 单批 `read_file` 总次数硬上限：`min(本批次涉及问题的文件数, 8) + 3`（后 3 次预留给 Step 3.4 被调用函数下钻）；超过即停止复核，剩余 issue 全部保留
-- 上下文若接近极限：先把已完成部分写入 `{{OUTPUT_PATH}}`，剩余未策展的 issue 原样附加进 `issues[]`（保守保留）后停止
+- 上下文若接近极限：将已完成部分写入 `{{OUTPUT_PATH}}.partial` 并明确返回未完成；不得覆盖正式输出或标记 completed

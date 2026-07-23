@@ -59,7 +59,7 @@
 
 ### Step 4：输出任务计划
 
-**直接复用 inventory 的批次结构**，仅追加 `applicable_experts` 与统计字段：
+**直接复用 inventory 的批次结构**，仅追加 `applicable_experts` 与统计字段。若文件条目含 `line_ranges` / `diff_slice`，必须逐字段原样保留；它们是超大单文件子批次的硬性所有权边界：
 
 ```json
 {

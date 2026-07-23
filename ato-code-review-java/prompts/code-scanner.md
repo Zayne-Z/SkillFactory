@@ -49,6 +49,7 @@
 
 - `{{BATCH_ID}}`：当前批次 ID
 - `{{BATCH_FILES}}`：本批次文件列表（JSON 数组）
+- 若文件条目含 `line_ranges`，仅允许报告起始行位于这些闭区间内的问题；patch 越界上下文只用于理解，fallback 后仍须按范围过滤。
 - `{{BRANCH1}}`：被检视分支
 - `{{BRANCH2}}`：对比分支
 - `{{DIFF_BRANCH1}}` / `{{DIFF_BRANCH2}}`：实际用于 diff 的 resolved refs，来自 `.codereview/file-inventory.json.git_refs`

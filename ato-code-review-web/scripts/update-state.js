@@ -13,16 +13,16 @@
  *   node update-state.js --note "parallel core+security started"
  *   node update-state.js --phase tech_stack --set diff_analysis.completed=false
  */
-
 const fs = require('fs');
 const path = require('path');
 const { execFileSync } = require('child_process');
+const { detectRepoName } = require('./detect-repo-name');
 
 const DEFAULT_REVIEW_OPTIONS = {
   severity_mode: 'critical_high_only',
   skip_low_risk_files: true,
   generate_html_report: true,
-  max_lines_per_batch: 1200,
+  max_lines_per_batch: 2000,
   deep_doubt_analysis: true,
   user_confirmed: false,
 };
@@ -104,8 +104,10 @@ function parseArgs(argv) {
   return opts;
 }
 
+// 报告 / 断点时间统一按 Asia/Shanghai（固定 +08:00），避免 CI/UTC 环境与北京时间差 8 小时
 function nowIso() {
-  return new Date().toISOString();
+  const stamp = new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Shanghai' }).replace(' ', 'T');
+  return `${stamp}+08:00`;
 }
 
 function defaultState() {
@@ -117,6 +119,7 @@ function defaultState() {
     updated_at: t,
     current_phase: 'branch_selection',
     last_checkpoint: 'init',
+    repository: { name: detectRepoName() },
     branches: { branch1: currentGitBranch(), branch2: 'master' },
     review_options: { ...DEFAULT_REVIEW_OPTIONS },
     tech_stack: {},
@@ -268,6 +271,10 @@ function applyPatches(state, opts) {
   }
 
   applyPhase1Defaults(state);
+
+  if (!state.repository || typeof state.repository !== 'object') state.repository = {};
+  const repositoryRoot = path.dirname(path.dirname(path.resolve(opts.statePath)));
+  state.repository.name = detectRepoName(repositoryRoot) || state.repository.name || 'repo';
 
   state.updated_at = nowIso();
   return state;

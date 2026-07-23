@@ -1,22 +1,12 @@
 {
-  "mcpServers": {
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
     "codegraph": {
-      "command": "npx",
-      "args": ["-y", "@pa/codegraph-mcp-wrapper@latest", "serve", "--mcp"],
-      "env": {
-        "CODEGRAPH_PROJECT_ROOT": "/absolute/path/to/project",
-        "NPM_CONFIG_REGISTRY": "https://your-company-npm-registry.example.com"
-      }
-    },
-    "mcp_server_mysql": {
-      "command": "npx",
-      "args": ["-y", "@benborla29/mcp-server-mysql"],
-      "env": {
-        "MYSQL_HOST": "127.0.0.1",
-        "MYSQL_PORT": "3306",
-        "MYSQL_USER": "readonly_user",
-        "MYSQL_PASS": "replace_with_secret",
-        "MYSQL_DB": "app_db"
+      "type": "local",
+      "command": ["npx", "-y", "--registry", "http://maven.paic.com.cn/repository/npm", "@pa/codegraph-mcp-wrapper@1.0.0", "serve", "--mcp"],
+      "enabled": true,
+      "environment": {
+        "CODEGRAPH_PROJECT_SELECTION": "working-directory"
       }
     }
   },

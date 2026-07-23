@@ -16,6 +16,10 @@
   "current_phase": "branch_selection",
   "last_checkpoint": "init",
 
+  "repository": {
+    "name": "my-service"
+  },
+
   "branches": {
     "branch1": "<current-branch>",
     "branch2": "master"
@@ -25,7 +29,7 @@
     "severity_mode": "critical_high_only",
     "skip_low_risk_files": true,
     "generate_html_report": true,
-    "max_lines_per_batch": 1200,
+    "max_lines_per_batch": 2000,
     "deep_doubt_analysis": true,
     "user_confirmed": false
   },
@@ -66,7 +70,7 @@
 | `severity_mode` | string | `all`：报告所有严重级别；`critical_high_only`：仅 Critical + High |
 | `skip_low_risk_files` | boolean | `true` 时 Phase 2 对 `get-diff-files.js` 传 `--skip-low-risk true`，排除 DTO/Entity/测试等（详见清单 `review_scope`） |
 | `generate_html_report` | boolean | `true` 时 Phase 7 完成后进入 `html_rendering`，拉起 HTML 子执行器产出同名 `.html`；`false` 时跳过 |
-| `max_lines_per_batch` | number | Phase 2 `batch-processor.js --max-lines`；默认 **1200** |
+| `max_lines_per_batch` | number | Phase 2 `batch-processor.js --max-lines`；默认 **2000** |
 | `deep_doubt_analysis` | boolean | 默认 **true**；专家/策展遇到疑问代码时可读取所属源文件局部窗口或做一次有界引用下钻，并对问题行之前调用的存量函数做关联复核 |
 | `user_confirmed` | boolean | Phase 1 六项清单已向用户询问并复述确认后为 `true`；**为 `false` 时禁止进入 Phase 2**（兼容性补丁填 `false` 不能代替用户确认） |
 
@@ -83,13 +87,14 @@ Phase 1 须让分支 + 上表各项选项（含 `max_lines_per_batch`、`deep_do
 
 ### HTML 完整性校验（主编排器判定 Phase 7.5 是否成功）
 
-通过条件（**五者必须同时满足**）：
+通过条件（**六者必须同时满足**）：
 
 1. 文件首部含 `<!DOCTYPE html>`
 2. 文件末尾 16KB 内含 `</html>`
 3. 文件末尾 16KB 内含哨兵注释 `<!-- ato-codereview-html-end -->`
 4. `render-report-html.js` stdout 中 `allIssueCodeMissing` 为 `false`
 5. stdout 中 `section6IssueRowsComplete` 为 `true`（即 `issueRows >= expectedIssueRows`，第六节多张问题表会合并计数）
+6. stdout 中 `sectionIssueIdsMatch` 为 `true`，`duplicateIssueIds` 与 `incompleteIssues` 均为空（第五、六章 ID 多重集合一致，不含重复 ID 或占位定位）
 
 任一缺失：判定失败。主编排应**先**重跑 `node "{SKILL_ROOT}/scripts/render-report-html.js" --md … --shell … --out …`（覆盖写出）；脚本仍失败时再重拉 `java-codereview-report-html`（不复用既有半成品）。跨子执行器调用（重试）一律从空白重写。
 
@@ -103,8 +108,8 @@ Phase 7 优先运行 `render-report-md.js` 机械合成 Markdown。通过条件�
 
 1. stdout `ok: true`
 2. `unresolvedPlaceholders` 为空
-3. `allIssueCodeMissing` 为 `false`
-4. 当 stdout `issues > 0` 时，第六节「问题清单（全量）」至少包含同等数量的问题行，且 HTML 详情里的「问题代码」不得全部为「（无）」
+3. `section6IssueRowsComplete` 为 `true`
+4. `discardedIssueCount` 与 `.codereview/discarded-issues.json` 一致；被忽略候选不进入统计、第五章或第六章
 
 失败才拉起 `java-codereview-report-synthesizer` 兜底；兜底也必须保证第六节不为空。
 
@@ -112,6 +117,11 @@ Phase 7 优先运行 `render-report-md.js` 机械合成 Markdown。通过条件�
 
 - `review_scope`：`get-diff-files.js` 写入，含 `skip_low_risk_files`、`skipped_low_risk_files` 等，供报告说明。
 - `diff_bundle`：`export-batch-diffs.js` 写入，含预计算 patch 目录与 `manifest.json` 路径。
+- `batches[].segmented` / `batches[].diff_slice`：单文件变更超过批次预算时由 exporter 写入，表示该批是拆分后的 patch 子片段；重复导出保留原批次 ID 和切片边界。
+- `batches[].files[].line_ranges`：拆分子批在 branch1/new-side 上独占的问题起始行闭区间；resolver 会以 `outside_batch_scope` 丢弃越界候选。
+- `files[].old_path`：重命名文件的旧路径；resolver 将旧路径问题映射到当前 `path`。
+- `.codereview/resolved-issues.json`：报告与作者识别的唯一问题数据源，每条包含 `source_key`。
+- `.codereview/discarded-issues.json`：无法恢复问题的缺失字段、原因与已尝试证据源。
 
 ## 阶段值（current_phase）
 
@@ -165,7 +175,7 @@ Phase 4 完成后，主编排器根据 `task-plan.json` 初始化：
 
 专家键名：`core` / `spring` / `security` / `data` / `curator` / `fix`
 
-> `curator`：Phase 5.5 的策展专家（issue-curator），固定在 4 位检视专家全部 `completed`/`skipped` 之后、`fix` 之前执行；不会被 `task-plan` 标为 `skipped`（即便所有检视专家都 skipped，curator 仍需跑一次以输出空 issue 的 curated.json，给 fix-advisor 与合成官提供统一入口）。
+> `curator`：Phase 5.5 的策展专家（issue-curator），固定在 4 位检视专家全部 `completed`/`skipped` 之后、`fix` 之前执行；不会被 `task-plan` 标为 `skipped`（即便所有检视专家都 skipped，curator 仍需跑一次以输出空 issue 的 curated.json）。随后主编排必须运行 `resolve-report-issues.js --batch`；**fix-advisor 与报告合成只消费 resolved**，不以 curated 为统一入口。
 
 ## 断点恢复逻辑（主编排器每次启动必执行）
 
@@ -187,7 +197,7 @@ completed 也不例外：不得因报告文件存在而绕过续跑 / 重新检�
 2. 仅当用户选择“续跑”后，读取 state.json，根据 current_phase 跳转到对应 Phase
 3. 若 current_phase == "reviewing"：
    a. 扫描 review_progress（批次顺序与 task-plan / inventory 一致）
-   b. 对每个批次按专家顺序（core → security → spring → data → curator → fix）查找：**第一个**状态为 `pending` 或 `in_progress` 的专家；`completed` / `skipped` / `failed` 均跳过（`failed` 为终态，不再自动改 pending）
+   b. 对每个批次按专家顺序（core → security → spring → data → curator → fix）查找：**第一个**状态为 `pending` 或 `in_progress` 的专家；`completed` / `skipped` / `failed` 均跳过（`failed` 为终态，不再自动改 pending）。**注意**：`curator` 标为 `completed` 前必须已成功跑完 `resolve-report-issues.js --batch`；不得在仅有 curated、尚无 `{BATCH}-resolved.json` 时直接拉起 fix。
    c. 若选中项为 "in_progress"：按下方「in_progress 防死锁」处理后再继续
    d. 从该处拉起子执行器或继续主流程
 4. 若 current_phase == "synthesizing"：
@@ -204,7 +214,7 @@ completed 也不例外：不得因报告文件存在而绕过续跑 / 重新检�
 6. 升级兼容：
    a. 若 review_progress[*] 缺少 curator 键 → 每批次补 curator: "pending"
    b. 若 review_options 缺少 generate_html_report → 补 true
-   c. 若 review_options 缺少 max_lines_per_batch → 补 1200
+   c. 若 review_options 缺少 max_lines_per_batch → 补 2000
    d. 若 review_options 缺少 deep_doubt_analysis → 补 true
    e. 若 review_options 缺少 user_confirmed → 补 false（补完后仍须执行 Phase 1 清单）
    f. 若 synthesis 缺少 html_report_path / html_status → 补 "" 与 "skipped"

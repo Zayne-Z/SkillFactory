@@ -41,7 +41,7 @@
 
 ### Step 3：输出任务计划
 
-读取 `{{INVENTORY_PATH}}` 中的批次，为每批填充 `applicable_experts`，**不修改批次 id、files、total_lines 等已有字段**：
+读取 `{{INVENTORY_PATH}}` 中的批次，为每批填充 `applicable_experts`，**不修改批次 id、files、total_lines 等已有字段**。文件条目中的 `line_ranges` / `diff_slice` 必须逐字段原样保留，它们是超大单文件子批次的硬性所有权边界：
 
 ```json
 {

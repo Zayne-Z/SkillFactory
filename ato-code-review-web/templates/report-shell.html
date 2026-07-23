@@ -168,12 +168,12 @@
     .issue-list { display: flex; flex-direction: column; gap: 5px; min-width: 860px; }
     .issue-list-header {
       display: grid;
-      grid-template-columns: 14px 64px minmax(108px,1.5fr) minmax(56px,1fr) minmax(52px,0.85fr) 24px 28px 38px 38px minmax(88px,1.8fr) 24px;
+      grid-template-columns: 14px 28px 64px minmax(108px,1.5fr) minmax(56px,1fr) minmax(52px,0.85fr) 24px 28px 38px 38px minmax(88px,1.8fr) 24px;
       gap: 6px 10px; padding: 6px 10px; font-size: 0.64rem; font-weight: 600;
       color: var(--muted); text-transform: uppercase; letter-spacing: 0.02em;
     }
     .issue-list-header span:nth-child(1),
-    .issue-list-header span:nth-child(11) { visibility: hidden; }
+    .issue-list-header span:nth-child(12) { visibility: hidden; }
     details.issue-row {
       border-radius: 10px; background: rgba(255,255,255,0.38);
       border: 1px solid rgba(255,255,255,0.52); overflow: hidden;
@@ -184,7 +184,7 @@
     details.issue-row > summary {
       list-style: none; cursor: pointer; padding: 9px 10px; text-align: left;
       display: grid;
-      grid-template-columns: 14px 64px minmax(108px,1.5fr) minmax(56px,1fr) minmax(52px,0.85fr) 24px 28px 38px 38px minmax(88px,1.8fr) 24px;
+      grid-template-columns: 14px 28px 64px minmax(108px,1.5fr) minmax(56px,1fr) minmax(52px,0.85fr) 24px 28px 38px 38px minmax(88px,1.8fr) 24px;
       gap: 6px 10px; align-items: center; font-size: 0.76rem; line-height: 1.35;
     }
     details.issue-row > summary::-webkit-details-marker { display: none; }
@@ -194,7 +194,7 @@
       transition: transform 0.18s; justify-self: center;
     }
     details.issue-row[open] > summary::before { transform: rotate(45deg); }
-    details.issue-row > summary .btn-detail { grid-column: 11; justify-self: end; }
+    details.issue-row > summary .btn-detail { grid-column: 12; justify-self: end; }
     .col-clip {
       display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
@@ -206,6 +206,7 @@
     }
     .chk-label input { width: 12px; height: 12px; margin: 0; cursor: pointer; accent-color: var(--accent); }
     .issue-row .col-id { font-weight: 700; font-family: ui-monospace, Menlo, monospace; font-size: 0.74rem; }
+    .issue-row .col-index { color: var(--muted); text-align: center; font-size: 0.68rem; }
     .issue-row .col-loc { color: var(--text-secondary); }
     .issue-row .col-fn { color: var(--muted); font-family: ui-monospace, Menlo, monospace; font-size: 0.7rem; }
     .issue-row .col-sev { font-weight: 700; font-size: 0.7rem; text-align: center; }
@@ -339,10 +340,10 @@
       .issue-list-header { display: none; }
       .issue-list { min-width: 640px; }
       details.issue-row > summary {
-        grid-template-columns: 14px 58px minmax(88px,1.2fr) 36px 36px 24px;
+        grid-template-columns: 14px 28px 58px minmax(88px,1.2fr) 36px 36px 24px;
       }
       .issue-row .col-fn, .issue-row .col-author, .issue-row .col-must, .issue-row .col-desc, .issue-row .col-sev { display: none; }
-      details.issue-row > summary .btn-detail { grid-column: 6; }
+      details.issue-row > summary .btn-detail { grid-column: 7; }
     }
   </style>
 </head>
@@ -373,6 +374,17 @@
   <script>
     (function () {
       var DEFAULT_REMARKS = '上述问题无需修复';
+      // 本地时间 ISO（带时区偏移），签收时间使用用户本地时间而非 UTC
+      function localIso() {
+        var d = new Date();
+        function pad(n) { return String(n).length < 2 ? '0' + n : String(n); }
+        var off = -d.getTimezoneOffset();
+        var sign = off >= 0 ? '+' : '-';
+        var abs = Math.abs(off);
+        return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) +
+          'T' + pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds()) +
+          sign + pad(Math.floor(abs / 60)) + ':' + pad(abs % 60);
+      }
       var ICON = '<svg viewBox="0 0 24 24"><path d="M15 3h6v6M14 10l6.1-6.1M9 21H3v-6M10 14l-6.1 6.1"/></svg>';
       var modal = document.getElementById('issue-modal');
       var modalBody = document.getElementById('issue-modal-body');
@@ -627,7 +639,7 @@
         function txt(el) { return el ? (el.textContent || '').trim() : ''; }
         var title = txt(document.querySelector('h1')) || txt(document.querySelector('.report-title')) || '前端代码检视报告';
         var footer = txt(document.querySelector('.report-footer'));
-        var genAt = footer || new Date().toISOString().slice(0, 19);
+        var genAt = footer || localIso().slice(0, 19).replace('T', ' ');
         var infoLines = ['| 项目 | 内容 |', '|------|------|'];
         document.querySelectorAll('#section-meta dl.info-grid dt').forEach(function (dt) {
           var dd = dt.nextElementSibling;
@@ -734,12 +746,27 @@
         setTimeout(function () { URL.revokeObjectURL(a.href); }, 500);
       }
 
+      // Linux Chromium/GTK 的 showSaveFilePicker 常忽略 suggestedName（空白文件名）
+      function isLinuxDesktop() {
+        var ua = navigator.userAgent || '';
+        return /Linux/i.test(ua) && !/Android/i.test(ua);
+      }
+
+      // 保留中文仓库/分支名，仅清理各桌面系统都禁止的文件名字符
+      function safeSaveName(name) {
+        return String(name || 'report')
+          .replace(/[\u0000-\u001f\u007f]/g, '_')
+          .replace(/[\/\\:*?"<>|]+/g, '_')
+          .replace(/[. ]+$/g, '') || 'report';
+      }
+
       async function saveFile(name, content, mime) {
-        if (window.showSaveFilePicker) {
+        if (!isLinuxDesktop() && window.showSaveFilePicker) {
           try {
+            var ext = (String(name).split('.').pop() || 'txt').toLowerCase();
             var handle = await window.showSaveFilePicker({
-              suggestedName: name,
-              types: [{ description: 'File', accept: { [mime || 'text/plain']: ['.' + name.split('.').pop()] } }]
+              suggestedName: safeSaveName(name),
+              types: [{ description: 'File', accept: { [mime || 'text/plain']: ['.' + ext] } }]
             });
             var w = await handle.createWritable();
             await w.write(content);
@@ -810,7 +837,7 @@
         var valid = issues.filter(function (i) { return i.valid; });
         var fixed = issues.filter(function (i) { return i.fixed; });
         var deferred = valid.filter(function (i) { return !i.fixed; });
-        var signedAt = new Date().toISOString();
+        var signedAt = localIso();
         var payload = {
           mdPath: meta.mdFile, htmlPath: meta.htmlFile, baseName: meta.baseName,
           signer: signer,

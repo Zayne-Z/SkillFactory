@@ -1,0 +1,14 @@
+[
+  { "query": "帮我梳理登录请求从 Controller 到 DAO 的完整调用链。", "should_trigger": true },
+  { "query": "我准备改 createOrder，先确认哪些调用方、模块和测试会受影响。", "should_trigger": true },
+  { "query": "打开 src/version.ts，把版本号从 1 改成 2。", "should_trigger": true },
+  { "query": "这个空指针异常怎么修？帮我调试并改代码。", "should_trigger": true },
+  { "query": "运行 npm test，定位失败用例并修复。", "should_trigger": true },
+  { "query": "Where is PaymentService used, and what does it call?", "should_trigger": true },
+  { "query": "当前项目还没有初始化 CodeGraph，帮我建立索引。", "should_trigger": true },
+  { "query": "把这份中文产品说明翻译成英文。", "should_trigger": false },
+  { "query": "查看 MySQL 里 order_info 表有哪些字段和索引。", "should_trigger": false },
+  { "query": "把会议纪要整理成三个行动项。", "should_trigger": false },
+  { "query": "生成一张蓝色背景的产品宣传图。", "should_trigger": false },
+  { "query": "帮我计算这份 CSV 每列的平均值。", "should_trigger": false }
+]

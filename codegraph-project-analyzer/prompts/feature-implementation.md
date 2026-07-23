@@ -15,7 +15,7 @@
 
 ## 分析要求
 
-从任务的 `evidence_seeds` 开始。优先用索引和 CodeGraph MCP 查入口、调用者、被调者、影响面；仅在需要确认真实逻辑时 Read 关键文件。不要扫描全仓。
+从任务的 `evidence_seeds` 开始。优先用索引和 `pa-codegraph` Gateway 已选定的 MCP 或 standalone 后端查入口、调用者、被调者和影响面；standalone 同一任务仅第一次查询同步。仅在需要确认真实逻辑时 Read 关键文件，不要扫描全仓。
 
 必须关注这些实现机制：
 

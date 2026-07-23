@@ -14,12 +14,13 @@
   "updated_at": "2026-04-06T10:00:00.000Z",
   "current_phase": "branch_selection",
   "last_checkpoint": "init",
+  "repository": { "name": "my-frontend-app" },
   "branches": { "branch1": "<current-branch>", "branch2": "master" },
   "review_options": {
     "severity_mode": "critical_high_only",
     "skip_low_risk_files": true,
     "generate_html_report": true,
-    "max_lines_per_batch": 1200,
+    "max_lines_per_batch": 2000,
     "deep_doubt_analysis": true,
     "user_confirmed": false
   },
@@ -49,7 +50,7 @@
 | `severity_mode` | string | `all` 或 `critical_high_only` |
 | `skip_low_risk_files` | boolean | `true` 时 Phase 2 跳过测试/E2E/Storybook 等低风险文件 |
 | `generate_html_report` | boolean | `true` 时 Phase 7 完成后进入 `html_rendering`，产出同名 `.html` |
-| `max_lines_per_batch` | number | Phase 2 `batch-processor.js --max-lines`；默认 **1200** |
+| `max_lines_per_batch` | number | Phase 2 `batch-processor.js --max-lines`；默认 **2000** |
 | `deep_doubt_analysis` | boolean | 默认 **true**；专家/策展遇到疑问代码时可读取所属源文件局部窗口或做一次有界引用下钻，并对问题行之前调用的存量函数做关联复核 |
 | `user_confirmed` | boolean | Phase 1 六项确认后为 `true`；**为 false 时禁止 Phase 2** |
 
@@ -68,6 +69,7 @@
 3. 末尾 16KB 内含 `<!-- ato-codereview-html-end -->`
 4. `render-report-html.js` stdout 中 `allIssueCodeMissing` 为 `false`
 5. stdout 中 `section6IssueRowsComplete` 为 `true`（即 `issueRows >= expectedIssueRows`，第六节多张问题表会合并计数）
+6. stdout 中 `sectionIssueIdsMatch` 为 `true`，`duplicateIssueIds` 与 `incompleteIssues` 均为空（第五、六章 ID 多重集合一致，不含重复 ID 或占位定位）
 
 失败则先重跑 `render-report-html.js`；仍失败再重拉 `web-codereview-report-html`（最多 2 次）。**禁止** HTML 正文用「请查看同名 .md」占位已有 MD 章节。
 
@@ -79,10 +81,18 @@ Phase 7 优先运行 `render-report-md.js` 机械合成 Markdown。通过条件�
 
 1. stdout `ok: true`
 2. `unresolvedPlaceholders` 为空
-3. `allIssueCodeMissing` 为 `false`
-4. 当 stdout `issues > 0` 时，第六节「问题清单（全量）」至少包含同等数量的问题行，且 HTML 详情里的「问题代码」不得全部为「（无）」
+3. `section6IssueRowsComplete` 为 `true`
+4. `discardedIssueCount` 与 `.codereview/discarded-issues.json` 一致；被忽略候选不进入统计、第五章或第六章
 
 失败才拉起 `web-codereview-report-synthesizer` 兜底；兜底也必须保证第六节不为空。
+
+### 报告证据产物
+
+- `file-inventory.json.batches[].segmented` / `diff_slice`：单文件变更超过批次预算时由 exporter 写入，表示拆分后的 patch 子片段；重复导出保留原批次 ID 和切片边界。
+- `file-inventory.json.batches[].files[].line_ranges`：拆分子批在 branch1/new-side 上独占的问题起始行闭区间；resolver 会以 `outside_batch_scope` 丢弃越界候选。
+- `file-inventory.json.files[].old_path`：重命名文件的旧路径；resolver 将旧路径问题映射到当前 `path`。
+- `.codereview/resolved-issues.json`：报告与作者识别的唯一问题数据源，每条包含 `source_key`。
+- `.codereview/discarded-issues.json`：无法恢复问题的缺失字段、原因与已尝试证据源。
 
 ## 阶段值（current_phase）
 
@@ -115,7 +125,7 @@ Phase 7 优先运行 `render-report-md.js` 机械合成 Markdown。通过条件�
 }
 ```
 
-执行顺序：`core → framework → reliability → security → curator → fix`
+执行顺序：`core → framework → reliability → security → curator → fix`。`curator` 标为 `completed` 前必须已成功跑完 `resolve-report-issues.js --batch`；不得在仅有 curated、尚无 `{BATCH}-resolved.json` 时直接拉起 fix。
 
 ## 断点恢复
 

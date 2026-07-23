@@ -9,7 +9,6 @@
  * payload 示例见 templates/signoff-payload.example.json
  */
 'use strict';
-
 const fs = require('fs');
 const path = require('path');
 

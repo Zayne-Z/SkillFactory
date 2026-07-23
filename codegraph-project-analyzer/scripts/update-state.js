@@ -39,12 +39,14 @@ function defaults() {
       output_human_html: true,
       index_storage: 'json',
       max_context_pack_chars: 6000,
-      codegraph_policy: 'ask',
+      codegraph_policy: 'codegraph-first',
       runtime_targets: ['vscode-builder', 'opencode'],
     },
     mcp: {
       codegraph: 'unknown',
+      codegraph_source: 'unknown',
       mysql: 'unknown',
+      mysql_source: 'unknown',
     },
     paths: {
       state: '.projectanalysis/state.json',

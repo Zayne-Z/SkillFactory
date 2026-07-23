@@ -7,55 +7,149 @@ const { spawn, spawnSync } = require('node:child_process');
 const { version: WRAPPER_VERSION } = require('../package.json');
 
 const DEFAULT_CODEGRAPH_PACKAGE = '@colbymchenry/codegraph@1.3.0';
-const ROOT_MARKERS = ['.git', 'pom.xml', 'package.json', 'build.gradle'];
-const SIGNAL_EXIT_CODE = { SIGINT: 130, SIGTERM: 143 };
-const PA_TOOLS = [
-  {
-    name: 'pa_codegraph_check',
-    description: 'Check whether the current project is a code repository and whether a .codegraph index exists. Use this before asking the user to initialize CodeGraph.',
-    inputSchema: { type: 'object', additionalProperties: false },
-  },
-  {
-    name: 'pa_codegraph_init_start',
-    description: 'Start CodeGraph initialization in the background after the user confirms. This does not block the MCP connection.',
-    inputSchema: { type: 'object', additionalProperties: false },
-  },
-  {
-    name: 'pa_codegraph_init_wait',
-    description: 'Start or join CodeGraph initialization and block this tool call until it completes, fails, or reaches the timeout.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        timeout_ms: { type: 'integer', minimum: 1, description: 'Maximum wait time in milliseconds. Defaults to CODEGRAPH_INIT_WAIT_TIMEOUT_MS or 30 minutes.' },
-      },
-      additionalProperties: false,
-    },
-  },
-  {
-    name: 'pa_codegraph_init_status',
-    description: 'Check background CodeGraph initialization status.',
-    inputSchema: { type: 'object', additionalProperties: false },
-  },
-  {
-    name: 'pa_codegraph_init_skip',
-    description: 'Record that the user chose not to initialize CodeGraph for this session.',
-    inputSchema: { type: 'object', additionalProperties: false },
-  },
+const PROJECT_MARKERS = [
+  '.git',
+  'pom.xml',
+  'package.json',
+  'settings.gradle',
+  'settings.gradle.kts',
+  'build.gradle',
+  'build.gradle.kts',
+  'pyproject.toml',
+  'go.mod',
+  'Cargo.toml',
 ];
+const PROJECT_SELECTION_MODES = new Set(['working-directory', 'configured']);
+const INITIALIZING_PA_TOOLS = new Set([
+  'pa_codegraph_ensure',
+  'pa_codegraph_init_start',
+  'pa_codegraph_init_wait',
+]);
+const SIGNAL_EXIT_CODE = { SIGINT: 130, SIGTERM: 143 };
+const WORKING_DIRECTORY_PROPERTY = {
+  type: 'string',
+  minLength: 1,
+  description: 'Absolute current working directory for the agent target project. Determine it again for every CodeGraph call; do not pass the MCP launch directory or a parent workspace.',
+};
+const NULLABLE_STRING_SCHEMA = { anyOf: [{ type: 'string' }, { type: 'null' }] };
+const SELECTION_OUTPUT_PROPERTIES = {
+  project_selection_mode: { type: 'string', enum: ['working-directory', 'configured'] },
+  working_directory: NULLABLE_STRING_SCHEMA,
+  project_root: NULLABLE_STRING_SCHEMA,
+  resolution_method: NULLABLE_STRING_SCHEMA,
+};
+
+function managementOutputSchema() {
+  return {
+    type: 'object',
+    properties: { ...SELECTION_OUTPUT_PROPERTIES },
+    required: ['project_selection_mode', 'working_directory', 'project_root', 'resolution_method'],
+    additionalProperties: true,
+  };
+}
+
+function toolAnnotations(readOnly) {
+  return {
+    readOnlyHint: readOnly,
+    destructiveHint: false,
+    idempotentHint: true,
+    openWorldHint: false,
+  };
+}
+
+function managementInputSchema(projectSelectionMode, extraProperties = {}) {
+  const schema = {
+    type: 'object',
+    properties: { ...extraProperties },
+    additionalProperties: false,
+  };
+  if (projectSelectionMode === 'working-directory') {
+    schema.properties.working_directory = WORKING_DIRECTORY_PROPERTY;
+    schema.required = ['working_directory'];
+  }
+  return schema;
+}
+
+function createPaTools(projectSelectionMode) {
+  const targetDescription = projectSelectionMode === 'working-directory'
+    ? 'Pass working_directory from the agent current target directory; the wrapper resolves the nearest repository root.'
+    : 'This wrapper is explicitly bound to --project-root or CODEGRAPH_PROJECT_ROOT.';
+  return [
+    {
+      name: 'pa_codegraph_check',
+      description: `Check the selected project for a healthy local .codegraph index. ${targetDescription}`,
+      inputSchema: managementInputSchema(projectSelectionMode),
+      outputSchema: managementOutputSchema(),
+      annotations: toolAnnotations(true),
+    },
+    {
+      name: 'pa_codegraph_ensure',
+      description: `Check the selected project, initialize its CodeGraph index when missing, and block until ready or timed out. ${targetDescription}`,
+      inputSchema: managementInputSchema(projectSelectionMode, {
+        timeout_ms: { type: 'integer', minimum: 1, description: 'Maximum wait time in milliseconds. Defaults to CODEGRAPH_INIT_WAIT_TIMEOUT_MS or 30 minutes.' },
+      }),
+      outputSchema: managementOutputSchema(),
+      annotations: toolAnnotations(false),
+    },
+    {
+      name: 'pa_codegraph_init_start',
+      description: `Start CodeGraph initialization in the background. A running result is not completion; always follow with pa_codegraph_init_wait or pa_codegraph_init_status. Never invoke a CodeGraph binary from the target project's node_modules. ${targetDescription}`,
+      inputSchema: managementInputSchema(projectSelectionMode),
+      outputSchema: managementOutputSchema(),
+      annotations: toolAnnotations(false),
+    },
+    {
+      name: 'pa_codegraph_init_wait',
+      description: `Start or join CodeGraph initialization and block until it completes, fails, or reaches the timeout. ${targetDescription}`,
+      inputSchema: managementInputSchema(projectSelectionMode, {
+        timeout_ms: { type: 'integer', minimum: 1, description: 'Maximum wait time in milliseconds. Defaults to CODEGRAPH_INIT_WAIT_TIMEOUT_MS or 30 minutes.' },
+      }),
+      outputSchema: managementOutputSchema(),
+      annotations: toolAnnotations(false),
+    },
+    {
+      name: 'pa_codegraph_init_status',
+      description: `Check background CodeGraph initialization status. ${targetDescription}`,
+      inputSchema: managementInputSchema(projectSelectionMode),
+      outputSchema: managementOutputSchema(),
+      annotations: toolAnnotations(true),
+    },
+    {
+      name: 'pa_codegraph_init_skip',
+      description: `Record that initialization is skipped for the selected project in this session. ${targetDescription}`,
+      inputSchema: managementInputSchema(projectSelectionMode),
+      outputSchema: managementOutputSchema(),
+      annotations: toolAnnotations(false),
+    },
+  ];
+}
 
 function parseArgs(argv) {
   const options = {};
   const passthrough = [];
+  const readValue = (index, optionName) => {
+    const value = argv[index + 1];
+    if (value === undefined || value === '' || value.startsWith('--')) {
+      throw new Error(`${optionName} requires a value.`);
+    }
+    return value;
+  };
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
     if (arg === '--project-root') {
-      options.projectRoot = argv[++i];
+      options.projectRoot = readValue(i, arg);
+      i += 1;
+    } else if (arg === '--project-selection') {
+      options.projectSelection = readValue(i, arg);
+      i += 1;
     } else if (arg === '--codegraph-package') {
-      options.codegraphPackage = argv[++i];
+      options.codegraphPackage = readValue(i, arg);
+      i += 1;
     } else if (arg === '--no-auto-init') {
       options.autoInit = false;
     } else if (arg === '--log-file') {
-      options.logFile = argv[++i];
+      options.logFile = readValue(i, arg);
+      i += 1;
     } else {
       passthrough.push(arg);
     }
@@ -88,10 +182,186 @@ function realpathOrResolved(candidate) {
   }
 }
 
-function resolveProjectRoot(options) {
+function resolveProjectSelectionMode(options) {
+  const mode = options.projectSelection || process.env.CODEGRAPH_PROJECT_SELECTION || 'working-directory';
+  if (!PROJECT_SELECTION_MODES.has(mode)) {
+    throw new Error(`Invalid project selection mode "${mode}". Expected working-directory or configured.`);
+  }
+  return mode;
+}
+
+function resolveCliProjectRoot(options) {
   if (options.projectRoot) return realpathOrResolved(options.projectRoot);
   if (process.env.CODEGRAPH_PROJECT_ROOT) return realpathOrResolved(process.env.CODEGRAPH_PROJECT_ROOT);
   return realpathOrResolved(process.cwd());
+}
+
+function validateDirectory(candidate, fieldName) {
+  if (typeof candidate !== 'string' || !candidate.trim()) {
+    return { ok: false, reason: `${fieldName} must be a non-empty absolute path.` };
+  }
+  if (!path.isAbsolute(candidate)) {
+    return { ok: false, reason: `${fieldName} must be absolute: ${candidate}` };
+  }
+  const directory = realpathOrResolved(candidate);
+  try {
+    if (!fs.statSync(directory).isDirectory()) {
+      return { ok: false, reason: `${fieldName} is not a directory: ${directory}` };
+    }
+  } catch {
+    return { ok: false, reason: `${fieldName} does not exist or is not accessible: ${directory}` };
+  }
+  return { ok: true, directory };
+}
+
+function resolveConfiguredProject(options) {
+  const candidate = options.projectRoot || process.env.CODEGRAPH_PROJECT_ROOT;
+  const source = options.projectRoot ? 'cli_argument' : 'environment';
+  if (!candidate) return { configured: false, ok: false, source: '' };
+  const validated = validateDirectory(candidate, source === 'cli_argument' ? '--project-root' : 'CODEGRAPH_PROJECT_ROOT');
+  if (!validated.ok) return { configured: true, ok: false, source, reason: validated.reason };
+  return { configured: true, ok: true, source, projectRoot: validated.directory };
+}
+
+function findNearestProjectMarkerRoot(workingDirectory) {
+  let current = workingDirectory;
+  while (true) {
+    const marker = PROJECT_MARKERS.find((name) => fs.existsSync(path.join(current, name)));
+    if (marker) return { projectRoot: current, marker };
+    const parent = path.dirname(current);
+    if (parent === current) return null;
+    current = parent;
+  }
+}
+
+function resolveWorkingDirectory(candidate) {
+  const validated = validateDirectory(candidate, 'working_directory');
+  if (!validated.ok) return { ok: false, reason: validated.reason };
+  const workingDirectory = validated.directory;
+  const git = spawnSync('git', ['-C', workingDirectory, 'rev-parse', '--show-toplevel'], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'ignore'],
+  });
+  if (!git.error && git.status === 0 && git.stdout.trim()) {
+    const gitRoot = validateDirectory(git.stdout.trim(), 'git project root');
+    if (gitRoot.ok) {
+      return {
+        ok: true,
+        workingDirectory,
+        projectRoot: gitRoot.directory,
+        resolutionMethod: 'git',
+        projectMarker: '.git',
+      };
+    }
+  }
+  const markerRoot = findNearestProjectMarkerRoot(workingDirectory);
+  if (markerRoot) {
+    return {
+      ok: true,
+      workingDirectory,
+      projectRoot: markerRoot.projectRoot,
+      resolutionMethod: 'project-marker',
+      projectMarker: markerRoot.marker,
+    };
+  }
+  return { ok: false, reason: `No Git root or supported project marker was found at or above ${workingDirectory}.` };
+}
+
+function projectSelectionError(projectSelectionMode, status, reason) {
+  return {
+    status,
+    project_selection_mode: projectSelectionMode,
+    working_directory: null,
+    project_root: null,
+    resolution_method: null,
+    confirmation_required: true,
+    reason,
+    instruction: projectSelectionMode === 'working-directory'
+      ? 'Determine the absolute current directory of the target repository and call again with working_directory. If it is unknown, ask the user. Do not use the MCP launch directory or a parent workspace.'
+      : 'Configure --project-root or CODEGRAPH_PROJECT_ROOT, then restart the MCP server. Configured mode never falls back to cwd or tool arguments.',
+  };
+}
+
+function resolveToolProject(toolArguments, projectSelectionMode, configuredProject) {
+  if (projectSelectionMode === 'configured') {
+    if (!configuredProject.configured) {
+      return {
+        ok: false,
+        result: projectSelectionError(projectSelectionMode, 'configured_project_root_missing', 'Configured mode requires --project-root or CODEGRAPH_PROJECT_ROOT.'),
+      };
+    }
+    if (!configuredProject.ok) {
+      return {
+        ok: false,
+        result: projectSelectionError(projectSelectionMode, 'invalid_configured_project_root', configuredProject.reason),
+      };
+    }
+    return {
+      ok: true,
+      workingDirectory: null,
+      projectRoot: configuredProject.projectRoot,
+      resolutionMethod: 'configured',
+      projectMarker: '',
+      source: configuredProject.source,
+    };
+  }
+  if (!Object.prototype.hasOwnProperty.call(toolArguments, 'working_directory')) {
+    return {
+      ok: false,
+      result: projectSelectionError(projectSelectionMode, 'needs_working_directory', 'working_directory is required for every MCP tool call in working-directory mode.'),
+    };
+  }
+  const resolved = resolveWorkingDirectory(toolArguments.working_directory);
+  if (!resolved.ok) {
+    return {
+      ok: false,
+      result: projectSelectionError(projectSelectionMode, 'invalid_working_directory', resolved.reason),
+    };
+  }
+  return { ...resolved, source: 'tool_argument' };
+}
+
+function rootResultFields(selection, projectSelectionMode) {
+  return {
+    project_selection_mode: projectSelectionMode,
+    working_directory: selection.workingDirectory,
+    project_root: selection.projectRoot,
+    project_root_source: selection.source,
+    resolution_method: selection.resolutionMethod,
+    project_marker: selection.projectMarker,
+  };
+}
+
+function initializationResultFields(result) {
+  if (result.status === 'completed') {
+    return {
+      initialization_complete: true,
+      next_tool: null,
+      instruction: 'CodeGraph initialization is complete and the local index is healthy.',
+    };
+  }
+  if (result.status === 'running') {
+    return {
+      initialization_complete: false,
+      next_tool: 'pa_codegraph_init_wait',
+      instruction: 'Initialization has only been started, not completed. Call pa_codegraph_init_wait (recommended) or pa_codegraph_init_status with the same target. Do not search for or invoke CodeGraph from the target project node_modules.',
+    };
+  }
+  if (result.status === 'failed') {
+    return {
+      initialization_complete: false,
+      next_tool: null,
+      instruction: 'Wrapper-managed initialization failed. Report the returned error or fix the wrapper/package configuration; do not bypass the wrapper by invoking CodeGraph from the target project node_modules.',
+    };
+  }
+  if (result.status === 'skipped') {
+    return {
+      initialization_complete: false,
+      next_tool: null,
+      instruction: 'CodeGraph initialization is skipped for this project in the current wrapper session.',
+    };
+  }
+  return { initialization_complete: false };
 }
 
 function createLogger(projectRoot, options) {
@@ -120,6 +390,35 @@ function lockDirFor(projectRoot) {
   return path.join(os.tmpdir(), `pa-codegraph-init-${hash}.lock`);
 }
 
+function readInitLockOwnerPid(lockDir) {
+  try {
+    const firstLine = fs.readFileSync(path.join(lockDir, 'owner'), 'utf8').split(/\r?\n/, 1)[0];
+    const pid = Number(firstLine);
+    return Number.isInteger(pid) && pid > 0 ? pid : null;
+  } catch {
+    return null;
+  }
+}
+
+function processIsAlive(pid) {
+  if (!pid) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === 'EPERM';
+  }
+}
+
+function initLockIsStale(lockDir, staleMs) {
+  try {
+    if (Date.now() - fs.statSync(lockDir).mtimeMs <= staleMs) return false;
+  } catch {
+    return false;
+  }
+  return !processIsAlive(readInitLockOwnerPid(lockDir));
+}
+
 function needsShellForNpx() {
   return process.platform === 'win32' || process.env.PA_CODEGRAPH_FORCE_WIN32 === '1';
 }
@@ -128,13 +427,59 @@ function npxCommand() {
   return 'npx';
 }
 
-function npxSpawnOptions(projectRoot, stdio, extra = {}) {
+function commandSpawnOptions(projectRoot, stdio, shell, extra = {}) {
   return {
     cwd: projectRoot,
     env: process.env,
     stdio,
-    shell: needsShellForNpx(),
+    shell,
     ...extra,
+  };
+}
+
+function requestedCodegraphVersion(codegraphPackage) {
+  const match = /^@colbymchenry\/codegraph(?:@(.+))?$/.exec(codegraphPackage);
+  return match ? (match[1] || '') : null;
+}
+
+function validateCodegraphPackageSpec(codegraphPackage) {
+  const safeNpmSpec = /^(?:@[A-Za-z0-9._-]+\/)?[A-Za-z0-9._-]+@\d+\.\d+\.\d+(?:-[A-Za-z0-9._-]+)?$/;
+  if (typeof codegraphPackage !== 'string' || !safeNpmSpec.test(codegraphPackage)) {
+    throw new Error('CODEGRAPH_PACKAGE must use an exact npm version. Tags, ranges, URLs, paths, whitespace, and shell characters are not allowed.');
+  }
+}
+
+function resolveInstalledCodegraphLauncher(codegraphPackage) {
+  const requestedVersion = requestedCodegraphVersion(codegraphPackage);
+  if (requestedVersion === null) return null;
+  try {
+    const packageJsonPath = require.resolve('@colbymchenry/codegraph/package.json', {
+      paths: [path.resolve(__dirname, '..')],
+    });
+    const installedPackage = JSON.parse(fs.readFileSync(packageJsonPath, 'utf8'));
+    if (requestedVersion && installedPackage.version !== requestedVersion) return null;
+    const shimPath = path.join(path.dirname(packageJsonPath), 'npm-shim.js');
+    if (!fs.existsSync(shimPath)) return null;
+    return {
+      command: process.execPath,
+      prefixArgs: [shimPath],
+      shell: false,
+      source: 'wrapper_dependency',
+      display: `${process.execPath} ${shimPath}`,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function resolveCodegraphLauncher(codegraphPackage) {
+  validateCodegraphPackageSpec(codegraphPackage);
+  return resolveInstalledCodegraphLauncher(codegraphPackage) || {
+    command: npxCommand(),
+    prefixArgs: ['-y', codegraphPackage],
+    shell: needsShellForNpx(),
+    source: 'npx_fallback',
+    display: `npx -y ${codegraphPackage}`,
   };
 }
 
@@ -154,8 +499,7 @@ async function acquireInitLock(projectRoot, logger) {
       return () => fs.rmSync(lockDir, { recursive: true, force: true });
     } catch (error) {
       if (error.code !== 'EEXIST') throw error;
-      const stat = fs.statSync(lockDir);
-      if (Date.now() - stat.mtimeMs > staleMs) {
+      if (initLockIsStale(lockDir, staleMs)) {
         logger.write(`removing stale init lock ${lockDir}`);
         fs.rmSync(lockDir, { recursive: true, force: true });
         continue;
@@ -169,9 +513,10 @@ async function acquireInitLock(projectRoot, logger) {
 }
 
 function runNpx(projectRoot, codegraphPackage, args, logger) {
-  logger.write(`running npx -y ${codegraphPackage} ${args.join(' ')}`);
-  const result = spawnSync(npxCommand(), ['-y', codegraphPackage, ...args], {
-    ...npxSpawnOptions(projectRoot, ['ignore', 'pipe', 'pipe']),
+  const launcher = resolveCodegraphLauncher(codegraphPackage);
+  logger.write(`running ${launcher.display} ${args.join(' ')} (${launcher.source})`);
+  const result = spawnSync(launcher.command, [...launcher.prefixArgs, ...args], {
+    ...commandSpawnOptions(projectRoot, ['ignore', 'pipe', 'pipe'], launcher.shell),
     encoding: 'utf8',
   });
   if (result.stdout) logger.writeRaw(result.stdout);
@@ -179,14 +524,16 @@ function runNpx(projectRoot, codegraphPackage, args, logger) {
   return result;
 }
 
-function textResult(id, structuredContent) {
+function textResult(id, structuredContent, isError = false) {
+  const result = {
+    content: [{ type: 'text', text: JSON.stringify(structuredContent, null, 2) }],
+    structuredContent,
+  };
+  if (isError) result.isError = true;
   return {
     jsonrpc: '2.0',
     id,
-    result: {
-      content: [{ type: 'text', text: JSON.stringify(structuredContent, null, 2) }],
-      structuredContent,
-    },
+    result,
   };
 }
 
@@ -199,7 +546,7 @@ function writeJsonLine(stream, value) {
 }
 
 function isCodeRepo(projectRoot) {
-  return ROOT_MARKERS.some((marker) => fs.existsSync(path.join(projectRoot, marker)));
+  return PROJECT_MARKERS.some((marker) => fs.existsSync(path.join(projectRoot, marker)));
 }
 
 function inspectCodegraphIndex(projectRoot, codegraphPackage, logger) {
@@ -227,11 +574,26 @@ function checkProject(projectRoot, codegraphPackage, logger) {
     has_codegraph_index: index.healthy,
     codegraph_status: index.status,
     codegraph_status_error: index.error,
+    recommend_initialization: codeRepo && !index.healthy,
     recommend_init_prompt: codeRepo && !index.healthy,
-    recommended_actions: codeRepo && !index.healthy ? ['blocking_init', 'background_init', 'skip', 'ask_later'] : [],
+    recommended_actions: codeRepo && !index.healthy ? ['automatic_ensure', 'blocking_init', 'background_init', 'skip'] : [],
     instruction: codeRepo && !index.healthy
-      ? 'Ask whether to initialize CodeGraph. Use pa_codegraph_init_wait when later skill steps require a completed index, or pa_codegraph_init_start for background initialization.'
+      ? 'Use pa_codegraph_ensure for automatic blocking initialization, or follow the configured policy with pa_codegraph_init_wait/pa_codegraph_init_start.'
       : 'CodeGraph initialization prompt is not needed.',
+  };
+}
+
+function notCodeRepoInitializationResult(projectRoot) {
+  return {
+    status: 'not_code_repo',
+    project_root: projectRoot,
+    is_code_repo: false,
+    has_codegraph_directory: fs.existsSync(path.join(projectRoot, '.codegraph')),
+    has_codegraph_index: false,
+    codegraph_status: 'not_checked',
+    codegraph_status_error: '',
+    auto_initialized: false,
+    instruction: 'Initialization was not started because the selected root has no supported code project marker. Confirm the intended target directory.',
   };
 }
 
@@ -240,8 +602,13 @@ function proxyCodegraphCli(projectRoot, codegraphPackage, args, logger) {
     logger.write('usage: pa-codegraph-mcp codegraph <status|init|sync|...>');
     process.exit(2);
   }
-  logger.write(`proxying npx -y ${codegraphPackage} ${args.join(' ')}`);
-  const child = spawn(npxCommand(), ['-y', codegraphPackage, ...args], npxSpawnOptions(projectRoot, 'inherit'));
+  const launcher = resolveCodegraphLauncher(codegraphPackage);
+  logger.write(`proxying ${launcher.display} ${args.join(' ')} (${launcher.source})`);
+  const child = spawn(
+    launcher.command,
+    [...launcher.prefixArgs, ...args],
+    commandSpawnOptions(projectRoot, 'inherit', launcher.shell),
+  );
   child.on('error', (error) => {
     logger.write(`codegraph command failed: ${error.message}`);
     process.exit(1);
@@ -303,6 +670,7 @@ async function ensureInitialized(projectRoot, codegraphPackage, autoInit, logger
 function createInitManager(projectRoot, codegraphPackage, logger) {
   const codegraphDir = path.join(projectRoot, '.codegraph');
   const lockDir = lockDirFor(projectRoot);
+  const launcher = resolveCodegraphLauncher(codegraphPackage);
   const state = {
     status: 'idle',
     started_at: '',
@@ -313,6 +681,12 @@ function createInitManager(projectRoot, codegraphPackage, logger) {
   };
   let child = null;
   let releaseLock = null;
+
+  const lockIsStale = () => {
+    if (!fs.existsSync(lockDir)) return false;
+    const staleMs = positiveIntFromEnv('CODEGRAPH_INIT_LOCK_STALE_MS', 600000);
+    return initLockIsStale(lockDir, staleMs);
+  };
 
   const applyIndexResult = (failurePrefix) => {
     const index = inspectCodegraphIndex(projectRoot, codegraphPackage, logger);
@@ -330,16 +704,45 @@ function createInitManager(projectRoot, codegraphPackage, logger) {
     return index;
   };
 
-  const snapshot = () => {
-    if (state.status === 'running' && state.external_lock && !fs.existsSync(lockDir)) {
+  const snapshot = (verifyHealth = false) => {
+    if (state.status === 'running' && state.external_lock && (!fs.existsSync(lockDir) || lockIsStale())) {
+      if (fs.existsSync(lockDir)) {
+        logger.write(`removing stale background init lock ${lockDir}`);
+        fs.rmSync(lockDir, { recursive: true, force: true });
+      }
       applyIndexResult('External CodeGraph initialization did not produce a healthy index');
     } else if (state.status === 'idle' && fs.existsSync(codegraphDir)) {
       applyIndexResult('Existing CodeGraph index is not healthy');
     }
-    const hasDirectory = fs.existsSync(codegraphDir);
+    let hasDirectory = fs.existsSync(codegraphDir);
+    if (state.status === 'completed' && !hasDirectory) {
+      state.status = 'failed';
+      state.completed_at = new Date().toISOString();
+      state.exit_code = 1;
+      state.error = 'The completed CodeGraph index directory was removed.';
+    } else if (state.status === 'completed' && verifyHealth) {
+      const index = inspectCodegraphIndex(projectRoot, codegraphPackage, logger);
+      if (!index.healthy) {
+        state.status = 'failed';
+        state.completed_at = new Date().toISOString();
+        state.exit_code = 1;
+        state.error = `The completed CodeGraph index is no longer healthy: ${index.error || index.status}`;
+      }
+      hasDirectory = fs.existsSync(codegraphDir);
+    } else if (state.status === 'skipped' && verifyHealth && hasDirectory) {
+      const index = inspectCodegraphIndex(projectRoot, codegraphPackage, logger);
+      if (index.healthy) {
+        state.status = 'completed';
+        state.completed_at = new Date().toISOString();
+        state.exit_code = 0;
+        state.error = '';
+      }
+    }
     return {
       ...state,
       project_root: projectRoot,
+      codegraph_package: codegraphPackage,
+      codegraph_launcher_source: launcher.source,
       has_codegraph_directory: hasDirectory,
       has_codegraph_index: state.status === 'completed' && hasDirectory,
     };
@@ -347,8 +750,15 @@ function createInitManager(projectRoot, codegraphPackage, logger) {
 
   const start = () => {
     if (state.status === 'running') return { ...snapshot(), already_running: true };
-    if (state.status === 'skipped') return { ...snapshot(), already_skipped: true };
-    if (state.status === 'completed') return { ...snapshot(), already_indexed: true };
+    if (state.status === 'skipped') {
+      const current = snapshot(true);
+      if (current.status === 'completed') return { ...current, already_indexed: true };
+      return { ...current, already_skipped: true };
+    }
+    if (state.status === 'completed') {
+      const current = snapshot(true);
+      if (current.status === 'completed') return { ...current, already_indexed: true };
+    }
     if (fs.existsSync(codegraphDir)) {
       const index = inspectCodegraphIndex(projectRoot, codegraphPackage, logger);
       if (index.healthy) {
@@ -360,15 +770,22 @@ function createInitManager(projectRoot, codegraphPackage, logger) {
         return { ...snapshot(), already_indexed: true };
       }
     }
-    try {
-      fs.mkdirSync(lockDir);
-      fs.writeFileSync(path.join(lockDir, 'owner'), `${process.pid}\n${new Date().toISOString()}\nbackground\n`, 'utf8');
-      releaseLock = () => {
-        fs.rmSync(lockDir, { recursive: true, force: true });
-        releaseLock = null;
-      };
-    } catch (error) {
-      if (error.code === 'EEXIST') {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      try {
+        fs.mkdirSync(lockDir);
+        fs.writeFileSync(path.join(lockDir, 'owner'), `${process.pid}\n${new Date().toISOString()}\nbackground\n`, 'utf8');
+        releaseLock = () => {
+          fs.rmSync(lockDir, { recursive: true, force: true });
+          releaseLock = null;
+        };
+        break;
+      } catch (error) {
+        if (error.code !== 'EEXIST') throw error;
+        if (lockIsStale() && attempt === 0) {
+          logger.write(`removing stale background init lock ${lockDir}`);
+          fs.rmSync(lockDir, { recursive: true, force: true });
+          continue;
+        }
         state.status = 'running';
         state.started_at = state.started_at || new Date().toISOString();
         state.completed_at = '';
@@ -377,7 +794,6 @@ function createInitManager(projectRoot, codegraphPackage, logger) {
         state.external_lock = true;
         return { ...snapshot(), already_running: true };
       }
-      throw error;
     }
     state.status = 'running';
     state.started_at = new Date().toISOString();
@@ -385,8 +801,12 @@ function createInitManager(projectRoot, codegraphPackage, logger) {
     state.exit_code = null;
     state.error = '';
     state.external_lock = false;
-    logger.write(`starting background npx -y ${codegraphPackage} init`);
-    child = spawn(npxCommand(), ['-y', codegraphPackage, 'init'], npxSpawnOptions(projectRoot, ['ignore', 'pipe', 'pipe']));
+    logger.write(`starting background ${launcher.display} init (${launcher.source})`);
+    child = spawn(
+      launcher.command,
+      [...launcher.prefixArgs, 'init'],
+      commandSpawnOptions(projectRoot, ['ignore', 'pipe', 'pipe'], launcher.shell),
+    );
     child.stdout.on('data', (chunk) => logger.writeRaw(String(chunk)));
     child.stderr.on('data', (chunk) => logger.writeRaw(String(chunk)));
     child.on('error', (error) => {
@@ -416,7 +836,7 @@ function createInitManager(projectRoot, codegraphPackage, logger) {
     });
     return { ...snapshot(), already_running: false };
   };
-  const status = () => snapshot();
+  const status = () => snapshot(true);
   const wait = async (options = {}) => {
     const timeoutMs = positiveInt(options.timeout_ms, positiveIntFromEnv('CODEGRAPH_INIT_WAIT_TIMEOUT_MS', 1800000));
     const pollMs = positiveIntFromEnv('CODEGRAPH_INIT_WAIT_POLL_MS', 250);
@@ -474,17 +894,185 @@ function createInitManager(projectRoot, codegraphPackage, logger) {
 function normalizeServeArgs(commandArgs, logger) {
   const args = commandArgs.length ? commandArgs : ['serve', '--mcp'];
   if (!args.includes('serve') || !args.includes('--mcp')) {
-    logger.write('usage: pa-codegraph-mcp serve --mcp [--project-root <path>]');
+    logger.write('usage: pa-codegraph-mcp serve --mcp [--project-selection working-directory|configured] [--project-root <path>]');
     process.exit(2);
   }
   return args[0] === 'serve' ? args : ['serve', ...args.filter((arg) => arg !== 'serve')];
 }
 
-function serve(projectRoot, codegraphPackage, commandArgs, logger, initManager) {
+function augmentCodegraphTool(tool, projectSelectionMode) {
+  if (!tool?.name?.startsWith('codegraph_')) return tool;
+  const inputSchema = tool.inputSchema && typeof tool.inputSchema === 'object'
+    ? tool.inputSchema
+    : { type: 'object' };
+  const properties = { ...(inputSchema.properties || {}) };
+  delete properties.projectPath;
+  const required = Array.isArray(inputSchema.required)
+    ? inputSchema.required.filter((name) => name !== 'projectPath' && name !== 'working_directory')
+    : [];
+  if (projectSelectionMode === 'working-directory') {
+    properties.working_directory = WORKING_DIRECTORY_PROPERTY;
+    required.push('working_directory');
+  }
+  const targetDescription = projectSelectionMode === 'working-directory'
+    ? 'Pass working_directory for the agent current target on every call; the wrapper resolves and injects the internal projectPath.'
+    : 'The wrapper injects projectPath from its explicit configured project root.';
+  const outputSchema = tool.outputSchema && typeof tool.outputSchema === 'object' && tool.outputSchema.type === 'object'
+    ? tool.outputSchema
+    : { type: 'object', additionalProperties: true };
+  return {
+    ...tool,
+    description: `${tool.description || ''} ${targetDescription}`.trim(),
+    inputSchema: {
+      ...inputSchema,
+      properties,
+      required: [...new Set(required)],
+    },
+    outputSchema: {
+      ...outputSchema,
+      properties: {
+        ...(outputSchema.properties || {}),
+        ...SELECTION_OUTPUT_PROPERTIES,
+      },
+      required: [...new Set([
+        ...(Array.isArray(outputSchema.required) ? outputSchema.required : []),
+        'project_selection_mode',
+        'working_directory',
+        'project_root',
+        'resolution_method',
+      ])],
+    },
+  };
+}
+
+function serve(serverProjectRoot, projectSelectionMode, configuredProject, codegraphPackage, commandArgs, logger, autoInit) {
   const args = normalizeServeArgs(commandArgs, logger);
-  logger.write(`starting npx -y ${codegraphPackage} ${args.join(' ')}`);
-  const child = spawn(npxCommand(), ['-y', codegraphPackage, ...args], npxSpawnOptions(projectRoot, ['pipe', 'pipe', 'pipe']));
+  const launcher = resolveCodegraphLauncher(codegraphPackage);
+  logger.write(`starting ${launcher.display} ${args.join(' ')} (${launcher.source})`);
+  const child = spawn(
+    launcher.command,
+    [...launcher.prefixArgs, ...args],
+    commandSpawnOptions(serverProjectRoot, ['pipe', 'pipe', 'pipe'], launcher.shell),
+  );
   const pending = new Map();
+  const initManagers = new Map();
+  const paTools = createPaTools(projectSelectionMode);
+
+  const getInitManager = (targetRoot) => {
+    if (!initManagers.has(targetRoot)) {
+      initManagers.set(targetRoot, createInitManager(targetRoot, codegraphPackage, logger));
+    }
+    return initManagers.get(targetRoot);
+  };
+
+  const handlePaToolCall = async (request) => {
+    const toolName = request.params.name;
+    const toolArguments = request.params?.arguments || {};
+    const selection = resolveToolProject(toolArguments, projectSelectionMode, configuredProject);
+    if (!selection.ok) {
+      writeJsonLine(process.stdout, textResult(request.id, selection.result, true));
+      return;
+    }
+    const rootFields = rootResultFields(selection, projectSelectionMode);
+    if (INITIALIZING_PA_TOOLS.has(toolName) && !isCodeRepo(selection.projectRoot)) {
+      const result = {
+        ...notCodeRepoInitializationResult(selection.projectRoot),
+        ...rootFields,
+        ...initializationResultFields({ status: 'not_code_repo' }),
+      };
+      writeJsonLine(process.stdout, textResult(request.id, result, true));
+      return;
+    }
+    const manager = getInitManager(selection.projectRoot);
+    let result;
+    if (toolName === 'pa_codegraph_check') {
+      result = { ...checkProject(selection.projectRoot, codegraphPackage, logger), ...rootFields };
+    } else if (toolName === 'pa_codegraph_ensure') {
+      const before = checkProject(selection.projectRoot, codegraphPackage, logger);
+      if (before.has_codegraph_index) {
+        result = { ...before, ...rootFields, status: 'completed', already_indexed: true, auto_initialized: false };
+      } else {
+        const initialization = await manager.wait(toolArguments);
+        const after = checkProject(selection.projectRoot, codegraphPackage, logger);
+        result = {
+          ...after,
+          ...rootFields,
+          ...initialization,
+          auto_initialized: initialization.status === 'completed',
+        };
+      }
+    } else if (toolName === 'pa_codegraph_init_start') {
+      const started = manager.start();
+      if (started.status === 'running' && !started.external_lock) {
+        await sleep(positiveIntFromEnv('CODEGRAPH_INIT_START_SETTLE_MS', 150));
+      }
+      result = {
+        ...manager.status(),
+        initialization_started: !started.already_running && !started.already_indexed && !started.already_skipped,
+        ...rootFields,
+      };
+    } else if (toolName === 'pa_codegraph_init_wait') {
+      result = { ...await manager.wait(toolArguments), ...rootFields };
+    } else if (toolName === 'pa_codegraph_init_status') {
+      result = { ...manager.status(), ...rootFields };
+    } else if (toolName === 'pa_codegraph_init_skip') {
+      result = { ...manager.skip(), ...rootFields };
+    } else {
+      writeJsonLine(process.stdout, errorResult(request.id, -32601, `Unknown PA CodeGraph tool: ${toolName}`));
+      return;
+    }
+    if (toolName !== 'pa_codegraph_check') {
+      result = { ...result, ...initializationResultFields(result) };
+    }
+    const failed = ['failed', 'not_code_repo'].includes(result.status) || result.wait_timed_out === true;
+    writeJsonLine(process.stdout, textResult(request.id, result, failed));
+  };
+
+  const handleCodegraphToolCall = async (request) => {
+    const toolArguments = request.params?.arguments || {};
+    const selection = resolveToolProject(toolArguments, projectSelectionMode, configuredProject);
+    if (!selection.ok) {
+      writeJsonLine(process.stdout, textResult(request.id, selection.result, true));
+      return;
+    }
+    if (autoInit) {
+      const check = checkProject(selection.projectRoot, codegraphPackage, logger);
+      if (!check.is_code_repo) {
+        writeJsonLine(process.stdout, textResult(request.id, {
+          ...check,
+          ...rootResultFields(selection, projectSelectionMode),
+          status: 'not_code_repo',
+          instruction: 'Confirm the intended working_directory or configured project root and retry.',
+        }, true));
+        return;
+      }
+      if (!check.has_codegraph_index) {
+        const initialized = await getInitManager(selection.projectRoot).wait();
+        if (initialized.status !== 'completed') {
+          writeJsonLine(process.stdout, textResult(request.id, {
+            ...initialized,
+            ...rootResultFields(selection, projectSelectionMode),
+            instruction: 'CodeGraph could not become ready, so the native tool call was not forwarded.',
+          }, true));
+          return;
+        }
+      }
+    }
+    const forwardedArguments = { ...toolArguments };
+    delete forwardedArguments.working_directory;
+    delete forwardedArguments.project_root;
+    delete forwardedArguments.projectPath;
+    request.params = {
+      ...request.params,
+      arguments: {
+        ...forwardedArguments,
+        projectPath: selection.projectRoot,
+      },
+    };
+    pending.set(request.id, { method: request.method, selection });
+    child.stdin.write(`${JSON.stringify(request)}\n`);
+  };
+
   let childBuffer = '';
   child.stdout.on('data', (chunk) => {
     childBuffer += String(chunk);
@@ -499,20 +1087,38 @@ function serve(projectRoot, codegraphPackage, commandArgs, logger, initManager) 
         process.stdout.write(`${line}\n`);
         continue;
       }
-      const meta = pending.get(response.id);
+      const isResponse = Object.prototype.hasOwnProperty.call(response, 'id')
+        && !Object.prototype.hasOwnProperty.call(response, 'method');
+      const meta = isResponse ? pending.get(response.id) : undefined;
       if (meta?.method === 'tools/list' && Array.isArray(response.result?.tools)) {
-        response.result.tools = [...response.result.tools, ...PA_TOOLS];
+        const upstreamTools = response.result.tools.filter((tool) => !tool?.name?.startsWith('pa_codegraph_'));
+        response.result.tools = upstreamTools.map((tool) => augmentCodegraphTool(tool, projectSelectionMode));
+        if (meta.appendPaTools) response.result.tools.push(...paTools);
       }
-      pending.delete(response.id);
+      if (meta?.method === 'tools/call' && meta.selection && response.result) {
+        response.result.structuredContent = {
+          ...(response.result.structuredContent || {}),
+          ...rootResultFields(meta.selection, projectSelectionMode),
+        };
+      }
+      if (isResponse) pending.delete(response.id);
       writeJsonLine(process.stdout, response);
     }
   });
+  const stopInitManagers = (signal = 'SIGTERM') => {
+    for (const manager of initManagers.values()) manager.stop(signal);
+  };
   child.stderr.on('data', (chunk) => logger.writeRaw(String(chunk)));
+  child.stdin.on('error', (error) => {
+    if (error.code !== 'EPIPE') logger.write(`codegraph stdin failed: ${error.message}`);
+  });
   child.on('error', (error) => {
+    stopInitManagers();
     logger.write(`codegraph serve failed: ${error.message}`);
     process.exit(1);
   });
   child.on('exit', (code, signal) => {
+    stopInitManagers(signal || 'SIGTERM');
     if (signal) {
       logger.write(`codegraph serve exited by signal ${signal}`);
       process.exit(SIGNAL_EXIT_CODE[signal] || 1);
@@ -521,7 +1127,7 @@ function serve(projectRoot, codegraphPackage, commandArgs, logger, initManager) 
   });
   for (const signal of ['SIGINT', 'SIGTERM']) {
     process.on(signal, () => {
-      initManager.stop(signal);
+      stopInitManagers(signal);
       child.kill(signal);
     });
   }
@@ -544,28 +1150,28 @@ function serve(projectRoot, codegraphPackage, commandArgs, logger, initManager) 
       const toolName = request.params?.name;
       if (request.method === 'tools/call' && toolName && toolName.startsWith('pa_codegraph_')) {
         if (!hasId) continue;
-        if (toolName === 'pa_codegraph_check') {
-          writeJsonLine(process.stdout, textResult(request.id, checkProject(projectRoot, codegraphPackage, logger)));
-        } else if (toolName === 'pa_codegraph_init_start') {
-          writeJsonLine(process.stdout, textResult(request.id, initManager.start()));
-        } else if (toolName === 'pa_codegraph_init_wait') {
-          Promise.resolve()
-            .then(() => initManager.wait(request.params?.arguments || {}))
-            .then((result) => writeJsonLine(process.stdout, textResult(request.id, result)))
-            .catch((error) => writeJsonLine(process.stdout, errorResult(request.id, -32000, error.message)));
-        } else if (toolName === 'pa_codegraph_init_status') {
-          writeJsonLine(process.stdout, textResult(request.id, initManager.status()));
-        } else if (toolName === 'pa_codegraph_init_skip') {
-          writeJsonLine(process.stdout, textResult(request.id, initManager.skip()));
-        } else {
-          writeJsonLine(process.stdout, errorResult(request.id, -32601, `Unknown PA CodeGraph tool: ${toolName}`));
-        }
+        Promise.resolve()
+          .then(() => handlePaToolCall(request))
+          .catch((error) => writeJsonLine(process.stdout, errorResult(request.id, -32000, error.message)));
         continue;
       }
-      if (hasId) pending.set(request.id, { method: request.method });
+      if (request.method === 'tools/call' && toolName?.startsWith('codegraph_')) {
+        if (!hasId) continue;
+        Promise.resolve()
+          .then(() => handleCodegraphToolCall(request))
+          .catch((error) => writeJsonLine(process.stdout, errorResult(request.id, -32000, error.message)));
+        continue;
+      }
+      if (hasId && typeof request.method === 'string') {
+        pending.set(request.id, {
+          method: request.method,
+          appendPaTools: request.method === 'tools/list' && !request.params?.cursor,
+        });
+      }
       child.stdin.write(`${JSON.stringify(request)}\n`);
     }
   });
+  process.stdin.on('end', () => child.stdin.end());
 }
 
 async function main() {
@@ -574,24 +1180,52 @@ async function main() {
     process.stdout.write(`${WRAPPER_VERSION}\n`);
     return;
   }
-  const projectRoot = resolveProjectRoot(options);
-  const logger = createLogger(projectRoot, options);
+  const projectSelectionMode = resolveProjectSelectionMode(options);
+  const configuredProject = resolveConfiguredProject(options);
+  const cliProjectRoot = resolveCliProjectRoot(options);
+  const isCliProxy = passthrough[0] === 'codegraph';
+  const serverProjectRoot = isCliProxy
+    ? cliProjectRoot
+    : (projectSelectionMode === 'configured' && configuredProject.ok
+      ? configuredProject.projectRoot
+      : realpathOrResolved(process.cwd()));
+  const logger = createLogger(serverProjectRoot, options);
   const codegraphPackage = options.codegraphPackage || process.env.CODEGRAPH_PACKAGE || DEFAULT_CODEGRAPH_PACKAGE;
+  validateCodegraphPackageSpec(codegraphPackage);
   const autoInit = options.autoInit !== undefined
     ? options.autoInit
     : boolFromEnv(process.env.CODEGRAPH_AUTO_INIT, true);
 
   logger.write(`wrapper version: ${WRAPPER_VERSION}`);
-  logger.write(`project root: ${projectRoot}`);
-  if (passthrough[0] === 'codegraph') {
-    proxyCodegraphCli(projectRoot, codegraphPackage, passthrough.slice(1), logger);
+  logger.write(`project selection mode: ${projectSelectionMode}`);
+  logger.write(`server working directory: ${serverProjectRoot}`);
+  if (projectSelectionMode === 'configured' && !configuredProject.ok) {
+    logger.write(`configured project is unavailable: ${configuredProject.reason || 'no --project-root or CODEGRAPH_PROJECT_ROOT was provided'}; project tools will return a configuration error`);
+  }
+  if (isCliProxy) {
+    proxyCodegraphCli(cliProjectRoot, codegraphPackage, passthrough.slice(1), logger);
     return;
   }
   if (process.env.CODEGRAPH_AUTO_INIT_MODE === 'before-serve' || process.env.CODEGRAPH_AUTO_INIT_MODE === 'before_serve') {
-    await ensureInitialized(projectRoot, codegraphPackage, autoInit, logger);
+    if (projectSelectionMode !== 'configured') {
+      logger.write('skipping before-serve auto init because it is only supported in configured project selection mode');
+    } else if (!configuredProject.ok) {
+      logger.write(`skipping before-serve auto init: ${configuredProject.reason || 'configured project root is missing'}`);
+    } else if (!isCodeRepo(configuredProject.projectRoot)) {
+      logger.write(`skipping before-serve auto init because ${configuredProject.projectRoot} has no supported code project marker`);
+    } else {
+      await ensureInitialized(configuredProject.projectRoot, codegraphPackage, autoInit, logger);
+    }
   }
-  const initManager = createInitManager(projectRoot, codegraphPackage, logger);
-  serve(projectRoot, codegraphPackage, passthrough, logger, initManager);
+  serve(
+    serverProjectRoot,
+    projectSelectionMode,
+    configuredProject,
+    codegraphPackage,
+    passthrough,
+    logger,
+    autoInit,
+  );
 }
 
 main().catch((error) => {

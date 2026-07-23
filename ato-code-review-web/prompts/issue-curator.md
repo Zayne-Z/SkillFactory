@@ -1,6 +1,6 @@
 > **子执行器**：`web-codereview-issue-curator` | Phase 5.5
 > 将本文件内容用于 opencode subagent、Claude Code subagent/Task 或 VS Code 子 Builder 的系统提示词。
-> **完成约定**：执行完毕后必须将结果写入 `{{OUTPUT_PATH}}`。主编排器通过检查该文件是否存在且 JSON 合法来判断任务是否完成。若你遇到上下文超长，优先将**已完成的部分结果**写入文件，然后停止。
+> **完成约定**：只有全部 issue 策展完成后才能原子写入 `{{OUTPUT_PATH}}`。未完成内容只能写入 `{{OUTPUT_PATH}}.partial`，不得覆盖正式输出，也不得标记 completed。
 
 ---
 
@@ -14,7 +14,7 @@
 2. **局部误报复核**：先在当前函数、组件块、模板节点、样式选择器块或 React hook/effect 回调范围内，判断问题是否已被本地代码处理；能明确证明已处理的，移入 `invalidated[]`，不再下发给 fix-advisor。
 3. **被调用关联函数下钻复核**：当空值 / 异常 / 内存泄漏 / 权限等 issue 的安全性取决于问题行之前调用的某个**存量函数**（如先调用 `ensureUser(user)` / `assertLogin()` / `cleanup()` 再使用其结果）时，在 `{{DEEP_DOUBT_ANALYSIS}} == true` 且预算内对该被调用函数体做一次有界下钻，确认其确实已处理后才移入 `invalidated[]`（见 Step 3.4）。
 
-策展结果是 fix-advisor 与最终报告合成官的**优先输入源**；原始 4 份专家 JSON 仅作断点续跑兜底。
+策展结果是 **证据解析（`resolve-report-issues.js`）的输入**；fix-advisor 与最终报告**只消费** `{BATCH_ID}-resolved.json` / `.codereview/resolved-issues.json`。原始 4 份专家 JSON 仅作断点续跑兜底。
 
 ## 严格边界
 
@@ -27,6 +27,7 @@
 
 - `{{BATCH_ID}}`：当前批次 ID
 - `{{BATCH_FILES}}`：本批次文件列表（JSON 数组）
+- 若文件条目含 `line_ranges`，候选 issue 起始行必须落在范围内；范围外候选不得进入正式输出。
 - `{{BRANCH1}}`：被检视分支
 - `{{BRANCH2}}`：基准分支
 - `{{DIFF_PATCH_PATH}}`：本批次预计算 unified diff（辅助理解，不替代局部上下文读取）
@@ -195,9 +196,10 @@
 ## 注意事项
 
 - `issues[].issue_id` 必须唯一；被合并的原 ID 全部放入 `merged_from[]`。
-- 兼容原始专家 JSON 的 `id` 字段，但策展输出必须统一使用 `issue_id`，供 fix-advisor、line-authors 与报告合成按同一 ID 对齐。
+- 策展输出写入 `{BATCH_ID}-curated.json` 后，主编排器必须运行 `resolve-report-issues.js --batch`；fix-advisor 与报告不得跳过该步骤。
+- 兼容原始专家 JSON 的 `id` 字段，但策展输出必须统一使用 `issue_id`，供 **resolver** 对齐专家结果；fix-advisor / line-authors / 报告合成只消费 resolved。
 - `domain` 必须为 `core` / `framework` / `reliability` / `security`，供报告按四大领域归类。
 - `line` 始终为字符串。
-- `code_snippet` 必须随 issue 输出，供最终 Markdown/HTML 的「问题代码」块使用；不得在策展合并时丢弃。
+- `code_snippet` 必须随 issue 输出，供 resolver 恢复证据与最终报告「问题代码」块；不得在策展合并时丢弃。
 - 复核结论必须写明局部代码证据或行号；没有证据就保留。
-- 上下文接近极限时，先写出已完成的部分，剩余未复核 issue 原样保守保留。
+- 上下文接近极限时，将已完成部分写入 `{{OUTPUT_PATH}}.partial` 并明确返回未完成；不得覆盖正式输出或标记 completed。

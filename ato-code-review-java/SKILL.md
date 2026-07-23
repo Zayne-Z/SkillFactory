@@ -1,11 +1,10 @@
 ---
 name: ato-code-review-java
+version: 1.2.0
 description: >-
-  Java 后端增量代码检视 Skill。一个目录同时支持 VS Code Builder、opencode、Claude Code
-  等运行器；主编排器读取本文件驱动全流程，并行拉起子执行器逐阶段完成检视。所有中间状态
-  持久化到 .codereview/state.json，支持任意环节断点续跑。启动后若 .codereview/state.json 存在则询问续跑或重新检视；
-  Phase 1 必须确认分支、检视深度、跳过低风险、是否生成 HTML、每批最大行数、是否深入分析疑问代码；
-  可分多轮收集，用户跳过时应用默认值，六项全部落盘前禁止进入 Phase 2。主编排器必须通过 scripts/update-state.js 落盘 state.json，禁止仅在对话中更新进度。
+  对 Java / Spring 后端做基于 Git 分支 diff 的增量代码检视，产出 Markdown/HTML 报告与修复建议；
+  支持断点续跑与 .codereview 状态落盘。用户要求Java/后端代码检视、代码检视、代码评审、代码走查、CR、code review、
+  对比分支或 PR 变更，或提到 .codereview / 检视报告 / 续跑检视时使用；纯前端或非 Java 仓库不要用本 Skill。
 ---
 
 # Java 后端代码检视 · 主编排工作流
@@ -14,7 +13,7 @@ description: >-
 > 主编排器启动后按阶段推进，通过子执行器/subagent 执行检视；
 > 主编排器自身**不做**深度代码检视，只负责编排、状态管理、并行调度与故障恢复。
 > **命令兼容规则：** 命令块使用跨 shell 的 `text` 示例；先将 `{SKILL_ROOT}` 与示例分支/选项替换为真实值，再在 Windows PowerShell 5.1、PowerShell 7、bash/zsh 中逐条执行。多条命令分开运行，不使用 Bash 专用串联、反斜杠续行或 POSIX-only 语法。
-> **前置依赖：** 本 Skill 全部脚本基于 Node.js 运行时（零三方依赖，无需 `npm install`），并依赖 Git 取 diff；每次对话最先做环境自检，见 §0「环境前置自检」。
+> **前置依赖：** 本 Skill 脚本基于 Node.js 运行时（零三方依赖，无需 `npm install`），并依赖 Git 取 diff；**推荐 Node.js 22+**。低版本只提示风险，不阻止执行。
 
 ---
 
@@ -22,17 +21,17 @@ description: >-
 
 ### 环境前置自检（最先执行一次，先于续跑探测）
 
-本 Skill 全部脚本依赖 Node.js 运行时与 Git。开始任何流程前先逐条执行：
+本 Skill 全部脚本依赖 Node.js 与 Git；推荐 Node.js 22+。开始任何流程前先执行：
 
 ```text
-node --version
-git --version
+node "{SKILL_ROOT}/scripts/check-env.js"
 ```
 
-- 两条命令都正常输出版本号 → 继续 §0.0 续跑探测。
-- 任一命令报 `command not found` / `不是内部或外部命令` / 退出码非 0 → **立即停止**，并明确告知用户**具体缺失项**：
-  - 缺 Node：未检测到 Node.js，本 Skill 的脚本无法运行，请通过公司 / 内部渠道安装或联系管理员配置后重试。
-  - 缺 Git：未检测到 Git，无法获取分支 diff，请通过公司 / 内部渠道安装或联系管理员配置后重试。
+- 退出码 0 且打印 `环境检查通过` → 继续 §0.0 续跑探测。
+- 退出码非 0 → **立即停止**，并按脚本输出明确告知用户：
+  - 未检测到 Node：脚本无法运行，请通过公司 / 内部渠道安装或联系管理员配置后重试。
+  - `GIT_REQUIRED` / 未检测到 Git：无法获取分支 diff，请通过公司 / 内部渠道安装或联系管理员配置后重试。
+- Node 低于 22 时打印 `NODE_VERSION_RECOMMENDED`，继续执行；若出现运行异常再升级。
 - **内网约束：** 仅检测并指出缺失项，**不提供任何外网下载链接**。
 
 ### 0.0 续跑 vs 重新检视（**仅**探测 `.codereview/state.json`）
@@ -83,7 +82,7 @@ node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
 2) 检视深度 severity_mode — 默认 critical_high_only（可选 all）
 3) 跳过低风险 skip_low_risk_files — 默认 true（可选 false）
 4) 生成 HTML generate_html_report — 默认 true（可选 false）
-5) 每批最大变动行数 max_lines_per_batch — 默认 1200
+5) 每批最大变动行数 max_lines_per_batch — 默认 2000
 6) 疑问代码深入分析 deep_doubt_analysis — 默认 true（可选 false）
 ```
 
@@ -92,7 +91,7 @@ node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init
 复述六项无异议后**必须**执行：
 
 ```text
-node "{SKILL_ROOT}/scripts/update-state.js" --branch1 REVIEW_BRANCH --branch2 BASE_BRANCH --set review_options.severity_mode=critical_high_only --set review_options.skip_low_risk_files=true --set review_options.generate_html_report=true --set review_options.max_lines_per_batch=1200 --set review_options.deep_doubt_analysis=true --set review_options.user_confirmed=true --phase diff_analysis --checkpoint phase1_done
+node "{SKILL_ROOT}/scripts/update-state.js" --branch1 REVIEW_BRANCH --branch2 BASE_BRANCH --set review_options.severity_mode=critical_high_only --set review_options.skip_low_risk_files=true --set review_options.generate_html_report=true --set review_options.max_lines_per_batch=2000 --set review_options.deep_doubt_analysis=true --set review_options.user_confirmed=true --phase diff_analysis --checkpoint phase1_done
 ```
 
 确认输出 `{"ok":true}` 且 `user_confirmed===true` 后，才进入 Phase 2。
@@ -126,9 +125,14 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 │   ├── memory-system.md      ← .codereview/memory.json 说明
 │   └── state-structure.md    ← state.json 字段说明
 ├── scripts/
-│   ├── get-diff-files.js     ← 生成变动文件清单（可选跳过低风险类型）
+│   ├── check-env.js            ← §0 环境自检（Node 推荐版本 + Git）
+│   ├── assert-node-version.js  ← CLI 入口 Node 版本软警告（内部）
+│   ├── detect-repo-name.js     ← 从 git 推断仓库名（报告标题/文件名）
+│   ├── get-diff-files.js       ← 生成变动文件清单（可选跳过低风险类型）
 │   ├── batch-processor.js    ← 智能分批
 │   ├── export-batch-diffs.js ← 按批次预计算 unified diff（各专家共用）
+│   ├── issue-resolver.js       ← 证据解析核心库（内部）
+│   ├── resolve-report-issues.js← Phase 5.5 / Phase 7：curated → resolved + discarded
 │   ├── git-line-authors.js   ← Phase 7 前：issue 行 git blame + 参与开发者
 │   ├── render-report-md.js   ← Phase 7：JSON → MD（机械填充，优先于子执行器）
 │   ├── render-report-html.js ← Phase 7.5：MD → HTML（机械填充，优先于子执行器）
@@ -169,10 +173,12 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 │   ├── tech-stack.json
 │   ├── task-plan.json
 │   ├── line-authors.json           ← Phase 7 git-line-authors.js 产出（提交人映射）
-│   └── results/                    ← 各专家 JSON
+│   ├── resolved-issues.json        ← Phase 7 全量证据解析（报告唯一问题源）
+│   ├── discarded-issues.json       ← 无法定位/重复 source_key 等诊断
+│   └── results/                    ← 各专家 JSON；含 {batch}-resolved.json
 └── codereview/                     ← 多版本交付物归档（不参与启动探测）
-    ├── report_<branch>_<date>.md
-    └── report_<branch>_<date>.html   ← 仅当 generate_html_report 为 true
+    ├── report_<repo>_<branch>_<date>.md
+    └── report_<repo>_<branch>_<date>.html   ← 仅当 generate_html_report 为 true
 ```
 
 ---
@@ -201,9 +207,9 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
        └─ 其它          → 跳转到对应 Phase 继续
 4. 兼容性补丁：
    a. 若 state.json 不含 review_options 字段
-      → 补入默认值 { "severity_mode": "critical_high_only", "skip_low_risk_files": true, "generate_html_report": true, "max_lines_per_batch": 1200, "deep_doubt_analysis": true }
+      → 补入默认值 { "severity_mode": "critical_high_only", "skip_low_risk_files": true, "generate_html_report": true, "max_lines_per_batch": 2000, "deep_doubt_analysis": true }
    b. 若 review_options 缺少 generate_html_report → 补 true（**仅字段占位**；不得据此跳过 Phase 1 向用户提问）
-   c. 若 review_options 缺少 max_lines_per_batch → 补 1200
+   c. 若 review_options 缺少 max_lines_per_batch → 补 2000
    d. 若 review_options 缺少 user_confirmed → 补 false（为 false 时必须执行完整 Phase 1 清单）
    e. 若 synthesis 缺少 html_report_path / html_status → 补 "" 与 "skipped"
    f. 若 review_progress[*] 缺少 curator 键（升级到含 issue-curator 的版本）
@@ -264,7 +270,7 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 - Phase 5 中，同一批次内 `core`、`security`、`spring`、`data` 四个专家彼此独立，凡 `task-plan.json` 标记为适用且状态为 `pending` 的，都可以通过当前运行器的并行任务能力一次性派发。
 - `failed` 是终态，主编排器不得自动重跑；仅当用户明确要求时，先人工或脚本改回 `pending`，再重新派发。
 - 并行启动前，先把这些专家状态统一写为 `in_progress`；每个子执行器写自己的固定输出文件，互不共享写入目标。
-- 等同批次所有适用专家完成后，先执行该批次的 `issue-curator` 做合并去重与误报排除，再执行 `fix-advisor`；fix 完成后再进入下一批次或报告合成。
+- 等同批次所有适用专家完成后，先执行该批次的 `issue-curator` 做合并去重与误报排除，再运行 `resolve-report-issues.js --batch` 生成 `{BATCH_ID}-resolved.json`，最后执行 `fix-advisor`（**只读 resolved**）；fix 完成后再进入下一批次或报告合成。
 - 若当前运行器不支持并行任务，则按 `core → security → spring → data` 串行降级，输出文件与状态规则保持不变。
 
 ### 2.6 `state.json` 落盘检查点（必执行）
@@ -274,7 +280,7 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 | 时机 | 命令示例 |
 |------|----------|
 | 启动 / Phase 0 | `node "{SKILL_ROOT}/scripts/update-state.js" --init --checkpoint phase0_init` |
-| Phase 1 复述确认后 | `node .../update-state.js --branch1 {B1} --branch2 {B2} --set review_options.severity_mode=critical_high_only --set review_options.skip_low_risk_files=true --set review_options.generate_html_report=true --set review_options.max_lines_per_batch=1200 --set review_options.deep_doubt_analysis=true --set review_options.user_confirmed=true --phase diff_analysis --checkpoint phase1_done` |
+| Phase 1 复述确认后 | `node .../update-state.js --branch1 {B1} --branch2 {B2} --set review_options.severity_mode=critical_high_only --set review_options.skip_low_risk_files=true --set review_options.generate_html_report=true --set review_options.max_lines_per_batch=2000 --set review_options.deep_doubt_analysis=true --set review_options.user_confirmed=true --phase diff_analysis --checkpoint phase1_done` |
 | Phase 2 脚本跑完 | `node .../update-state.js --phase tech_stack --checkpoint phase2_diff_done`（可从 inventory 读 total 写入 `--set diff_analysis.total_files=N` 等） |
 | Phase 3 完成 | `node .../update-state.js --phase task_planning --checkpoint phase3_tech_stack_done` |
 | Phase 4 完成 | `node .../update-state.js --init-review-progress --task-plan .codereview/task-plan.json --phase reviewing --checkpoint phase4_task_plan_done` |
@@ -316,7 +322,7 @@ Phase 2 脚本内置门禁：未完成 Phase 1 会报 `PHASE1_REQUIRED` 并 exit
 | `severity_mode` | `all` \| `critical_high_only` |
 | `skip_low_risk_files` | `true` \| `false` |
 | `generate_html_report` | `true` \| `false`；默认 `true` |
-| `max_lines_per_batch` | 正整数，默认 `1200`（Phase 2 传给 `batch-processor.js --max-lines`） |
+| `max_lines_per_batch` | 正整数，默认 `2000`（Phase 2 传给 `batch-processor.js --max-lines`） |
 | `deep_doubt_analysis` | `true` \| `false`；默认 `true`，允许专家/策展对疑问代码读取所属源文件局部窗口或有界下钻，并对问题行调用的存量函数做关联下钻复核（避免「调用了已处理的存量函数」被误报） |
 | `user_confirmed` | Phase 1 复述确认后为 `true` |
 
@@ -333,7 +339,7 @@ node "{SKILL_ROOT}/scripts/get-diff-files.js" --branch1 {BRANCH1} --branch2 {BRA
 
 默认 `--update-mode local-ff`：脚本会 fetch upstream/origin，并只用 fast-forward 更新本地 `BRANCH1`、`BRANCH2`。若更新失败，**立即停止**，不要用可能过期的本地分支继续检视；向用户确认二选一：手动更新本地两个分支后重新开始，或重新运行并追加 `--update-mode remote` 直接对比远端分支。用户确认已手动更新时，可追加 `--update-mode local`。
 
-**Step 2：分批**（`max-lines` 取自 `state.review_options.max_lines_per_batch`，默认 1200）
+**Step 2：分批**（`max-lines` 取自 `state.review_options.max_lines_per_batch`，默认 2000）
 ```text
 node "{SKILL_ROOT}/scripts/batch-processor.js" --inventory .codereview/file-inventory.json --max-lines {MAX_LINES} --output .codereview/file-inventory.json
 ```
@@ -346,7 +352,7 @@ node "{SKILL_ROOT}/scripts/batch-processor.js" --inventory .codereview/file-inve
 node "{SKILL_ROOT}/scripts/export-batch-diffs.js" --inventory .codereview/file-inventory.json --output-dir .codereview/diffs
 ```
 
-脚本会更新 `file-inventory.json` 的 `diff_bundle`（含 `manifest.json`）。若某 patch 为空，主编排器可按 `file-inventory.json.git_refs` 中的实际 diff refs 补取单文件 `git diff`。若 `manifest` 中单批 `byte_length` 过大，可告警或调整 `max-lines` 分批。
+脚本会更新 `file-inventory.json` 的 `diff_bundle`（含 `manifest.json`）。单文件变更超过 `max_lines_per_batch` 时，exporter 会按实际 `+/-` 变更行自动拆成多个 patch，并把 `diff_slice` 与 branch1/new-side `line_ranges` 写回批次；替换块的删除/新增保持配对，重跑 exporter 会复用原批次 ID 和切片边界。后续规划、检视、curator、resolver 必须保留并遵守该硬边界。`git diff` 执行失败必须停止，不得生成空 manifest；只有命令成功但某 patch 为空时，主编排器才可按 `file-inventory.json.git_refs` 补取单文件 diff。
 
 **Step 4：** 向用户展示批次数、文件数、行数及跳过低风险统计（若有），确认后执行：
 
@@ -415,9 +421,10 @@ node "{SKILL_ROOT}/scripts/update-state.js" --init-review-progress --task-plan .
     执行完成 → 立即写回 state.json
   该批次 4 位检视专家全部 completed/skipped 后：
     执行 issue-curator（Phase 5.5 单批，跨专家合并 + 函数体级误报排除）
-    curator 状态设 completed → 写回 state.json
-  curator 完成后：
-    执行 fix-advisor（Phase 6 单批，输入为 curated.json）
+    仅当 curator 正式 JSON 完整时运行单批 resolver
+    resolver 成功后 curator 状态设 completed → 写回 state.json
+  curator + resolver 完成后：
+    执行 fix-advisor（Phase 6 单批，输入为 batch resolved JSON）
     fix 状态设 completed → 写回 state.json
 
 所有批次全部完成 → current_phase = "synthesizing"
@@ -460,6 +467,7 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" --memory .codereview/memory.
 
 > **优先**读取 `DIFF_PATCH_PATH` 中的 unified diff。缺失或为空时，主编排器必须从 `.codereview/file-inventory.json.git_refs` 取 `branch2.diff_ref` 与 `branch1.diff_ref`，分别作为 `DIFF_BRANCH2` / `DIFF_BRANCH1` 后再按文件补取 diff。
 > 只检视变更行；禁止对未改动代码批量报问题。`line` 字段必须为字符串；每条 issue 必须补充 `symbol`（如 `UserServiceImpl#createOrder`、`UserMapper.xml#selectById`），报告不得只依赖行号定位。
+> 若 `BATCH_FILES` 文件条目含 `line_ranges`，问题起始行必须落在其中一个闭区间内。patch 的少量越界上下文仅供理解，禁止对范围外变更报问题；fallback 取得整文件 diff 后也必须按该范围过滤。
 >
 > 若 `SEVERITY_MODE` 为 `critical_high_only`，**仅**输出 `critical` 与 `high`，不得输出 `medium` / `low`。
 >
@@ -467,7 +475,7 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" --memory .codereview/memory.
 
 **并行派发建议：**
 
-同一 `BATCH_ID` 中，对 `applicable_experts` 取交集后可一次性并行拉起多个子执行器。每个任务必须显式包含：`BATCH_ID`、`BATCH_FILES`、`BRANCH1`、`BRANCH2`、`DIFF_BRANCH1`、`DIFF_BRANCH2`、`DIFF_PATCH_PATH`、`SEVERITY_MODE`、`DEEP_DOUBT_ANALYSIS`、`MEMORY_BRIEF_PATH`、`TECH_STACK`、`SKILL_ROOT`、独立 `OUTPUT_PATH`，并强调“完成后只写对应输出文件”。主编排器等待这一组输出文件全部存在且 JSON 合法后，再将对应状态改为 `completed`；随后串行执行 `issue-curator` 和 `fix-advisor`。
+同一 `BATCH_ID` 中，对 `applicable_experts` 取交集后可一次性并行拉起多个子执行器。每个任务必须显式包含：`BATCH_ID`、`BATCH_FILES`、`BRANCH1`、`BRANCH2`、`DIFF_BRANCH1`、`DIFF_BRANCH2`、`DIFF_PATCH_PATH`、`SEVERITY_MODE`、`DEEP_DOUBT_ANALYSIS`、`MEMORY_BRIEF_PATH`、`TECH_STACK`、`SKILL_ROOT`、独立 `OUTPUT_PATH`，并强调“完成后只写对应输出文件”。主编排器等待这一组输出文件全部存在且 JSON 合法后，再将对应状态改为 `completed`；随后串行执行 `issue-curator` → `resolve-report-issues.js --batch` → `fix-advisor`。
 
 **适用性剪枝（来自 task-plan.json 的 `applicable_experts`）：**
 
@@ -510,9 +518,15 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" --memory .codereview/memory.
 | `OUTPUT_PATH` | `.codereview/results/{BATCH_ID}-curated.json` |
 | `SKILL_ROOT` | 本 Skill 根目录 |
 
-**完成标志：** `{BATCH_ID}-curated.json` 文件存在且 JSON 合法（含 `summary` / `issues[]` / `invalidated[]` 三个字段）
+**完成标志：** `{BATCH_ID}-curated.json` 为完整原子输出且 JSON 合法（含 `summary` / `issues[]` / `invalidated[]` 三个字段）；仅存在 `.partial` 时不得标记 completed
 
-**与 fix-advisor 的契约：** 策展输出是 fix-advisor 的**唯一输入源**；fix-advisor 不应再读 4 份原始专家 JSON（仅 curated.json 缺失时兜底）。
+**证据解析门禁（curator 完成后必做）：**
+
+```text
+node "{SKILL_ROOT}/scripts/resolve-report-issues.js" --state .codereview/state.json --inventory .codereview/file-inventory.json --results .codereview/results --batch {BATCH_ID} --output .codereview/results/{BATCH_ID}-resolved.json --discarded-output .codereview/discarded-issues.json
+```
+
+fix-advisor 只读取 `{BATCH_ID}-resolved.json`；无法恢复定位/描述/代码的候选被忽略并记录到诊断文件。
 
 ---
 
@@ -531,7 +545,7 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" --memory .codereview/memory.
 | `DIFF_BRANCH1` | 实际用于 diff 的被检视 ref（与 Phase 5 相同） |
 | `DIFF_BRANCH2` | 实际用于 diff 的基准 ref（与 Phase 5 相同） |
 | `DIFF_PATCH_PATH` | `.codereview/diffs/{BATCH_ID}.patch`（Phase 2 `export-batch-diffs.js` 已生成；主编排器按 `BATCH_ID` 自动拼装路径并传入，**用户无需填写**；与检视专家共用同一份 unified diff） |
-| `CURATED_PATH` | `.codereview/results/{BATCH_ID}-curated.json`（Phase 5.5 输出，**优先输入**；缺失时 fix-advisor 自动回退读 4 份原始专家 JSON） |
+| `CURATED_PATH` | `.codereview/results/{BATCH_ID}-resolved.json`（证据解析后的唯一输入） |
 | `RESULTS_DIR` | `.codereview/results/` |
 | `SEVERITY_MODE` | 同 Phase 5（`critical_high_only` 时仅对 C/H 问题给修复建议） |
 | `OUTPUT_PATH` | `.codereview/results/{BATCH_ID}-fix.json` |
@@ -542,13 +556,20 @@ node "{SKILL_ROOT}/scripts/build-memory-context.js" --memory .codereview/memory.
 
 ### Phase 7：报告合成
 
+**Phase 7 开始前必做：**
+
+```text
+node "{SKILL_ROOT}/scripts/resolve-report-issues.js" --state .codereview/state.json --inventory .codereview/file-inventory.json --results .codereview/results --output .codereview/resolved-issues.json --discarded-output .codereview/discarded-issues.json
+node "{SKILL_ROOT}/scripts/git-line-authors.js" --inventory .codereview/file-inventory.json --issues .codereview/resolved-issues.json --output .codereview/line-authors.json
+```
+
 **Step 1（必做，优先）：** 机械合成 MD，避免问题多时把所有 JSON 压入模型上下文，也保证第六节问题清单由结构化 issue 全量生成：
 
 ```text
-node "{SKILL_ROOT}/scripts/render-report-md.js" --state ".codereview/state.json" --results ".codereview/results" --inventory ".codereview/file-inventory.json" --tech-stack ".codereview/tech-stack.json" --template "{SKILL_ROOT}/templates/report-template.md" --out "{REPORT_PATH}"
+node "{SKILL_ROOT}/scripts/render-report-md.js" --state ".codereview/state.json" --results ".codereview/results" --issues ".codereview/resolved-issues.json" --inventory ".codereview/file-inventory.json" --tech-stack ".codereview/tech-stack.json" --template "{SKILL_ROOT}/templates/report-template.md" --out-dir "codereview"
 ```
 
-脚本 stdout `ok: true`、`unresolvedPlaceholders: []`、`allIssueCodeMissing: false`、`section6IssueRowsComplete: true` 才算完成；若 stdout 中 `issues > 0`，第六节必须至少含同等数量的问题行，且 HTML 详情里的「问题代码」不得全部为「（无）」。
+脚本 stdout `ok: true`、`unresolvedPlaceholders: []`、`section6IssueRowsComplete: true` 才算完成；同时记录 `discardedIssueCount` / `incompleteIssues` / `missingCodeIssues`，被忽略候选不得进入统计、第五章或第六章。
 
 **Step 2（仅 Step 1 失败）：** 拉起子执行器 `java-codereview-report-synthesizer`（`{SKILL_ROOT}/prompts/report-synthesizer.md`）作为兜底，禁止省略第六节问题行。
 
@@ -561,17 +582,11 @@ node "{SKILL_ROOT}/scripts/render-report-md.js" --state ".codereview/state.json"
 | `INVENTORY_PATH` | `.codereview/file-inventory.json` |
 | `DIFF_PATCH_DIR` | `.codereview/diffs` |
 | `TEMPLATE_PATH` | `{SKILL_ROOT}/templates/report-template.md` |
-| `REPORT_PATH` | `codereview/report_{BRANCH1}_{DATE}.md`（`/` → `_`） |
+| `REPORT_PATH` | 取脚本 stdout 的 `report`；默认自动生成 `codereview/report_{REPO_NAME}_{BRANCH1}_{DATE}.md` |
 
 合成官须读取 `state.json` 的 `review_options` 与 `file-inventory.json` 的 `review_scope`，填入报告基本信息（检视深度、是否跳过低风险及跳过文件数）。
 
-**提交人 attribution（多人协作认领）：** Phase 7 **开始前**，主编排器**必须**执行（不可仅依赖合成官自觉运行）：
-
-```text
-node "{SKILL_ROOT}/scripts/git-line-authors.js" --inventory .codereview/file-inventory.json --results .codereview/results/ --output .codereview/line-authors.json
-```
-
-合成官读取 `line-authors.json`：`issue_authors[issue_id]` → 第六节「提交人」列；`contributors` → 模板 `{{CONTRIBUTORS}}`（第七节「本次参与开发」）。
+提交人只使用 resolved 定位对应的 `line_authors["文件:起始行"]`；禁止通过全局 issue ID 猜测作者。
 
 **完成后：**
 
@@ -602,7 +617,7 @@ node "{SKILL_ROOT}/scripts/render-report-html.js" --md "{REPORT_MD_PATH}" --shel
 | `HTML_TEMPLATE_PATH` | `{SKILL_ROOT}/templates/report-shell.html` |
 | `HTML_REPORT_PATH` | 与 MD 同名 `.html`（`/` → `_`） |
 
-脚本 stdout 为 JSON：`ok: true`、`placeholdersOk: true`、`allIssueCodeMissing: false`、`section6IssueRowsComplete: true` 表示写出成功（HTML 中无残留 `{{...}}`，问题详情代码块没有全部降级为「（无）」，且第六节问题行数完整）。若 `unresolvedPlaceholders` 非空，说明 MD 仍有未替换模板变量，须回到 Phase 7 补全 MD 后再渲染；若 `allIssueCodeMissing: true`，须回到 Phase 7 回填 issue 代码片段后再渲染；若 `section6IssueRowsComplete: false`，须回到 Phase 7/7.5 重新合成第六节，确保多张问题表合并渲染。
+脚本 stdout 为 JSON：`ok: true`、`placeholdersOk: true`、`section6IssueRowsComplete: true`、`sectionIssueIdsMatch: true`、`incompleteIssues: []` 表示写出成功。若任一项失败，回到 resolver/Phase 7 重建 MD；HTML 不自行制造缺失定位或代码。
 
 **Step 2（主编排校验，五项缺一不可）：**
 
@@ -611,6 +626,7 @@ node "{SKILL_ROOT}/scripts/render-report-html.js" --md "{REPORT_MD_PATH}" --shel
 3. 文件末尾 16KB 内含 `<!-- ato-codereview-html-end -->`
 4. stdout `allIssueCodeMissing === false`
 5. stdout `section6IssueRowsComplete === true`
+6. stdout `sectionIssueIdsMatch === true` 且 `incompleteIssues` 为空
 
 **Step 3（仅当 Step 1/2 失败时）：** 拉起子执行器 `java-codereview-report-html`（`prompts/report-html.md`），传入 `REPORT_MD_PATH`、`HTML_TEMPLATE_PATH`、`HTML_REPORT_PATH`；**禁止**使用 Step 4 降级占位，须从 MD 机械转换全文。最多 2 次；仍失败 → `synthesis.html_status = "failed"`，记录 `notes[]`，`current_phase = "completed"`（**MD 仍交付**）。
 
@@ -653,7 +669,7 @@ VS Code 子 Builder、opencode subagent、Claude Code subagent/Task 均使用同
 
 ## 5. 运行器接入
 
-- **VS Code Builder**：主 Builder 系统提示词使用 `{SKILL_ROOT}/vscode-main-builder.md`；10 个子 Builder 使用上表 `prompts/*.md`。Phase 5 同批专家可并行，curator/fix/report 串行。
+- **VS Code Builder**：主 Builder 系统提示词使用 `{SKILL_ROOT}/vscode-main-builder.md`；10 个子 Builder 使用上表 `prompts/*.md`。Phase 5 同批专家可并行，`issue-curator` → `resolve-report-issues` → `fix-advisor` → 报告合成串行。
 - **opencode**：使用 `{SKILL_ROOT}/opencode/opencode.example.json`；主 agent prompt 指向 `SKILL.md`，subagent prompt 指向同一套 `prompts/*.md`。
 - **Claude Code**：主会话读取 `SKILL.md`；需要并行时用 Claude Code 的 subagent/Task 能力分别加载上表 `prompts/*.md`，每个任务传入 Phase 5 变量并只写自己的 `OUTPUT_PATH`。
 

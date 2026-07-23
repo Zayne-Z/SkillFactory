@@ -1,0 +1,59 @@
+{
+  "skill_name": "pa-codegraph",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "帮我分析当前订单项目里 OrderController 到数据库落单的完整调用链。当前会话已经有公司 CodeGraph wrapper MCP。",
+      "expected_output": "智能体确认当前项目绝对路径，检测到 pa_codegraph_check/ensure，先检查并核对项目根，索引健康后优先调用 MCP explore，不启动 standalone。",
+      "files": [],
+      "expectations": [
+        "只把同时存在 pa_codegraph_check 和 pa_codegraph_ensure 视为公司 wrapper 可用",
+        "检查返回的 project_root 与当前项目一致",
+        "MCP 模式不执行 standalone sync"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "我要修复 src/order/service.ts 的退款状态错误，但当前只有裸 codegraph_explore，没有 pa_codegraph_check。",
+      "expected_output": "智能体把裸 MCP 视为不受支持，询问安装公司 wrapper；如果用户拒绝则说明实时能力损失，使用 standalone，并在第一次查询前自动同步。",
+      "files": [],
+      "expectations": [
+        "不调用裸 codegraph_explore",
+        "说明 standalone 没有 watcher、共享 daemon 和逐文件陈旧提示",
+        "第一次 standalone 图查询前执行 sync"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "我不安装 MCP，直接帮我分析 createOrder 的影响范围；当前项目还没有 .codegraph。",
+      "expected_output": "智能体进入 standalone，精确确认当前项目，自动阻塞初始化，status 健康后 sync 再查询；不再次询问是否创建索引。",
+      "files": [],
+      "expectations": [
+        "standalone 缺索引时自动初始化",
+        "严格使用当前项目绝对路径且不借父目录索引",
+        "顺序为初始化/健康验证、sync、图查询"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "先分析 PaymentService，再修改支付超时逻辑并确认影响测试；本次只能用 standalone CodeGraph。",
+      "expected_output": "第一次查询默认同步，后续查询使用 --skip-sync；完成源码编辑后执行一次显式 sync。",
+      "files": [],
+      "expectations": [
+        "同一任务只有第一次图查询执行前置 sync",
+        "后续查询带 --skip-sync",
+        "实际修改源码后执行结束 sync"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "检查这个项目的测试失败，但不要初始化 CodeGraph，也不要创建 .codegraph。",
+      "expected_output": "智能体尊重明确禁止初始化，standalone 使用 --no-init；索引不存在时退出 Skill，由 Agent 普通工具继续排查测试。",
+      "files": [],
+      "expectations": [
+        "不创建 .codegraph",
+        "CodeGraph 不可用时不阻塞原测试排查任务"
+      ]
+    }
+  ]
+}

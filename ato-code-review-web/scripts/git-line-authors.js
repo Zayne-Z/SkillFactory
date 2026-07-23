@@ -10,6 +10,7 @@
  */
 'use strict';
 
+
 const { execFileSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
@@ -80,10 +81,12 @@ function blameAuthor(branch1, file, line, cwd) {
 
 function normalizeIssues(rawIssues) {
   const issues = [];
-  for (const issue of rawIssues || []) {
-    const id = issue.issue_id || issue.id;
-    const file = issue.file || issue.path || issue.file_path;
-    const line = issue.line ?? issue.start_line ?? issue.line_number;
+  const list = Array.isArray(rawIssues) ? rawIssues : (rawIssues?.issues || []);
+  for (const issue of list) {
+    const location = issue.location || {};
+    const id = issue.report_id || issue.issue_id || issue.id;
+    const file = issue.file || issue.path || issue.file_path || location.file;
+    const line = issue.line ?? issue.start_line ?? issue.line_number ?? location.line;
     if (id && file && line != null) {
       issues.push({ id, file, line: parseLineNumber(line) });
     }
@@ -172,7 +175,9 @@ function parseLineNumber(line) {
 function loadIssuesFromResults(resultsDir) {
   const dir = path.resolve(resultsDir);
   if (!fs.existsSync(dir)) return [];
-  const files = fs.readdirSync(dir).filter((f) => /^batch-\d+-curated\.json$/i.test(f));
+  const names = fs.readdirSync(dir);
+  const resolved = names.filter((f) => /^batch-\d+-resolved\.json$/i.test(f));
+  const files = resolved.length ? resolved : names.filter((f) => /^batch-\d+-curated\.json$/i.test(f));
   const issues = [];
   for (const f of files) {
     const data = JSON.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
@@ -199,14 +204,12 @@ function main() {
     : loadIssuesFromResults(args.results);
 
   const lineAuthors = blameAuthors(args.branch1, issues, cwd);
-  const issueAuthors = {};
   const authorSet = new Set();
 
   for (const issue of issues) {
     const lineNum = typeof issue.line === 'number' ? issue.line : parseLineNumber(issue.line);
     const key = `${issue.file}:${lineNum}`;
     const author = lineAuthors[key] || '—';
-    issueAuthors[issue.id] = author;
     if (author && author !== '—') authorSet.add(author);
   }
 
@@ -227,7 +230,6 @@ function main() {
     diff_branch2: args.branch2,
     generated_at: new Date().toISOString(),
     contributors,
-    issue_authors: issueAuthors,
     line_authors: lineAuthors,
   };
 

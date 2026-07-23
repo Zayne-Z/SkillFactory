@@ -33,6 +33,7 @@
 ## 输入变量
 
 - `{{BATCH_ID}}`、`{{BATCH_FILES}}`、`{{BRANCH1}}`、`{{BRANCH2}}`
+- `BATCH_FILES[].line_ranges`（若存在）是 issue 起始行的硬边界；范围外内容仅作上下文。
 - `{{DIFF_PATCH_PATH}}`、`{{SEVERITY_MODE}}`、`{{TECH_STACK}}`（或 `tech-stack.json` 路径）
 - `{{DEEP_DOUBT_ANALYSIS}}`：是否允许对疑问代码读取所属源文件局部窗口 / 有界引用下钻，默认 `true`
 - `{{VUE2_REF_PATH}}`、`{{VUE3_REF_PATH}}`、`{{REACT_REF_PATH}}`、`{{GENERAL_STANDARDS_PATH}}`（默认均在 `{SKILL_ROOT}/docs/`）

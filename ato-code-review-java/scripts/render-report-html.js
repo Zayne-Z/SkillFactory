@@ -10,8 +10,10 @@
  */
 'use strict';
 
+
 const fs = require('fs');
 const path = require('path');
+const { detectRepoName } = require('./detect-repo-name');
 
 const SENTINEL = '<!-- ato-codereview-html-end -->';
 
@@ -39,6 +41,23 @@ const SEV = {
   medium: { cls: 'sev-medium', letter: 'M', emoji: '🟡' },
   low: { cls: 'sev-low', letter: 'L', emoji: '🔵' },
 };
+
+// 报告面向中国用户：展示时间统一按 Asia/Shanghai（固定 +08:00）
+const REPORT_TIME_ZONE = 'Asia/Shanghai';
+
+function formatInTimeZone(date, timeZone = REPORT_TIME_ZONE) {
+  return date.toLocaleString('sv-SE', { timeZone }).replace(',', '');
+}
+
+function localIso(date = new Date()) {
+  return `${formatInTimeZone(date).replace(' ', 'T')}+08:00`;
+}
+
+function formatLocalDateTime(iso) {
+  const d = iso ? new Date(iso) : new Date();
+  if (Number.isNaN(d.getTime())) return String(iso || '').replace('T', ' ').slice(0, 19);
+  return formatInTimeZone(d);
+}
 
 function findMustachePlaceholders(text) {
   const names = new Set();
@@ -175,8 +194,11 @@ function buildVarsFromWorkspace(statePath) {
 
   vars.BRANCH1 = state.branches?.branch1 || '';
   vars.BRANCH2 = state.branches?.branch2 || '';
-  vars.REVIEW_DATE = (state.updated_at || state.created_at || '').slice(0, 10);
-  vars.GENERATED_AT = (state.updated_at || '').replace('T', ' ').slice(0, 19);
+  vars.REPO_NAME = detectRepoName(path.dirname(path.dirname(statePath))) || state.repository?.name || 'repo';
+  vars.REVIEW_DATE = state.updated_at || state.created_at
+    ? formatLocalDateTime(state.updated_at || state.created_at).slice(0, 10)
+    : '';
+  vars.GENERATED_AT = state.updated_at ? formatLocalDateTime(state.updated_at) : '';
 
   const mode = state.review_options?.severity_mode;
   vars.SEVERITY_MODE_LABEL =
@@ -193,6 +215,7 @@ function buildVarsFromWorkspace(statePath) {
   const invPath = path.isAbsolute(invRel) ? invRel : path.join(dir, invRel);
   if (fs.existsSync(invPath)) {
     const inv = JSON.parse(fs.readFileSync(invPath, 'utf8'));
+    if (inv.repository?.name) vars.REPO_NAME = inv.repository.name;
     if (inv.summary?.total_files != null) vars.TOTAL_FILES = String(inv.summary.total_files);
     else if (Array.isArray(inv.files)) vars.TOTAL_FILES = String(inv.files.length);
     const lineTotals = deriveLineTotals(state, inv);
@@ -445,7 +468,7 @@ function parseSections(md) {
   const titleM = md.match(/^#\s+(.+)$/m);
   const title = titleM ? stripMd(titleM[1]) : '代码检视报告';
   const footerM = md.match(/\*报告由[^·]*·\s*([^*]+)\*/);
-  const generatedAt = footerM ? footerM[1].trim() : new Date().toISOString().slice(0, 19);
+  const generatedAt = footerM ? footerM[1].trim() : localIso().slice(0, 19).replace('T', ' ');
 
   const sections = new Map();
   const chunks = md.split(/\n(?=## )/);
@@ -576,7 +599,13 @@ function parseIssueBlocks(section5) {
     blocks.push({ id, sev, mustfix, headerLine, loc, description, code, fix });
   }
   const byId = Object.fromEntries(blocks.map((b) => [b.id, b]));
-  return { blocks, byId };
+  const seenIds = new Set();
+  const duplicateIssueIds = [];
+  for (const block of blocks) {
+    if (seenIds.has(block.id)) duplicateIssueIds.push(block.id);
+    else seenIds.add(block.id);
+  }
+  return { blocks, byId, duplicateIssueIds };
 }
 
 function renderIssueArticle(issue) {
@@ -639,10 +668,29 @@ function colIndex(headers, names) {
   return -1;
 }
 
+const SEVERITY_SORT = { critical: 0, high: 1, medium: 2, low: 3 };
+
+function firstLineNumber(line) {
+  const m = String(line || '').match(/\d+/);
+  return m ? Number.parseInt(m[0], 10) : Number.MAX_SAFE_INTEGER;
+}
+
+// 第六章统一排序：严重级别 → 文件 → 行号 → ID。
+// MD 中可能存在多张问题表（续表 / 按批次拆分）或 LLM 兜底产出的乱序表，合并后重排保证清单顺序稳定。
+function compareIssueRecords(a, b) {
+  const s = (SEVERITY_SORT[a.sev] ?? SEVERITY_SORT.medium) - (SEVERITY_SORT[b.sev] ?? SEVERITY_SORT.medium);
+  if (s !== 0) return s;
+  const f = String(a.file).localeCompare(String(b.file));
+  if (f !== 0) return f;
+  const l = firstLineNumber(a.line) - firstLineNumber(b.line);
+  if (l !== 0) return l;
+  return String(a.id).localeCompare(String(b.id));
+}
+
 function renderSection6(section6, issueById) {
   const tables = extractTables(section6);
   const issueTables = tables.filter((tb) =>
-    tb.headers.some((h) => stripMd(h).includes('问题 ID'))
+    tb.headers.some((h) => /问题\s*ID/i.test(stripMd(h)))
   );
   if (!issueTables.length) {
     return {
@@ -650,15 +698,18 @@ function renderSection6(section6, issueById) {
       rowCount: 0,
       tableCount: 0,
       duplicateIssueIds: [],
+      rowIds: [],
+      rawRowIds: [],
     };
   }
 
-  const rows = [];
+  const records = [];
   const seenIds = new Set();
   const duplicateIssueIds = [];
+  const rawRowIds = [];
   for (const t of issueTables) {
     const idx = {
-      id: colIndex(t.headers, ['问题 ID']),
+      id: colIndex(t.headers, ['问题 ID', '问题ID', 'ID']),
       file: colIndex(t.headers, ['文件']),
       line: colIndex(t.headers, ['行号']),
       fn: colIndex(t.headers, ['函数']),
@@ -666,45 +717,55 @@ function renderSection6(section6, issueById) {
       sev: colIndex(t.headers, ['级别']),
       must: colIndex(t.headers, ['必改']),
       domain: colIndex(t.headers, ['领域']),
-      desc: colIndex(t.headers, ['问题描述']),
+      desc: colIndex(t.headers, ['问题描述', '描述']),
     };
     if (idx.id < 0) continue;
     for (const row of t.rows) {
       const get = (i) => (i >= 0 && row[i] != null ? stripMd(row[i]) : '');
       const id = get(idx.id);
       if (!id || !/^[A-Z]+-\d+$/.test(id)) continue;
+      rawRowIds.push(id);
       if (seenIds.has(id)) {
         duplicateIssueIds.push(id);
         continue;
       }
       seenIds.add(id);
-      const file = get(idx.file);
-      const line = get(idx.line);
-      const fn = get(idx.fn) || '—';
-      const author = get(idx.author) || '—';
-      const sevText = get(idx.sev);
-      const sev = detectSeverity(sevText);
-      const sevInfo = SEV[sev] || SEV.medium;
-      let must = get(idx.must);
-      if (must === '是' || must === '必改') must = 'yes';
-      else must = '';
-      const domain = get(idx.domain) || '';
-      const desc = get(idx.desc) || '—';
-      const loc = `${file}:${line}`.replace(/:$/, '');
-      const issue = issueById[id];
-      const rowCls = must === 'yes' ? 'issue-row row-mustfix' : 'issue-row';
-      let expand = '';
-      if (issue) {
-        expand = `<div class="issue-row-expand"><div class="loc-bar">`;
-        if (issue.loc.file) expand += `<span><strong>文件</strong> ${escapeHtml(issue.loc.file)}</span>`;
-        if (issue.loc.line) expand += `<span><strong>行号</strong> ${escapeHtml(issue.loc.line)}</span>`;
-        if (issue.loc.symbol) expand += `<span><strong>函数</strong> ${escapeHtml(issue.loc.symbol)}</span>`;
-        expand += '</div>';
-        if (issue.code) expand += `<pre class="code code-snippet">${escapeHtml(issue.code)}</pre>`;
-        expand += '</div>';
-      }
-      rows.push(`<details class="${rowCls}" data-issue-id="${escapeHtml(id)}" data-author="${escapeHtml(author)}" data-domain="${escapeHtml(domain)}">
+      records.push({
+        id,
+        file: get(idx.file),
+        line: get(idx.line),
+        fn: get(idx.fn) || '—',
+        author: get(idx.author) || '—',
+        sev: detectSeverity(get(idx.sev)),
+        must: get(idx.must),
+        domain: get(idx.domain) || '',
+        desc: get(idx.desc) || '—',
+      });
+    }
+  }
+
+  records.sort(compareIssueRecords);
+
+  const rows = records.map((rec, index) => {
+    const { id, file, line, fn, author, domain, desc } = rec;
+    const sevInfo = SEV[rec.sev] || SEV.medium;
+    const must = rec.must === '是' || rec.must === '必改' ? 'yes' : '';
+    const loc = `${file}:${line}`.replace(/:$/, '');
+    const issue = issueById[id];
+    const rowCls = must === 'yes' ? 'issue-row row-mustfix' : 'issue-row';
+    let expand = '';
+    if (issue) {
+      expand = `<div class="issue-row-expand"><div class="loc-bar">`;
+      if (issue.loc.file) expand += `<span><strong>文件</strong> ${escapeHtml(issue.loc.file)}</span>`;
+      if (issue.loc.line) expand += `<span><strong>行号</strong> ${escapeHtml(issue.loc.line)}</span>`;
+      if (issue.loc.symbol) expand += `<span><strong>函数</strong> ${escapeHtml(issue.loc.symbol)}</span>`;
+      expand += '</div>';
+      if (issue.code) expand += `<pre class="code code-snippet">${escapeHtml(issue.code)}</pre>`;
+      expand += '</div>';
+    }
+    return `<details class="${rowCls}" data-issue-id="${escapeHtml(id)}" data-author="${escapeHtml(author)}" data-domain="${escapeHtml(domain)}">
   <summary>
+    <span class="col-index">${index + 1}</span>
     <span class="col-id">${escapeHtml(id)}</span>
     <span class="col-loc col-clip" title="${escapeHtml(loc)}">${escapeHtml(loc)}</span>
     <span class="col-fn col-clip" title="${escapeHtml(fn)}">${escapeHtml(fn)}</span>
@@ -717,13 +778,12 @@ function renderSection6(section6, issueById) {
     <button type="button" class="btn-detail" data-issue-id="${escapeHtml(id)}" title="${escapeHtml(id)}"></button>
   </summary>
   ${expand}
-</details>`);
-    }
-  }
+</details>`;
+  });
 
   const body = `<div class="issue-list">
   <div class="issue-list-header">
-    <span aria-hidden="true"></span><span>ID</span><span>位置</span><span>函数</span><span>提交人</span>
+    <span aria-hidden="true"></span><span>#</span><span>ID</span><span>位置</span><span>函数</span><span>提交人</span>
     <span>级</span><span>必改</span><span>有效</span><span>已修</span><span>描述</span><span aria-hidden="true"></span>
   </div>
   ${rows.join('\n')}
@@ -733,6 +793,8 @@ function renderSection6(section6, issueById) {
     rowCount: rows.length,
     tableCount: issueTables.length,
     duplicateIssueIds,
+    rowIds: records.map((record) => record.id),
+    rawRowIds,
   };
 }
 
@@ -767,6 +829,16 @@ function renderSignoffSection() {
 function hasRealIssueCode(issue) {
   const code = String(issue?.code || '').trim();
   return Boolean(code) && !['（无）', '(无)', '无', '-', '—'].includes(code);
+}
+
+function incompleteIssueFields(issue) {
+  const missing = [];
+  if (!issue?.loc?.file || ['-', '—'].includes(issue.loc.file)) missing.push('file');
+  if (!issue?.loc?.line || !/\d/.test(issue.loc.line)) missing.push('line');
+  if (!issue?.loc?.symbol || ['-', '—', 'unknown'].includes(issue.loc.symbol.toLowerCase())) missing.push('symbol');
+  if (!issue?.description || issue.description === issue.id || ['-', '—'].includes(issue.description)) missing.push('description');
+  if (!hasRealIssueCode(issue)) missing.push('code');
+  return missing;
 }
 
 function buildToc() {
@@ -829,8 +901,12 @@ function buildReportHtml(md, shell, mdPath, outPath, statePathOpt) {
   const kv = kvFromInfoTable(extractTables(s1));
   const total = countTotal(s3);
   const mustfix = countMustfix(s3);
-  const { byId } = parseIssueBlocks(s5);
-  const issueBlocks = Object.values(byId);
+  const section5Parsed = parseIssueBlocks(s5);
+  const { byId } = section5Parsed;
+  const issueBlocks = section5Parsed.blocks;
+  const incompleteIssues = issueBlocks
+    .map((issue) => ({ issueId: issue.id, missingFields: incompleteIssueFields(issue) }))
+    .filter((item) => item.missingFields.length > 0);
   const missingCodeIssues = issueBlocks
     .filter((issue) => !hasRealIssueCode(issue))
     .map((issue) => issue.id);
@@ -914,7 +990,16 @@ function buildReportHtml(md, shell, mdPath, outPath, statePathOpt) {
   const expectedIssueRows = Math.max(issueBlocks.length, total || 0);
   const section6IssueRowsComplete =
     expectedIssueRows === 0 || section6Render.rowCount >= expectedIssueRows;
-  const ok = structureOk && placeholdersOk && !allIssueCodeMissing && section6IssueRowsComplete;
+  const section5Ids = issueBlocks.map((issue) => issue.id).sort();
+  const section6Ids = [...section6Render.rawRowIds].sort();
+  const sectionIssueIdsMatch =
+    section5Ids.length === section6Ids.length &&
+    section5Ids.every((id, index) => id === section6Ids[index]);
+  const duplicateIssueIds = [...new Set([
+    ...section5Parsed.duplicateIssueIds,
+    ...section6Render.duplicateIssueIds,
+  ])];
+  const ok = structureOk && placeholdersOk && duplicateIssueIds.length === 0 && incompleteIssues.length === 0 && !allIssueCodeMissing && section6IssueRowsComplete && sectionIssueIdsMatch;
   const bytes = Buffer.byteLength(html, 'utf8');
   if (ok) {
     fs.mkdirSync(path.dirname(outPath), { recursive: true });
@@ -931,7 +1016,9 @@ function buildReportHtml(md, shell, mdPath, outPath, statePathOpt) {
     issueRows: section6Render.rowCount,
     section6IssueRowsComplete,
     section6IssueTableCount: section6Render.tableCount,
-    duplicateIssueIds: section6Render.duplicateIssueIds,
+    duplicateIssueIds,
+    incompleteIssues,
+    sectionIssueIdsMatch,
     bytes,
     bodyParts,
     byId,
@@ -982,6 +1069,8 @@ function main() {
       section6IssueRowsComplete: result.section6IssueRowsComplete,
       section6IssueTableCount: result.section6IssueTableCount,
       duplicateIssueIds: result.duplicateIssueIds,
+      incompleteIssues: result.incompleteIssues,
+      sectionIssueIdsMatch: result.sectionIssueIdsMatch,
       mdPlaceholdersBefore: result.mdPlaceholdersBefore,
       mdPlaceholdersAfter: result.mdPlaceholdersAfter,
       unresolvedPlaceholders: result.unresolvedPlaceholders,

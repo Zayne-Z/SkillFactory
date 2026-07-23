@@ -15,13 +15,14 @@
 
 - `{{REPORT_MD_PATH}}`：已生成的 MD 报告路径（与 `synthesis.report_path` 一致）
 - `{{HTML_TEMPLATE_PATH}}`：`{SKILL_ROOT}/templates/report-shell.html`（壳模板，含内联 CSS 与弹窗 JS）
-- `{{HTML_REPORT_PATH}}`：`codereview/report_<branch>_<date>.html`（与 MD 同名，扩展名 `.html`）
+- `{{HTML_REPORT_PATH}}`：与实际 MD 输出路径完全同名，仅把扩展名改为 `.html`；文件名形如 `report_<repo>_<branch>_<date>.html`，保留 Unicode
 
 ## 硬性禁令
 
 1. **禁止**读取 `.codereview/results/`、`.codereview/state.json` 或任何批次 JSON。
 2. **禁止**自由发挥版式：须遵循下方「章节映射表」与壳模板中的 class 命名。**禁止**在 `BODY_HTML` 中内联或追加 CSS；样式以 `report-shell.html` 为准（壳内 CSS 固定，不随 issue 数量增长，**不额外消耗生成 token**）。
 3. **禁止**跨调用增量续写：每次被主编排器拉起时，**从空白重写**整份 HTML（覆盖 `HTML_REPORT_PATH`），不复用上次半成品。
+4. MD 第五章与第六章问题 ID 集合必须完全一致，且所有问题都有文件、行号、symbol、描述和代码；发现占位问题时停止，不得自行制造定位或代码。
 
 ## BODY_HTML 章节顺序（强制）
 
@@ -140,7 +141,7 @@
 ```
 
 - 每条 `details.issue-row` **必须** `data-issue-id="{ID}"`；若有提交人则加 `data-author="{name}"` 与 `<span class="col-author col-clip" title="...">`（第六节「提交人」列，便于认领与签收汇总）。
-- 若第六节问题清单因分页、续表或批次拆成多张包含「问题 ID」的表，必须按 MD 出现顺序合并全部问题行；禁止只取第一张表。最终 `details.issue-row` 数量必须覆盖 MD 第六节问题行，并不得少于第三节合计或第五节 issue 条目数。
+- 若第六节问题清单因分页、续表或批次拆成多张包含「问题 ID」的表，必须合并全部问题行后**统一重排**：严重级别 Critical → High → Medium → Low，同级别按文件路径升序、再按行号升序；禁止只取第一张表，也禁止保留按批次分段的乱序。最终 `details.issue-row` 数量必须覆盖 MD 第六节问题行，并不得少于第三节合计或第五节 issue 条目数。
 - **详情按钮**：`btn-detail` 的 `data-issue-id` 须与第五节 `article#issue-{ID}` 一致；若第五节暂无完整条目，**至少**在行内提供 `.issue-row-expand`（loc-bar + code-snippet），壳 JS 会回退展示该行摘要。
 - 可能被截断的列（`.col-loc`、`.col-fn`、`.col-author`、`.col-desc`）须加 class `col-clip`，并设置 `title`（或与 `data-full` 同值的完整文本），悬停可查看省略内容。
 - `.cb-valid` / `.cb-fixed` 勾选会联动第七节统计（壳 JS 已内置）。

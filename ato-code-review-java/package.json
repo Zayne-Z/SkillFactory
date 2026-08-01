@@ -1,0 +1,32 @@
+{
+  "name": "@pa/ato-code-review-java",
+  "version": "1.2.0",
+  "description": "Java / Spring 后端增量代码检视 Skill（分支 diff → Markdown/HTML 报告）",
+  "private": false,
+  "type": "commonjs",
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "registry": "http://maven.paic.com.cn/repository/npm"
+  },
+  "skillUpdateUrl": "SKILL_MARKETPLACE_URL_TODO",
+  "files": [
+    "SKILL.md",
+    "docs/",
+    "prompts/",
+    "scripts/",
+    "templates/",
+    "opencode/",
+    "vscode-main-builder.md"
+  ],
+  "skillReleaseNotes": {
+    "1.2.0": [
+      "修复html报告中问题描述和修复建议时常错位的问题",
+      "修复报告中时间不正确的问题",
+      "修复报告生成不稳定可能造成第6章为空的问题",
+      "增加识别代码仓库名追加到报告中"
+    ]
+  },
+  "license": "UNLICENSED"
+}

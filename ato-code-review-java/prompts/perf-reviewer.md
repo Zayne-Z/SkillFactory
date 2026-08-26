@@ -13,7 +13,7 @@
 ## 职责边界
 
 - **N+1 / 循环查库**：仅在本专家报告。
-- **SQL 注入 / `${}` 在 XML**：本专家 **主报告**；**security** 专家仅在 **Java 侧** 动态拼 SQL、JDBC 字符串拼接时主报告（见同目录 `05-review-security.md` 分工说明）。
+- **SQL 注入 / `${}` 在 XML**：本专家 **主报告**；**security** 专家仅在 **Java 侧** 动态拼 SQL、JDBC 字符串拼接时主报告（见同目录 `security-reviewer.md` 分工说明）。
 - **@Transactional / 事务边界**：**spring** 专家主报告。
 - **纯命名/魔法数字/NPE**：**core** 专家。
 
@@ -27,8 +27,9 @@
 
 - 若 diff 仅新增 Mapper 方法、XML SQL 节点、Repository 查询、缓存/并发辅助函数、批处理入口等符号，且 patch 内没有调用、XML/接口配对、注入使用或测试覆盖，必须确认是否合理。
 - `{{DEEP_DOUBT_ANALYSIS}}` 为 `true`（默认）时：可读取所属源文件局部窗口，或对新增符号做一次有界引用搜索（最多读取 50 条匹配，结果过多即停止），判断是否存在 Mapper/XML 配对、Service 调用或框架动态入口。
-- 若无法证明合理，输出 `category: "unused_new_symbol"` / `data_unused_entry`；`critical_high_only` 下用 `high` 并标注需确认。
-- `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：只基于 patch 证据报告“需人工确认”。
+- 若无法证明合理，输出 `category: "unused_new_symbol"` / `data_unused_entry`，严重级别默认 **medium**。
+- 若 `{{SEVERITY_MODE}}` 为 `critical_high_only`：**不得输出**上述「仅需确认」类 issue。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：只基于 patch 证据报告“需人工确认”（默认 medium；`critical_high_only` 下不输出）。
 
 ## 严重级别范围
 

@@ -165,15 +165,26 @@
 
     /* 六、问题清单（含提交人列） */
     #section-issues .collapse-body { overflow-x: auto; }
-    .issue-list { display: flex; flex-direction: column; gap: 5px; min-width: 860px; }
+    .issue-filters {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px;
+      margin: 0 0 10px; padding: 8px 10px; border-radius: 10px;
+      background: rgba(99,102,241,0.06); border: 1px solid rgba(99,102,241,0.12);
+    }
+    .filter-chip {
+      display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; font-weight: 600;
+      color: var(--text); cursor: pointer;
+    }
+    .filter-chip input { width: 14px; height: 14px; accent-color: var(--accent); }
+    .filter-hint { font-size: 0.68rem; color: var(--muted); }
+    .issue-list { display: flex; flex-direction: column; gap: 5px; min-width: 760px; }
     .issue-list-header {
       display: grid;
-      grid-template-columns: 14px 28px 64px minmax(108px,1.5fr) minmax(56px,1fr) minmax(52px,0.85fr) 24px 28px 38px 38px minmax(88px,1.8fr) 24px;
+      grid-template-columns: 14px 28px 64px 24px 28px minmax(120px,1.6fr) minmax(64px,1fr) minmax(120px,2fr) 38px 38px 24px;
       gap: 6px 10px; padding: 6px 10px; font-size: 0.64rem; font-weight: 600;
       color: var(--muted); text-transform: uppercase; letter-spacing: 0.02em;
     }
     .issue-list-header span:nth-child(1),
-    .issue-list-header span:nth-child(12) { visibility: hidden; }
+    .issue-list-header span:nth-child(11) { visibility: hidden; }
     details.issue-row {
       border-radius: 10px; background: rgba(255,255,255,0.38);
       border: 1px solid rgba(255,255,255,0.52); overflow: hidden;
@@ -181,10 +192,11 @@
     details.issue-row.row-mustfix { background: rgba(254,243,199,0.28); border-color: rgba(251,191,36,0.25); }
     details.issue-row.row-valid { box-shadow: inset 3px 0 0 rgba(99,102,241,0.45); }
     details.issue-row.row-fixed { box-shadow: inset 3px 0 0 rgba(34,197,94,0.5); }
+    details.issue-row.row-filtered-out { display: none; }
     details.issue-row > summary {
       list-style: none; cursor: pointer; padding: 9px 10px; text-align: left;
       display: grid;
-      grid-template-columns: 14px 28px 64px minmax(108px,1.5fr) minmax(56px,1fr) minmax(52px,0.85fr) 24px 28px 38px 38px minmax(88px,1.8fr) 24px;
+      grid-template-columns: 14px 28px 64px 24px 28px minmax(120px,1.6fr) minmax(64px,1fr) minmax(120px,2fr) 38px 38px 24px;
       gap: 6px 10px; align-items: center; font-size: 0.76rem; line-height: 1.35;
     }
     details.issue-row > summary::-webkit-details-marker { display: none; }
@@ -194,11 +206,10 @@
       transition: transform 0.18s; justify-self: center;
     }
     details.issue-row[open] > summary::before { transform: rotate(45deg); }
-    details.issue-row > summary .btn-detail { grid-column: 12; justify-self: end; }
+    details.issue-row > summary .btn-detail { grid-column: 11; justify-self: end; }
     .col-clip {
       display: block; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     }
-    .issue-row .col-author { color: var(--text-secondary); font-size: 0.7rem; }
     .col-chk { display: flex; align-items: center; justify-content: center; min-width: 0; }
     .chk-label {
       display: inline-flex; align-items: center; gap: 2px; font-size: 0.62rem;
@@ -221,9 +232,9 @@
       display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: 6px; font-size: 0.72rem; color: var(--muted);
     }
     .loc-bar span strong { color: var(--text); font-weight: 600; }
-    pre.code-snippet {
+    pre.code-snippet, pre.code-fix {
       background: rgba(15,23,42,0.88); color: #e2e8f0; padding: 8px 10px; border-radius: 7px;
-      font-size: 0.72rem; line-height: 1.45; margin: 0; overflow-x: auto; white-space: pre-wrap;
+      font-size: 0.72rem; line-height: 1.45; margin: 0 0 8px; overflow-x: auto; white-space: pre-wrap;
     }
 
     /* 五、详细 issue 块 */
@@ -340,10 +351,10 @@
       .issue-list-header { display: none; }
       .issue-list { min-width: 640px; }
       details.issue-row > summary {
-        grid-template-columns: 14px 28px 58px minmax(88px,1.2fr) 36px 36px 24px;
+        grid-template-columns: 14px 26px 56px 22px minmax(84px,1.2fr) 34px 34px 22px;
       }
-      .issue-row .col-fn, .issue-row .col-author, .issue-row .col-must, .issue-row .col-desc, .issue-row .col-sev { display: none; }
-      details.issue-row > summary .btn-detail { grid-column: 7; }
+      .issue-row .col-fn, .issue-row .col-must, .issue-row .col-desc { display: none; }
+      details.issue-row > summary .btn-detail { grid-column: 8; }
     }
   </style>
 </head>
@@ -573,25 +584,34 @@
         issues.forEach(function (i) { byId[i.id] = i; });
         var lines = md.split('\n');
         var inTable = false;
+        var rowsHaveSignoffColumns = false;
         for (var i = 0; i < lines.length; i++) {
           var line = lines[i];
           if (line.indexOf('## 六、问题清单') === 0) inTable = false;
           if (line.indexOf('| 问题 ID |') >= 0 && line.indexOf('详情') >= 0) {
+            rowsHaveSignoffColumns = line.indexOf('有效') >= 0 && /已修(?:复)?/.test(line);
             if (line.indexOf('有效') < 0) lines[i] = line.replace('| 详情 |', '| 有效 | 已修复 | 详情 |');
             inTable = true; continue;
           }
-          if (inTable && line.indexOf('|---') === 0 && line.indexOf('有效') < 0) {
-            lines[i] = line.replace('|------|', '|------|------|');
+          if (inTable && line.indexOf('|---') === 0 && !rowsHaveSignoffColumns) {
+            var separatorCells = line.slice(1, -1).split('|');
+            separatorCells.splice(separatorCells.length - 1, 0, '------', '------');
+            lines[i] = '|' + separatorCells.join('|') + '|';
             continue;
           }
-          if (inTable && line.charAt(0) === '|' && line.indexOf('问题 ID') < 0) {
-            var m = line.match(/\|\s*\d+\s*\|\s*([A-Z]+-\d+)/);
-            if (m && byId[m[1]]) {
-              var rec = byId[m[1]];
+          if (inTable && line.charAt(0) === '|') {
+            var m = line.match(/^\|\s*\d+\s*\|\s*([^|]+?)\s*\|/);
+            var issueId = m ? m[1].replace(/[`*_]/g, '').trim() : '';
+            if (issueId && byId[issueId]) {
+              var rec = byId[issueId];
               var valid = rec.valid ? '是' : '否';
               var fixed = rec.fixed ? '是' : '否';
               if (line.indexOf('[查看]') >= 0) {
-                lines[i] = line.replace(/\|\s*\[查看\]/, '| ' + valid + ' | ' + fixed + ' | [查看]');
+                if (rowsHaveSignoffColumns) {
+                  lines[i] = line.replace(/\|\s*(是|否|-)\s*\|\s*(是|否|-)\s*\|\s*\[查看\]/, '| ' + valid + ' | ' + fixed + ' | [查看]');
+                } else {
+                  lines[i] = line.replace(/\|\s*\[查看\]/, '| ' + valid + ' | ' + fixed + ' | [查看]');
+                }
               }
             }
           }
@@ -781,6 +801,8 @@
       }
 
       function buildFixHtml(payload) {
+        // 存档件必须展示全部问题，不能带走「仅必改」的 row-filtered-out 状态
+        clearMustfixFilter();
         renderSignedSection6();
         renderSignedSection7(payload || {});
         document.body.classList.add('signed');
@@ -903,8 +925,47 @@
       var remarksEl = document.getElementById('signoff-remarks');
       if (remarksEl && !remarksEl.value.trim()) remarksEl.value = DEFAULT_REMARKS;
 
+      function isMustRow(row) {
+        return row.getAttribute('data-mustfix') === '1' || row.classList.contains('row-mustfix');
+      }
+
+      function applyMustfixFilter() {
+        var box = document.getElementById('filter-mustfix');
+        var onlyMust = !!box && box.checked;
+        var rows = document.querySelectorAll('details.issue-row[data-issue-id]');
+        var mustCount = 0;
+        rows.forEach(function (row) { if (isMustRow(row)) mustCount++; });
+        rows.forEach(function (row) {
+          if (onlyMust && mustCount > 0 && !isMustRow(row)) row.classList.add('row-filtered-out');
+          else row.classList.remove('row-filtered-out');
+        });
+        return mustCount;
+      }
+
+      function clearMustfixFilter() {
+        document.querySelectorAll('details.issue-row.row-filtered-out').forEach(function (row) {
+          row.classList.remove('row-filtered-out');
+        });
+        var bar = document.querySelector('.issue-filters');
+        if (bar && bar.parentNode) bar.parentNode.removeChild(bar);
+      }
+
+      function initMustfixFilter() {
+        var box = document.getElementById('filter-mustfix');
+        if (!box) return;
+        box.addEventListener('change', applyMustfixFilter);
+        if (applyMustfixFilter() === 0) {
+          box.checked = false;
+          box.removeAttribute('checked');
+          box.disabled = true;
+          var label = box.closest('label');
+          if (label) label.title = '本次没有必改问题';
+        }
+      }
+
       initDetailButtons();
       initClipTitles();
+      initMustfixFilter();
       loadDraft();
       if (remarksEl && !remarksEl.value.trim()) remarksEl.value = DEFAULT_REMARKS;
       updateRowStyles();

@@ -24,14 +24,15 @@
 
 - 若 diff 仅新增权限判断函数、请求封装、token/鉴权辅助、路由守卫、危险 HTML 包装、重定向工具等符号，且 patch 内没有调用或绑定，必须确认是否合理。
 - `{{DEEP_DOUBT_ANALYSIS}}` 为 `true`（默认）时：可读取所属源文件局部窗口，或对新增符号做一次有界引用搜索（最多读取 50 条匹配，结果过多即停止），确认是否有真实安全路径使用。
-- 无法证明合理时输出 `category: "unused_new_symbol"` 或 `unreachable_security_control`；`critical_high_only` 下用 `high`，因为安全防护代码未接入可能造成实际缺口。
-- `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：只基于 patch 证据报告“需人工确认”。
+- 无法证明合理时：默认输出 `category: "unused_new_symbol"` 或 `unreachable_security_control`，严重级别 **medium**。
+- **例外**：若能写出「防护代码未接入导致的可利用缺口」（例如新增路由完全无鉴权、`v-html` 渲染未净化用户输入），允许 `high`/`critical`。
+- 若 `{{SEVERITY_MODE}}` 为 `critical_high_only`：不得输出默认 medium 的「仅需确认」类 issue；仅上述可利用缺口例外可保留。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：只基于 patch 证据报告“需人工确认”（默认 medium，除非已构成可利用缺口）。
 
 ## 严重级别范围
 
 - 若 `{{SEVERITY_MODE}}` 为 `critical_high_only`：**仅**输出 `critical` 与 `high` 的 issue，**不得**输出 `medium` / `low`（summary 中对应计数为 0）。
-  - **可疑但证据不足**：仍用 **`high`**，在 `description` 中写明「需人工确认数据来源 / 是否已净化 / 鉴权是否在服务端生效」等；**禁止**用 `medium`/`low` 表达不确定项。
-- 若为 `all`：可输出全部级别；此时若证据不足可用 `medium` 并说明需人工确认。
+- 若为 `all`：可输出全部级别；证据不足的「仅需确认」用 `medium`。
 
 ## 输出格式注意
 

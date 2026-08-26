@@ -27,8 +27,9 @@
 
 - 若 diff 仅新增变量、函数、导出、组件方法、路由/API 包装等符号，且 patch 内没有任何调用、绑定或引用，必须确认是否合理；不要因为“只是新增”直接判为无问题。
 - `{{DEEP_DOUBT_ANALYSIS}}` 为 `true`（默认）时：可读取所属源文件的局部窗口，或对新增符号做一次有界引用搜索（如 `rg -n --fixed-strings <symbol>`，最多读取 50 条匹配，结果过多即停止），用于确认是否存在调用方、框架约定入口或测试覆盖。
-- 若仍无法证明合理，输出 `category: "unused_new_symbol"` 或相近类别；`critical_high_only` 下用 `high` 并在描述中写明“需确认是否为遗漏调用 / 死代码 / 分阶段提交”。
-- `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：不要扩大读取范围；基于 patch 证据报告“需人工确认”。
+- 若仍无法证明合理，输出 `category: "unused_new_symbol"`（或相近类别），严重级别默认 **medium**，描述写明“需确认是否为遗漏调用 / 死代码 / 分阶段提交”。
+- 若 `{{SEVERITY_MODE}}` 为 `critical_high_only`：**不得输出** `unused_new_symbol` 及同类「仅需确认」issue（此类默认 medium，会被模式过滤）。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：不要扩大读取范围；基于 patch 证据报告“需人工确认”（同样默认 medium；`critical_high_only` 下不输出）。
 
 ## 关联被调用函数（安全性取决于存量函数时）
 

@@ -1,6 +1,6 @@
 > **子执行器**：`web-codereview-tech-stack` | Phase 3
 > 将本文件内容用于 opencode subagent、Claude Code subagent/Task 或 VS Code 子 Builder 的系统提示词。
-> **完成约定**：执行完毕后必须将结果写入 `{{OUTPUT_PATH}}`。主编排器通过检查目标文件是否存在且内容完整来判断任务是否完成。若你遇到上下文超长，优先将**已完成的部分结果**写入文件，然后停止。
+> **完成约定**：执行完毕后必须将结果写入 `{{OUTPUT_PATH}}`。主编排器应**先跑** `scripts/detect-tech-stack.js`；仅当脚本失败时才拉起本子执行器。字段须与脚本输出对齐（含 `review_mode`、`summary`、`review_mode_description`）。
 
 ---
 

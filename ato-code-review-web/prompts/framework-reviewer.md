@@ -27,8 +27,9 @@
 
 - 若 diff 仅新增组件方法、hook、composable、store action、路由配置、样式类名或导出符号，且 patch 内没有任何调用、绑定、模板引用或样式使用，必须确认是否合理。
 - `{{DEEP_DOUBT_ANALYSIS}}` 为 `true`（默认）时：可读取所属源文件局部窗口，或对新增符号/类名做一次有界引用搜索（最多读取 50 条匹配，结果过多即停止），判断是否为框架约定入口、动态绑定、测试入口或遗漏引用。
-- 若无法证明合理，输出 `category: "unused_new_symbol"` / `framework_unused_entry` / `style_unused_selector`；`critical_high_only` 下用 `high` 并标注需确认。
-- `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：只基于 patch 证据报告“需人工确认”，不扩大读取范围。
+- 若无法证明合理，输出 `category: "unused_new_symbol"` / `framework_unused_entry` / `style_unused_selector`，严重级别默认 **medium**。
+- 若 `{{SEVERITY_MODE}}` 为 `critical_high_only`：**不得输出**上述「仅需确认」issue（默认 medium，会被模式过滤）。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：只基于 patch 证据报告“需人工确认”（同样默认 medium；`critical_high_only` 下不输出）。
 
 ## 输入变量
 

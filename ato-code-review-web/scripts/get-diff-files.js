@@ -24,7 +24,13 @@ function parseArgs(args) {
   return result;
 }
 
+/** `.env` / `.env.production` / `.env.local` 等环境文件：常含接口地址、密钥，必须能被识别 */
+function isEnvFile(filePath) {
+  return path.basename(filePath).toLowerCase().startsWith('.env');
+}
+
 function getFileType(filePath) {
+  if (isEnvFile(filePath)) return 'env';
   const ext = path.extname(filePath).toLowerCase();
   const typeMap = {
     '.vue': 'vue',
@@ -72,10 +78,10 @@ function isFrontendFile(filePath) {
 
   const frontendExts = ['.vue', '.js', '.ts', '.jsx', '.tsx', '.css', '.scss', '.less', '.styl', '.html'];
   const ext = path.extname(filePath).toLowerCase();
-  const configFiles = ['package.json', 'vue.config.js', 'vite.config.js', 'vite.config.ts', '.env', '.eslintrc.js', '.eslintrc.json', 'babel.config.js'];
+  const configFiles = ['package.json', 'vue.config.js', 'vite.config.js', 'vite.config.ts', '.eslintrc.js', '.eslintrc.json', 'babel.config.js'];
   const basename = path.basename(filePath);
 
-  return frontendExts.includes(ext) || configFiles.includes(basename);
+  return frontendExts.includes(ext) || configFiles.includes(basename) || isEnvFile(filePath);
 }
 
 function getFileSize(filePath) {
@@ -269,4 +275,8 @@ function main() {
   console.log(`  输出: ${outputPath}`);
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = { getFileType, isFrontendFile, isEnvFile, getLowRiskReason };

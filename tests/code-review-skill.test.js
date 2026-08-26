@@ -887,7 +887,104 @@ for (const skill of SKILLS) {
     const rows = html.match(/<details class="issue-row[^"]*" data-issue-id="COR-\d+"/g) || [];
     assert.equal(rows.length, 57);
     assert.match(html, /data-issue-id="COR-057"/);
-    assert.match(html, /六、问题清单（全量）<\/span><span class="collapse-meta">57 条/);
+    assert.match(html, /问题清单<\/span><span class="collapse-meta">57 条|六、问题清单[^<]*<\/span><span class="collapse-meta">57 条/);
+  });
+
+  test(`${skill} render-report-html preserves compound resolved issue IDs`, () => {
+    const workspace = makeWorkspace(skill);
+    const mdPath = renderReport(skill, workspace, 'report_compound_issue_ids.md');
+    const md = fs.readFileSync(mdPath, 'utf8');
+    const ids = ['COR-batch-002-02', 'SPR-SEC-002-003'];
+    const details = [
+      '## 五、详细检视结果', '', '### 5.1 核心', '',
+      issueDetail(ids[0], 'src/CompoundA.java', 21, 'CompoundA#run', 'High', '批次型问题 ID'), '',
+      issueDetail(ids[1], 'src/CompoundB.java', 34, 'CompoundB#check', 'Critical', '多段问题 ID'),
+    ].join('\n');
+    const issueList = [
+      '## 六、问题清单（全量）', '',
+      '| # | 问题 ID | 文件 | 行号 | 函数/方法 | 提交人 | 级别 | 必改 | 领域 | 问题描述 | 有效 | 已修复 | 详情 |',
+      '|---|---------|------|------|-----------|--------|------|------|------|----------|------|--------|------|',
+      `| 1 | ${ids[0]} | \`src/CompoundA.java\` | 21 | \`CompoundA#run\` | Alice | High | 是 | core | 批次型问题 ID | 否 | 否 | [查看](#issue-${ids[0]}) |`,
+      `| 2 | ${ids[1]} | \`src/CompoundB.java\` | 34 | \`CompoundB#check\` | Bob | Critical | 是 | security | 多段问题 ID | 否 | 否 | [查看](#issue-${ids[1]}) |`,
+    ].join('\n');
+    const withDetails = md.replace(
+      /## 五、详细检视结果[\s\S]*?(?=\n---\n\n## 六、问题清单)/,
+      details
+    );
+    const patched = withDetails.replace(
+      /## 六、问题清单（全量）[\s\S]*?(?=\n---\n\n## 七、验证与签收)/,
+      issueList
+    );
+    assert.notEqual(patched, md);
+    fs.writeFileSync(mdPath, patched, 'utf8');
+
+    const htmlPath = renderHtml(skill, workspace, mdPath);
+    const html = fs.readFileSync(htmlPath, 'utf8');
+    for (const id of ids) {
+      assert.match(html, new RegExp(`data-issue-id="${id}"`));
+      assert.match(html, new RegExp(`id="issue-${id}"`));
+    }
+    assert.equal((html.match(/<details class="issue-row[^\"]*" data-issue-id=/g) || []).length, 2);
+
+    const payloadPath = path.join(workspace, 'compound-signoff.json');
+    writeJson(payloadPath, {
+      mdPath,
+      htmlPath,
+      issues: [
+        { id: ids[0], valid: true, fixed: false },
+        { id: ids[1], valid: true, fixed: true },
+      ],
+      validCount: 2,
+      fixedCount: 1,
+      conclusion: '修改后通过',
+      signer: 'Reviewer',
+      signedAt: '2026-08-17T10:30:00+08:00',
+    });
+    execFileSync(process.execPath, [
+      path.join(ROOT, skill, 'scripts/sync-report-signoff.js'),
+      '--payload', payloadPath,
+      '--md', mdPath,
+      '--html', htmlPath,
+    ], { cwd: workspace, stdio: 'pipe' });
+    const signedMd = fs.readFileSync(mdPath, 'utf8');
+    assert.match(signedMd, new RegExp(`\\| 1 \\| ${ids[0]} \\|[^\\n]+\\| 是 \\| 否 \\| \\[查看\\]`));
+    assert.match(signedMd, new RegExp(`\\| 2 \\| ${ids[1]} \\|[^\\n]+\\| 是 \\| 是 \\| \\[查看\\]`));
+
+    const legacyMdPath = path.join(workspace, 'legacy-compound.md');
+    const legacyHtmlPath = path.join(workspace, 'legacy-compound.html');
+    const legacyIssueList = [
+      '## 六、问题清单（全量）', '',
+      '| # | 问题 ID | 文件 | 行号 | 函数/方法 | 提交人 | 级别 | 必改 | 领域 | 问题描述 | 详情 |',
+      '|---|---------|------|------|-----------|--------|------|------|------|----------|------|',
+      `| 1 | ${ids[0]} | src/CompoundA.java | 21 | CompoundA#run | Alice | High | 是 | core | 批次型问题 ID | [查看] |`,
+      `| 2 | ${ids[1]} | src/CompoundB.java | 34 | CompoundB#check | Bob | Critical | 是 | security | 多段问题 ID | [查看] |`,
+    ].join('\n');
+    fs.writeFileSync(legacyMdPath, legacyIssueList, 'utf8');
+    fs.writeFileSync(legacyHtmlPath, html, 'utf8');
+    writeJson(payloadPath, {
+      mdPath: legacyMdPath,
+      htmlPath: legacyHtmlPath,
+      issues: [
+        { id: ids[0], valid: true, fixed: false },
+        { id: ids[1], valid: true, fixed: true },
+      ],
+    });
+    execFileSync(process.execPath, [
+      path.join(ROOT, skill, 'scripts/sync-report-signoff.js'),
+      '--payload', payloadPath,
+      '--md', legacyMdPath,
+      '--html', legacyHtmlPath,
+    ], { cwd: workspace, stdio: 'pipe' });
+    const signedLegacyMd = fs.readFileSync(legacyMdPath, 'utf8');
+    const legacyLines = signedLegacyMd.split('\n').filter((line) => line.startsWith('|'));
+    assert.match(legacyLines[0], /\| 有效 \| 已修复 \| 详情 \|/);
+    assert.ok(legacyLines.every((line) => line.split('|').length === legacyLines[0].split('|').length));
+    assert.match(signedLegacyMd, new RegExp(`\\| 1 \\| ${ids[0]} \\|[^\\n]+\\| 是 \\| 否 \\| \\[查看\\]`));
+    assert.match(signedLegacyMd, new RegExp(`\\| 2 \\| ${ids[1]} \\|[^\\n]+\\| 是 \\| 是 \\| \\[查看\\]`));
+
+    const shell = fs.readFileSync(path.join(ROOT, skill, 'templates/report-shell.html'), 'utf8');
+    assert.match(shell, /var rowsHaveSignoffColumns = false/);
+    assert.match(shell, /var issueId = m \? m\[1\]\.replace/);
   });
 
   test(`${skill} render-report-md backfills missing curated code from expert result`, () => {
@@ -1947,11 +2044,12 @@ for (const skill of SKILLS) {
     for (let batchIndex = 1; batchIndex <= 6; batchIndex++) {
       const batchId = `batch-${String(batchIndex).padStart(3, '0')}`;
       for (let issueIndex = 1; issueIndex <= 10; issueIndex++) {
-        const marker = html.indexOf(`语义包 ${batchIndex}-${issueIndex} 必须保持对齐。`);
-        assert.ok(marker >= 0);
-        const blockStart = html.lastIndexOf('<article id="issue-', marker);
-        const blockEnd = html.indexOf('</article>', marker);
-        const block = html.slice(blockStart, blockEnd);
+        const description = `语义包 ${batchIndex}-${issueIndex} 必须保持对齐。`;
+        const articleRe = new RegExp(
+          `<article id="issue-[^"]+"[\\s\\S]*?${description.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[\\s\\S]*?<\\/article>`
+        );
+        const block = html.match(articleRe)?.[0] || '';
+        assert.ok(block, `missing article for ${description}`);
         assert.match(block, new RegExp(`RISK_${batchIndex}_${issueIndex}\\(\\);`));
         assert.ok(block.includes(expectedFixBySemantic.get(`${batchId}:${issueIndex}`)));
       }
@@ -2291,4 +2389,798 @@ test('code-review Skill npm packages keep publish metadata aligned and pack only
     assert.equal(files.includes('release-notes.json'), false);
     assert.equal(files.some((file) => file.startsWith('tests/') || file.startsWith('.git/')), false);
   }
+});
+
+function prepareConfirmedState(workspace) {
+  writeJson(path.join(workspace, '.codereview/state.json'), {
+    version: '2.0',
+    skill: 'ato-code-review-java',
+    current_phase: 'tech_stack',
+    branches: { branch1: 'feature/x', branch2: 'master' },
+    review_options: {
+      severity_mode: 'critical_high_only',
+      skip_low_risk_files: true,
+      generate_html_report: true,
+      max_lines_per_batch: 2000,
+      deep_doubt_analysis: true,
+      user_confirmed: true,
+    },
+  });
+}
+
+test('ato-code-review-java detect-tech-stack reads Maven pom dependencies', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'java-tech-maven-'));
+  prepareConfirmedState(workspace);
+  fs.writeFileSync(path.join(workspace, 'pom.xml'), `
+<project>
+  <parent>
+    <groupId>org.springframework.boot</groupId>
+    <artifactId>spring-boot-starter-parent</artifactId>
+    <version>2.7.18</version>
+  </parent>
+  <properties>
+    <java.version>17</java.version>
+  </properties>
+  <dependencies>
+    <dependency>
+      <groupId>org.mybatis.spring.boot</groupId>
+      <artifactId>mybatis-spring-boot-starter</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.mysql</groupId>
+      <artifactId>mysql-connector-j</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>org.projectlombok</groupId>
+      <artifactId>lombok</artifactId>
+    </dependency>
+  </dependencies>
+</project>
+`.trim(), 'utf8');
+
+  const out = path.join(workspace, '.codereview/tech-stack.json');
+  const result = runNodeResult([
+    path.join(ROOT, 'ato-code-review-java/scripts/detect-tech-stack.js'),
+    '--project-root', workspace,
+    '--output', out,
+    '--force', 'true',
+  ], workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const tech = readJson(out);
+  assert.equal(tech.build_tool, 'maven');
+  assert.match(String(tech.spring_boot_version), /2\.7/);
+  assert.match(String(tech.orm_framework || tech.orm), /mybatis/i);
+  assert.equal(tech.database, 'mysql');
+  assert.equal(tech.has_lombok, true);
+  assert.ok(tech.summary);
+  assert.ok(tech.review_mode_description);
+});
+
+test('ato-code-review-java detect-tech-stack reads Gradle build file', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'java-tech-gradle-'));
+  prepareConfirmedState(workspace);
+  fs.writeFileSync(path.join(workspace, 'build.gradle'), `
+plugins {
+  id 'org.springframework.boot' version '3.2.0'
+}
+sourceCompatibility = '17'
+dependencies {
+  implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+  runtimeOnly 'org.postgresql:postgresql'
+  implementation 'com.zaxxer:HikariCP'
+}
+`.trim(), 'utf8');
+
+  const out = path.join(workspace, '.codereview/tech-stack.json');
+  const result = runNodeResult([
+    path.join(ROOT, 'ato-code-review-java/scripts/detect-tech-stack.js'),
+    '--project-root', workspace,
+    '--output', out,
+    '--force', 'true',
+  ], workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const tech = readJson(out);
+  assert.equal(tech.build_tool, 'gradle');
+  assert.match(String(tech.spring_boot_version), /3\.2/);
+  assert.match(String(tech.orm_framework || tech.orm), /jpa/i);
+  assert.equal(tech.database, 'postgresql');
+  assert.equal(tech.connection_pool, 'hikari');
+  assert.equal(tech.spring_boot_v3, true);
+});
+
+test('ato-code-review-java detect-tech-stack writes unknown summary without build files', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'java-tech-empty-'));
+  prepareConfirmedState(workspace);
+  const out = path.join(workspace, '.codereview/tech-stack.json');
+  const result = runNodeResult([
+    path.join(ROOT, 'ato-code-review-java/scripts/detect-tech-stack.js'),
+    '--project-root', workspace,
+    '--output', out,
+    '--force', 'true',
+  ], workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const tech = readJson(out);
+  assert.ok(tech.summary);
+  assert.match(String(tech.summary), /未知|unknown|未检测到/i);
+  assert.ok(tech.review_mode_description);
+});
+
+test('ato-code-review-java plan-experts maps handler and filter batches to security', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'java-plan-security-'));
+  prepareConfirmedState(workspace);
+  const inventoryPath = path.join(workspace, '.codereview/file-inventory.json');
+  writeJson(inventoryPath, {
+    total_files: 2,
+    total_changed_lines: 40,
+    total_batches: 1,
+    review_scope: { skip_low_risk_files: false },
+    files: [
+      { path: 'src/FooHandler.java', type: 'handler', changed_lines: 20 },
+      { path: 'src/AuthFilter.java', type: 'interceptor', changed_lines: 20 },
+    ],
+    batches: [{
+      id: 'batch-001',
+      files: [
+        { path: 'src/FooHandler.java', type: 'handler', changed_lines: 20 },
+        { path: 'src/AuthFilter.java', type: 'interceptor', changed_lines: 20 },
+      ],
+      total_lines: 40,
+    }],
+  });
+  const out = path.join(workspace, '.codereview/task-plan.json');
+  const result = runNodeResult([
+    path.join(ROOT, 'ato-code-review-java/scripts/plan-experts.js'),
+    '--inventory', inventoryPath,
+    '--output', out,
+    '--force', 'true',
+  ], workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const plan = readJson(out);
+  assert.ok(plan.batches[0].applicable_experts.includes('security'));
+  assert.ok(plan.batches[0].applicable_experts.includes('core'));
+  assert.ok(plan.batches[0].applicable_experts.includes('spring'));
+});
+
+test('ato-code-review-java plan-experts maps service-interface to spring', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'java-plan-service-'));
+  prepareConfirmedState(workspace);
+  const inventoryPath = path.join(workspace, '.codereview/file-inventory.json');
+  writeJson(inventoryPath, {
+    total_files: 1,
+    total_changed_lines: 10,
+    total_batches: 1,
+    review_scope: { skip_low_risk_files: false },
+    files: [{ path: 'src/FooService.java', type: 'service-interface', changed_lines: 10 }],
+    batches: [{
+      id: 'batch-001',
+      files: [{ path: 'src/FooService.java', type: 'service-interface', changed_lines: 10 }],
+      total_lines: 10,
+    }],
+  });
+  const out = path.join(workspace, '.codereview/task-plan.json');
+  const result = runNodeResult([
+    path.join(ROOT, 'ato-code-review-java/scripts/plan-experts.js'),
+    '--inventory', inventoryPath,
+    '--output', out,
+    '--force', 'true',
+  ], workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const plan = readJson(out);
+  assert.ok(plan.batches[0].applicable_experts.includes('spring'));
+  assert.ok(plan.batches[0].applicable_experts.includes('data'));
+});
+
+test('ato-code-review-java plan-experts keeps only core for pure dto batch', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'java-plan-dto-'));
+  prepareConfirmedState(workspace);
+  const inventoryPath = path.join(workspace, '.codereview/file-inventory.json');
+  writeJson(inventoryPath, {
+    total_files: 1,
+    total_changed_lines: 5,
+    total_batches: 1,
+    review_scope: { skip_low_risk_files: false },
+    files: [{ path: 'src/UserDTO.java', type: 'dto', changed_lines: 5 }],
+    batches: [{
+      id: 'batch-001',
+      files: [{ path: 'src/UserDTO.java', type: 'dto', changed_lines: 5 }],
+      total_lines: 5,
+    }],
+  });
+  const out = path.join(workspace, '.codereview/task-plan.json');
+  const result = runNodeResult([
+    path.join(ROOT, 'ato-code-review-java/scripts/plan-experts.js'),
+    '--inventory', inventoryPath,
+    '--output', out,
+    '--force', 'true',
+  ], workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const experts = readJson(out).batches[0].applicable_experts;
+  assert.deepEqual(experts, ['core']);
+});
+
+test('ato-code-review-java plan-experts preserves line_ranges and diff_slice', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'java-plan-slice-'));
+  prepareConfirmedState(workspace);
+  const inventoryPath = path.join(workspace, '.codereview/file-inventory.json');
+  const fileEntry = {
+    path: 'src/Big.java',
+    type: 'service-impl',
+    changed_lines: 100,
+    line_ranges: [[1, 50]],
+    diff_slice: { start: 0, end: 1 },
+  };
+  writeJson(inventoryPath, {
+    total_files: 1,
+    total_changed_lines: 100,
+    total_batches: 1,
+    review_scope: { skip_low_risk_files: true },
+    files: [fileEntry],
+    batches: [{ id: 'batch-001', files: [fileEntry], total_lines: 100 }],
+  });
+  const out = path.join(workspace, '.codereview/task-plan.json');
+  const result = runNodeResult([
+    path.join(ROOT, 'ato-code-review-java/scripts/plan-experts.js'),
+    '--inventory', inventoryPath,
+    '--output', out,
+    '--force', 'true',
+  ], workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const planned = readJson(out).batches[0].files[0];
+  assert.deepEqual(planned.line_ranges, [[1, 50]]);
+  assert.deepEqual(planned.diff_slice, { start: 0, end: 1 });
+  assert.equal(readJson(out).batches[0].id, 'batch-001');
+  assert.equal(readJson(out).batches[0].total_lines, 100);
+});
+
+test('ato-code-review-java get-diff-files classifies feign listener job kotlin and filter paths', () => {
+  const { getJavaFileType, isReviewableFile } = require(path.join(ROOT, 'ato-code-review-java/scripts/get-diff-files.js'));
+  assert.equal(getJavaFileType('src/main/java/com/x/UserClient.java'), 'feign');
+  assert.equal(getJavaFileType('src/main/java/com/x/OrderFeign.java'), 'feign');
+  assert.equal(getJavaFileType('src/main/java/com/x/PaymentListener.java'), 'listener');
+  assert.equal(getJavaFileType('src/main/java/com/x/OrderConsumer.java'), 'listener');
+  assert.equal(getJavaFileType('src/main/java/com/x/CleanupJob.java'), 'job');
+  assert.equal(getJavaFileType('src/main/java/com/x/NightlyTask.java'), 'job');
+  assert.equal(getJavaFileType('src/main/java/com/x/ReportScheduler.java'), 'job');
+  assert.equal(getJavaFileType('src/main/java/com/x/filter/AuthGatewayFilter.java'), 'interceptor');
+  assert.equal(getJavaFileType('src/main/kotlin/com/x/FooService.kt'), 'service-interface');
+  assert.equal(isReviewableFile('src/main/kotlin/com/x/App.kt'), true);
+});
+
+test('ato-code-review-java file suffix wins over filter directory fallback', () => {
+  const { getJavaFileType } = require(path.join(ROOT, 'ato-code-review-java/scripts/get-diff-files.js'));
+  assert.equal(getJavaFileType('src/main/java/com/x/filter/UserServiceImpl.java'), 'service-impl');
+  assert.equal(getJavaFileType('src/main/java/com/x/filter/FilterProperties.java'), 'interceptor');
+  assert.equal(getJavaFileType('src/main/java/com/x/filter/RequestWrapper.java'), 'interceptor');
+});
+
+test('ato-code-review-java HTML mustfix filter degrades and never leaks into signed archive', () => {
+  const shell = fs.readFileSync(path.join(ROOT, 'ato-code-review-java/templates/report-shell.html'), 'utf8');
+  const applyFn = shell.match(/function applyMustfixFilter\(\)[\s\S]*?\n {6}\}/);
+  assert.ok(applyFn, 'applyMustfixFilter should exist');
+  assert.match(applyFn[0], /mustCount/, 'filter should count must-fix rows');
+
+  const initFn = shell.match(/function initMustfixFilter\(\)[\s\S]*?\n {6}\}/);
+  assert.ok(initFn, 'initMustfixFilter should exist');
+  assert.match(initFn[0], /checked = false/, 'filter must auto-disable when no must-fix issue exists');
+
+  const fixFn = shell.match(/function buildFixHtml\([\s\S]*?\n {6}\}/);
+  assert.ok(fixFn, 'buildFixHtml should exist');
+  assert.match(fixFn[0], /row-filtered-out/, 'signed archive should clear filter state');
+});
+
+test('ato-code-review-java SKILL.md keeps parallel DAG and trigger-only description', () => {
+  const skillDoc = fs.readFileSync(path.join(ROOT, 'ato-code-review-java/SKILL.md'), 'utf8');
+  assert.match(skillDoc, /同批 applicable 专家并行/);
+  assert.doesNotMatch(skillDoc, /遍历该批次的专家（core → security → spring → data）/);
+  const fm = skillDoc.match(/^---\n([\s\S]*?)\n---/);
+  assert.ok(fm);
+  assert.doesNotMatch(fm[1], /产出 Markdown\/HTML/);
+  assert.doesNotMatch(fm[1], /断点续跑与/);
+  assert.match(fm[1], /续跑检视|Java|后端代码检视/);
+});
+
+test('ato-code-review-java unused_new_symbol is medium and filtered in critical_high_only', () => {
+  const files = [
+    'SKILL.md',
+    'prompts/code-scanner.md',
+    'prompts/framework-reviewer.md',
+    'prompts/security-reviewer.md',
+    'prompts/perf-reviewer.md',
+    'prompts/issue-curator.md',
+  ];
+  for (const rel of files) {
+    const text = fs.readFileSync(path.join(ROOT, 'ato-code-review-java', rel), 'utf8');
+    assert.match(text, /unused_new_symbol/, rel);
+    assert.match(text, /medium/, rel);
+    assert.match(text, /critical_high_only/, rel);
+  }
+  const curator = fs.readFileSync(path.join(ROOT, 'ato-code-review-java/prompts/issue-curator.md'), 'utf8');
+  assert.match(curator, /severity_mode_filter/);
+  const perf = fs.readFileSync(path.join(ROOT, 'ato-code-review-java/prompts/perf-reviewer.md'), 'utf8');
+  assert.doesNotMatch(perf, /05-review-security\.md/);
+});
+
+test('ato-code-review-java HTML orders meta then issues then signoff with 怎么改 expand', () => {
+  const skill = 'ato-code-review-java';
+  const workspace = makeWorkspace(skill);
+  const mdPath = renderReport(skill, workspace, 'report_issue_first.md');
+  const htmlPath = renderHtml(skill, workspace, mdPath);
+  const html = fs.readFileSync(htmlPath, 'utf8');
+
+  const tocOrder = ['section-meta', 'section-issues', 'section-signoff', 'section-summary'].map((id) =>
+    html.indexOf(`href="#${id}"`)
+  );
+  tocOrder.forEach((at, i) => assert.ok(at >= 0, `TOC should link ${i}`));
+  assert.deepEqual(
+    [...tocOrder].sort((a, b) => a - b),
+    tocOrder,
+    'TOC order should be 基本信息 → 问题清单 → 验证与签收 → 问题汇总统计'
+  );
+
+  const bodyOrder = ['section-meta', 'section-issues', 'section-signoff', 'section-summary'].map((id) =>
+    html.indexOf(`id="${id}"`)
+  );
+  bodyOrder.forEach((at, i) => assert.ok(at >= 0, `body should render ${i}`));
+  assert.deepEqual(
+    [...bodyOrder].sort((a, b) => a - b),
+    bodyOrder,
+    'body panel order should be 基本信息 → 问题清单 → 验证与签收 → 问题汇总统计'
+  );
+
+  assert.match(html, /id="section-meta" open>/, '基本信息 should default open');
+  assert.match(html, /id="section-signoff" open>/, '验证与签收 should default open');
+  assert.match(html, /id="section-issues" open>/, '问题清单 should default open');
+
+  assert.match(html, /怎么改/);
+  assert.match(html, /问题代码/);
+  assert.match(html, /id="filter-mustfix"/);
+  assert.match(html, /按领域归档/);
+  assert.match(html, /details class="issue-row[^"]*row-mustfix/);
+  assert.match(html, /<pre class="code code-snippet">[\s\S]*unusedHelper[\s\S]*<\/pre>/);
+  assert.match(html, /怎么改[\s\S]*call from create|接入真实调用/);
+});
+
+test('ato-code-review-java HTML panel titles drop MD numbering that no longer matches order', () => {
+  const skill = 'ato-code-review-java';
+  const workspace = makeWorkspace(skill);
+  const mdPath = renderReport(skill, workspace, 'report_panel_titles.md');
+  const htmlPath = renderHtml(skill, workspace, mdPath);
+  const html = fs.readFileSync(htmlPath, 'utf8');
+
+  const numbered = html.match(/<summary><span>[一二三四五六七]、[^<]*<\/span>/g) || [];
+  assert.deepEqual(numbered, [], `panel titles should not keep MD numbering: ${numbered.join(' / ')}`);
+  assert.match(html, /<summary><span>问题清单<\/span>/);
+  assert.match(html, /<summary><span>基本信息<\/span>/);
+});
+
+test('ato-code-review-web HTML orders meta then issues then signoff with 怎么改 expand', () => {
+  const skill = 'ato-code-review-web';
+  const workspace = makeWorkspace(skill);
+  const mdPath = renderReport(skill, workspace, 'report_issue_first.md');
+  const htmlPath = renderHtml(skill, workspace, mdPath);
+  const html = fs.readFileSync(htmlPath, 'utf8');
+
+  const tocOrder = ['section-meta', 'section-issues', 'section-signoff', 'section-summary'].map((id) =>
+    html.indexOf(`href="#${id}"`)
+  );
+  tocOrder.forEach((at, i) => assert.ok(at >= 0, `TOC should link ${i}`));
+  assert.deepEqual(
+    [...tocOrder].sort((a, b) => a - b),
+    tocOrder,
+    'TOC order should be 基本信息 → 问题清单 → 验证与签收 → 问题汇总统计'
+  );
+
+  const bodyOrder = ['section-meta', 'section-issues', 'section-signoff', 'section-summary'].map((id) =>
+    html.indexOf(`id="${id}"`)
+  );
+  bodyOrder.forEach((at, i) => assert.ok(at >= 0, `body should render ${i}`));
+  assert.deepEqual(
+    [...bodyOrder].sort((a, b) => a - b),
+    bodyOrder,
+    'body panel order should be 基本信息 → 问题清单 → 验证与签收 → 问题汇总统计'
+  );
+
+  assert.match(html, /id="section-meta" open>/, '基本信息 should default open');
+  assert.match(html, /id="section-signoff" open>/, '验证与签收 should default open');
+  assert.match(html, /id="section-issues" open>/, '问题清单 should default open');
+
+  assert.match(html, /怎么改/);
+  assert.match(html, /问题代码/);
+  assert.match(html, /id="filter-mustfix"/);
+  assert.match(html, /按领域归档/);
+  assert.match(html, /details class="issue-row[^"]*row-mustfix/);
+  assert.match(html, /<pre class="code code-snippet">[\s\S]*unusedHelper[\s\S]*<\/pre>/);
+  assert.match(html, /怎么改[\s\S]*call from create|接入真实调用/);
+});
+
+test('ato-code-review-web HTML panel titles drop MD numbering that no longer matches order', () => {
+  const skill = 'ato-code-review-web';
+  const workspace = makeWorkspace(skill);
+  const mdPath = renderReport(skill, workspace, 'report_panel_titles.md');
+  const htmlPath = renderHtml(skill, workspace, mdPath);
+  const html = fs.readFileSync(htmlPath, 'utf8');
+
+  const numbered = html.match(/<summary><span>[一二三四五六七]、[^<]*<\/span>/g) || [];
+  assert.deepEqual(numbered, [], `panel titles should not keep MD numbering: ${numbered.join(' / ')}`);
+  assert.match(html, /<summary><span>问题清单<\/span>/);
+  assert.match(html, /<summary><span>基本信息<\/span>/);
+});
+
+test('ato-code-review-web HTML mustfix filter degrades and never leaks into signed archive', () => {
+  const shell = fs.readFileSync(path.join(ROOT, 'ato-code-review-web/templates/report-shell.html'), 'utf8');
+  const applyFn = shell.match(/function applyMustfixFilter\(\)[\s\S]*?\n {6}\}/);
+  assert.ok(applyFn, 'applyMustfixFilter should exist');
+  assert.match(applyFn[0], /mustCount/, 'filter should count must-fix rows');
+
+  const initFn = shell.match(/function initMustfixFilter\(\)[\s\S]*?\n {6}\}/);
+  assert.ok(initFn, 'initMustfixFilter should exist');
+  assert.match(initFn[0], /checked = false/, 'filter must auto-disable when no must-fix issue exists');
+
+  const fixFn = shell.match(/function buildFixHtml\([\s\S]*?\n {6}\}/);
+  assert.ok(fixFn, 'buildFixHtml should exist');
+  assert.match(fixFn[0], /row-filtered-out/, 'signed archive should clear filter state');
+});
+
+test('ato-code-review-java SKILL.md prefers scripts for Phase 3 and 4', () => {
+  const skillDoc = fs.readFileSync(path.join(ROOT, 'ato-code-review-java/SKILL.md'), 'utf8');
+  assert.match(skillDoc, /detect-tech-stack\.js/);
+  assert.match(skillDoc, /plan-experts\.js/);
+  assert.match(skillDoc, /脚本优先/);
+  assert.ok(
+    fs.existsSync(path.join(ROOT, 'ato-code-review-java/scripts/detect-tech-stack.js')),
+    'detect-tech-stack.js should exist'
+  );
+  assert.ok(
+    fs.existsSync(path.join(ROOT, 'ato-code-review-java/scripts/plan-experts.js')),
+    'plan-experts.js should exist'
+  );
+});
+
+test('ato-code-review-web detect-tech-stack reads Vue package.json', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'web-tech-vue-'));
+  prepareConfirmedState(workspace);
+  writeJson(path.join(workspace, 'package.json'), {
+    dependencies: {
+      vue: '^3.4.21',
+      pinia: '^2.1.7',
+      'vue-router': '^4.3.0',
+      'element-plus': '^2.6.0',
+      axios: '^1.6.0',
+    },
+    devDependencies: {
+      vite: '^5.2.0',
+      typescript: '^5.4.0',
+      vitest: '^1.4.0',
+      sass: '^1.72.0',
+    },
+  });
+  const out = path.join(workspace, '.codereview/tech-stack.json');
+  const result = runNodeResult([
+    path.join(ROOT, 'ato-code-review-web/scripts/detect-tech-stack.js'),
+    '--project-root', workspace,
+    '--output', out,
+    '--force', 'true',
+  ], workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const tech = readJson(out);
+  assert.equal(tech.review_mode, 'vue3');
+  assert.equal(tech.framework, 'vue3');
+  assert.match(String(tech.vue_version), /3\./);
+  assert.equal(tech.state_management, 'pinia');
+  assert.equal(tech.router, 'vue-router');
+  assert.equal(tech.ui_library, 'element-plus');
+  assert.equal(tech.build_tool, 'vite');
+  assert.equal(tech.typescript, true);
+  assert.ok(tech.summary);
+  assert.ok(tech.review_mode_description);
+});
+
+test('ato-code-review-web detect-tech-stack prefers Vue when React is also present', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'web-tech-both-'));
+  prepareConfirmedState(workspace);
+  writeJson(path.join(workspace, 'package.json'), {
+    dependencies: { vue: '2.6.14', react: '18.2.0', 'vue-template-compiler': '2.6.14' },
+  });
+  const out = path.join(workspace, '.codereview/tech-stack.json');
+  const result = runNodeResult([
+    path.join(ROOT, 'ato-code-review-web/scripts/detect-tech-stack.js'),
+    '--project-root', workspace,
+    '--output', out,
+    '--force', 'true',
+  ], workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const tech = readJson(out);
+  assert.equal(tech.review_mode, 'vue2');
+  assert.equal(tech.react_version, null);
+});
+
+test('ato-code-review-web detect-tech-stack reads React package.json', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'web-tech-react-'));
+  prepareConfirmedState(workspace);
+  writeJson(path.join(workspace, 'package.json'), {
+    dependencies: {
+      react: '^18.2.0',
+      'react-dom': '^18.2.0',
+      'react-router-dom': '^6.20.0',
+      antd: '^5.12.0',
+      next: '^14.0.0',
+    },
+    devDependencies: { typescript: '^5.3.0' },
+  });
+  const out = path.join(workspace, '.codereview/tech-stack.json');
+  const result = runNodeResult([
+    path.join(ROOT, 'ato-code-review-web/scripts/detect-tech-stack.js'),
+    '--project-root', workspace,
+    '--output', out,
+    '--force', 'true',
+  ], workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const tech = readJson(out);
+  assert.equal(tech.review_mode, 'react');
+  assert.equal(tech.framework, 'react');
+  assert.equal(tech.meta_framework, 'next');
+  assert.equal(tech.ui_library, 'antd');
+  assert.equal(tech.vue_version, null);
+});
+
+test('ato-code-review-web detect-tech-stack writes other without package.json', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'web-tech-empty-'));
+  prepareConfirmedState(workspace);
+  const out = path.join(workspace, '.codereview/tech-stack.json');
+  const result = runNodeResult([
+    path.join(ROOT, 'ato-code-review-web/scripts/detect-tech-stack.js'),
+    '--project-root', workspace,
+    '--output', out,
+    '--force', 'true',
+  ], workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const tech = readJson(out);
+  assert.equal(tech.review_mode, 'other');
+  assert.equal(tech.framework, 'vanilla');
+  assert.match(String(tech.summary), /未检测|unknown|vanilla|other/i);
+});
+
+test('ato-code-review-web plan-experts maps vue pages to all four experts', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'web-plan-vue-'));
+  prepareConfirmedState(workspace);
+  const inventoryPath = path.join(workspace, '.codereview/file-inventory.json');
+  writeJson(inventoryPath, {
+    total_files: 2,
+    total_changed_lines: 165,
+    total_batches: 1,
+    review_scope: { skip_low_risk_files: true },
+    files: [
+      { path: 'src/views/user/UserList.vue', type: 'vue', changed_lines: 120 },
+      { path: 'src/api/user.ts', type: 'typescript', changed_lines: 45 },
+    ],
+    batches: [{
+      id: 'batch-001',
+      files: [
+        { path: 'src/views/user/UserList.vue', type: 'vue', changed_lines: 120 },
+        { path: 'src/api/user.ts', type: 'typescript', changed_lines: 45 },
+      ],
+      total_lines: 165,
+    }],
+  });
+  const out = path.join(workspace, '.codereview/task-plan.json');
+  const result = runNodeResult([
+    path.join(ROOT, 'ato-code-review-web/scripts/plan-experts.js'),
+    '--inventory', inventoryPath,
+    '--output', out,
+    '--force', 'true',
+  ], workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const experts = readJson(out).batches[0].applicable_experts;
+  assert.deepEqual(experts, ['core', 'framework', 'reliability', 'security']);
+});
+
+test('ato-code-review-web plan-experts keeps only framework for pure style batch', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'web-plan-style-'));
+  prepareConfirmedState(workspace);
+  const inventoryPath = path.join(workspace, '.codereview/file-inventory.json');
+  writeJson(inventoryPath, {
+    total_files: 1,
+    total_changed_lines: 30,
+    total_batches: 1,
+    review_scope: { skip_low_risk_files: false },
+    files: [{ path: 'src/styles/variables.scss', type: 'scss', changed_lines: 30 }],
+    batches: [{
+      id: 'batch-001',
+      files: [{ path: 'src/styles/variables.scss', type: 'scss', changed_lines: 30 }],
+      total_lines: 30,
+    }],
+  });
+  const out = path.join(workspace, '.codereview/task-plan.json');
+  const result = runNodeResult([
+    path.join(ROOT, 'ato-code-review-web/scripts/plan-experts.js'),
+    '--inventory', inventoryPath,
+    '--output', out,
+    '--force', 'true',
+  ], workspace);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(readJson(out).batches[0].applicable_experts, ['framework']);
+});
+
+test('ato-code-review-web plan-experts maps api files to security', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'web-plan-api-'));
+  prepareConfirmedState(workspace);
+  const inventoryPath = path.join(workspace, '.codereview/file-inventory.json');
+  writeJson(inventoryPath, {
+    total_files: 1,
+    total_changed_lines: 40,
+    total_batches: 1,
+    review_scope: { skip_low_risk_files: true },
+    files: [{ path: 'src/api/order.ts', type: 'typescript', changed_lines: 40 }],
+    batches: [{
+      id: 'batch-001',
+      files: [{ path: 'src/api/order.ts', type: 'typescript', changed_lines: 40 }],
+      total_lines: 40,
+    }],
+  });
+  const out = path.join(workspace, '.codereview/task-plan.json');
+  const result = runNodeResult([
+    path.join(ROOT, 'ato-code-review-web/scripts/plan-experts.js'),
+    '--inventory', inventoryPath,
+    '--output', out,
+    '--force', 'true',
+  ], workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const experts = readJson(out).batches[0].applicable_experts;
+  assert.ok(experts.includes('security'));
+  assert.ok(experts.includes('core'));
+  assert.ok(experts.includes('reliability'));
+});
+
+test('ato-code-review-web plan-experts preserves line_ranges and diff_slice', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'web-plan-slice-'));
+  prepareConfirmedState(workspace);
+  const inventoryPath = path.join(workspace, '.codereview/file-inventory.json');
+  const fileEntry = {
+    path: 'src/App.vue',
+    type: 'vue',
+    changed_lines: 100,
+    line_ranges: [[1, 50]],
+    diff_slice: { start: 0, end: 1 },
+  };
+  writeJson(inventoryPath, {
+    total_files: 1,
+    total_changed_lines: 100,
+    total_batches: 1,
+    review_scope: { skip_low_risk_files: true },
+    files: [fileEntry],
+    batches: [{ id: 'batch-001', files: [fileEntry], total_lines: 100 }],
+  });
+  const out = path.join(workspace, '.codereview/task-plan.json');
+  const result = runNodeResult([
+    path.join(ROOT, 'ato-code-review-web/scripts/plan-experts.js'),
+    '--inventory', inventoryPath,
+    '--output', out,
+    '--force', 'true',
+  ], workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const planned = readJson(out).batches[0].files[0];
+  assert.deepEqual(planned.line_ranges, [[1, 50]]);
+  assert.deepEqual(planned.diff_slice, { start: 0, end: 1 });
+  assert.equal(readJson(out).batches[0].id, 'batch-001');
+});
+
+test('ato-code-review-web SKILL.md keeps parallel DAG and trigger-only description', () => {
+  const skillDoc = fs.readFileSync(path.join(ROOT, 'ato-code-review-web/SKILL.md'), 'utf8');
+  assert.match(skillDoc, /同批 applicable 专家并行/);
+  assert.doesNotMatch(skillDoc, /for expert in \[core, framework, reliability, security\]/);
+  const fm = skillDoc.match(/^---\n([\s\S]*?)\n---/);
+  assert.ok(fm);
+  assert.doesNotMatch(fm[1], /产出 Markdown\/HTML/);
+  assert.doesNotMatch(fm[1], /断点续跑与/);
+  assert.match(fm[1], /续跑检视|前端|Vue|React/);
+});
+
+test('ato-code-review-web unused_new_symbol is medium and filtered in critical_high_only', () => {
+  const files = [
+    'SKILL.md',
+    'prompts/code-scanner.md',
+    'prompts/framework-reviewer.md',
+    'prompts/security-reviewer.md',
+    'prompts/perf-reviewer.md',
+    'prompts/issue-curator.md',
+  ];
+  for (const rel of files) {
+    const text = fs.readFileSync(path.join(ROOT, 'ato-code-review-web', rel), 'utf8');
+    assert.match(text, /unused_new_symbol/, rel);
+    assert.match(text, /medium/, rel);
+    assert.match(text, /critical_high_only/, rel);
+  }
+  const curator = fs.readFileSync(path.join(ROOT, 'ato-code-review-web/prompts/issue-curator.md'), 'utf8');
+  assert.match(curator, /severity_mode_filter/);
+});
+
+test('ato-code-review-web get-diff-files is importable without running main', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'web-diff-import-'));
+  const script = `const m = require(${JSON.stringify(path.join(ROOT, 'ato-code-review-web/scripts/get-diff-files.js'))});
+console.log(JSON.stringify({ keys: Object.keys(m).sort() }));`;
+  const result = runNodeResult(['-e', script], workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const { keys } = parseLastJson(result.stdout);
+  assert.ok(keys.includes('getFileType'), `getFileType should be exported, got ${keys}`);
+  assert.ok(keys.includes('isFrontendFile'), `isFrontendFile should be exported, got ${keys}`);
+});
+
+test('ato-code-review-web get-diff-files keeps .env variants as env type', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'web-diff-env-'));
+  const script = `const { getFileType, isFrontendFile } = require(${JSON.stringify(path.join(ROOT, 'ato-code-review-web/scripts/get-diff-files.js'))});
+const probes = ['.env', '.env.production', '.env.local', 'src/.env.development'];
+console.log(JSON.stringify(probes.map((p) => [p, isFrontendFile(p), getFileType(p)])));`;
+  const result = runNodeResult(['-e', script], workspace);
+  assert.equal(result.status, 0, result.stderr);
+  for (const [probe, included, type] of parseLastJson(result.stdout)) {
+    assert.equal(included, true, `${probe} should stay in the inventory`);
+    assert.equal(type, 'env', `${probe} should be typed env`);
+  }
+});
+
+test('ato-code-review-web plan-experts routes env and build config to security', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'web-plan-env-'));
+  prepareConfirmedState(workspace);
+  const inventoryPath = path.join(workspace, '.codereview/file-inventory.json');
+  const files = [
+    { path: '.env.production', type: 'env', changed_lines: 6 },
+    { path: 'vite.config.ts', type: 'typescript', changed_lines: 12 },
+  ];
+  writeJson(inventoryPath, {
+    total_files: 2,
+    total_changed_lines: 18,
+    total_batches: 1,
+    review_scope: { skip_low_risk_files: true },
+    files,
+    batches: [{ id: 'batch-001', files, total_lines: 18 }],
+  });
+  const out = path.join(workspace, '.codereview/task-plan.json');
+  const result = runNodeResult([
+    path.join(ROOT, 'ato-code-review-web/scripts/plan-experts.js'),
+    '--inventory', inventoryPath,
+    '--output', out,
+    '--force', 'true',
+  ], workspace);
+  assert.equal(result.status, 0, result.stderr);
+  const experts = readJson(out).batches[0].applicable_experts;
+  assert.ok(experts.includes('security'), `env/config batch needs security, got ${experts}`);
+  assert.ok(experts.includes('core'), `env/config batch needs core, got ${experts}`);
+});
+
+test('ato-code-review-web plan-experts never yields an empty expert list', () => {
+  const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'web-plan-empty-'));
+  const script = `const { planExperts } = require(${JSON.stringify(path.join(ROOT, 'ato-code-review-web/scripts/plan-experts.js'))});
+const plan = planExperts({ batches: [{ id: 'batch-001', files: [], total_lines: 0 }] });
+console.log(JSON.stringify(plan.batches[0].applicable_experts));`;
+  const result = runNodeResult(['-e', script], workspace);
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(parseLastJson(result.stdout), ['core']);
+});
+
+test('code review opencode examples describe six Phase-1 options', () => {
+  for (const skill of ['ato-code-review-java', 'ato-code-review-web']) {
+    const text = fs.readFileSync(path.join(ROOT, skill, 'opencode/opencode.example.json'), 'utf8');
+    const config = JSON.parse(text);
+    const mainKey = Object.keys(config.agent).find((key) => key.endsWith('-main'));
+    const description = config.agent[mainKey].description;
+    assert.doesNotMatch(description, /5 Phase-1 options/, `${skill} still claims 5 Phase-1 options`);
+    assert.match(description, /6 Phase-1 options/, `${skill} should state 6 Phase-1 options`);
+  }
+});
+
+test('ato-code-review-web SKILL.md prefers scripts for Phase 3 and 4', () => {
+  const skillDoc = fs.readFileSync(path.join(ROOT, 'ato-code-review-web/SKILL.md'), 'utf8');
+  assert.match(skillDoc, /detect-tech-stack\.js/);
+  assert.match(skillDoc, /plan-experts\.js/);
+  assert.match(skillDoc, /脚本优先/);
+  assert.ok(
+    fs.existsSync(path.join(ROOT, 'ato-code-review-web/scripts/detect-tech-stack.js')),
+    'detect-tech-stack.js should exist'
+  );
+  assert.ok(
+    fs.existsSync(path.join(ROOT, 'ato-code-review-web/scripts/plan-experts.js')),
+    'plan-experts.js should exist'
+  );
+  assert.match(skillDoc, /是否跳过.*测试|E2E|Storybook/);
+  assert.match(skillDoc, /报告严重级别/);
 });

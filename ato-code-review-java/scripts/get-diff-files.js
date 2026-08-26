@@ -44,14 +44,15 @@ function parseArgs(args) {
   return result;
 }
 
-// 识别 Java 文件类型（用于任务规划专家的优先级判断）
+// 识别 Java / Kotlin 文件类型（用于任务规划）
 function getJavaFileType(filePath) {
-  const basename = path.basename(filePath, '.java');
-  const lowerPath = filePath.replace(/\\/g, '/').toLowerCase();
+  const normalized = filePath.replace(/\\/g, '/');
+  const ext = path.extname(filePath).toLowerCase();
+  const basename = path.basename(filePath, ext);
+  const lowerPath = normalized.toLowerCase();
   const lowerBase = basename.toLowerCase();
 
-  // 按后缀名分类（非 .java 文件）
-  const ext = path.extname(filePath).toLowerCase();
+  // 按后缀名分类（非源码类文件）
   if (ext === '.xml') {
     if (lowerPath.includes('mapper') || lowerPath.includes('dao')) return 'mapper-xml';
     if (lowerBase === 'pom') return 'build';
@@ -59,16 +60,15 @@ function getJavaFileType(filePath) {
   }
   if (ext === '.yml' || ext === '.yaml') return 'config-yaml';
   if (ext === '.properties') return 'config-properties';
-  if (ext === '.gradle') return 'build';
+  if (ext === '.gradle' || ext === '.kts') return 'build';
   if (ext === '.sql') return 'sql';
 
-  // Java 类文件分类
-  if (!ext || ext === '.java') {
-    if (lowerBase.endsWith('controller')) return 'controller';
-    if (lowerBase.endsWith('restcontroller')) return 'controller';
+  const isJvmSource = !ext || ext === '.java' || ext === '.kt';
+  if (isJvmSource) {
+    if (lowerBase.endsWith('gatewayfilter') || lowerBase.endsWith('filter')) return 'interceptor';
+    if (lowerBase.endsWith('controller') || lowerBase.endsWith('restcontroller')) return 'controller';
     if (lowerBase.endsWith('serviceimpl')) return 'service-impl';
     if (lowerBase.endsWith('service') && !lowerBase.endsWith('serviceimpl')) {
-      // 接口 vs 实现：实际内容判断较难，通过路径区分
       if (lowerPath.includes('/impl/')) return 'service-impl';
       return 'service-interface';
     }
@@ -77,12 +77,16 @@ function getJavaFileType(filePath) {
     if (lowerBase.endsWith('vo') || lowerBase.endsWith('dto') || lowerBase.endsWith('request') || lowerBase.endsWith('response')) return 'dto';
     if (lowerBase.endsWith('config') || lowerBase.endsWith('configuration')) return 'config-java';
     if (lowerBase.endsWith('util') || lowerBase.endsWith('utils') || lowerBase.endsWith('helper')) return 'util';
-    if (lowerBase.endsWith('tests')) return 'test';
-    if (lowerBase.endsWith('test')) return 'test';
+    if (lowerBase.endsWith('tests') || lowerBase.endsWith('test')) return 'test';
     if (lowerBase.endsWith('enum') || lowerBase.endsWith('enums')) return 'enum';
     if (lowerBase.endsWith('exception')) return 'exception';
     if (lowerBase.endsWith('handler') || lowerBase.endsWith('advice')) return 'handler';
-    if (lowerBase.endsWith('interceptor') || lowerBase.endsWith('filter')) return 'interceptor';
+    if (lowerBase.endsWith('interceptor')) return 'interceptor';
+    if (lowerBase.endsWith('client') || lowerBase.endsWith('feign')) return 'feign';
+    if (lowerBase.endsWith('listener') || lowerBase.endsWith('consumer')) return 'listener';
+    if (lowerBase.endsWith('job') || lowerBase.endsWith('task') || lowerBase.endsWith('scheduler')) return 'job';
+    // 后缀无法判定时，再按所在包兜底
+    if (lowerPath.includes('/filter/') || lowerPath.includes('/interceptor/')) return 'interceptor';
   }
 
   return 'java-other';
@@ -109,7 +113,7 @@ function isReviewableFile(filePath) {
   if (normalizedPath.includes('/generated/') || path.basename(filePath).includes('MapperImpl')) return false;
 
   const reviewableExts = [
-    '.java', '.xml', '.yml', '.yaml', '.properties',
+    '.java', '.kt', '.xml', '.yml', '.yaml', '.properties',
     '.gradle', '.sql', '.json',
   ];
   const ext = path.extname(filePath).toLowerCase();
@@ -324,4 +328,8 @@ function main() {
   console.log(`  输出: ${outputPath}`);
 }
 
-main();
+if (require.main === module) {
+  main();
+}
+
+module.exports = { getJavaFileType, isReviewableFile, isLowRiskType, LOW_RISK_TYPES };

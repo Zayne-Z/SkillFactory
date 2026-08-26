@@ -26,8 +26,9 @@
 
 - 若 diff 仅新增异步函数、请求封装、缓存/防抖函数、资源清理函数、hook/composable 等符号，且 patch 内没有调用、订阅、绑定或清理路径，必须确认是否合理。
 - `{{DEEP_DOUBT_ANALYSIS}}` 为 `true`（默认）时：可读取所属源文件局部窗口，或对新增符号做一次有界引用搜索（最多读取 50 条匹配，结果过多即停止），确认是否存在调用链或生命周期入口。
-- 若无法证明合理，输出 `category: "unused_new_symbol"` 或 `unreachable_reliability_path`；`critical_high_only` 下用 `high` 并标注需确认。
-- `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：只基于 patch 证据报告“需人工确认”。
+- 若无法证明合理，输出 `category: "unused_new_symbol"` 或 `unreachable_reliability_path`，严重级别默认 **medium**。
+- 若 `{{SEVERITY_MODE}}` 为 `critical_high_only`：**不得输出**上述「仅需确认」issue（默认 medium，会被模式过滤）。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：只基于 patch 证据报告“需人工确认”（同样默认 medium；`critical_high_only` 下不输出）。
 
 ## 输入变量
 

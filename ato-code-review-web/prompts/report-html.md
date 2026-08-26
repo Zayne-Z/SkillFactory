@@ -26,23 +26,25 @@
 
 ## BODY_HTML 章节顺序（强制）
 
-`{{BODY_HTML}}` 内区块**必须严格按 MD 章节顺序**排列，不得把统计/清单提前到基本信息之前：
+HTML **不按 MD 章节序**排版：先交代这次改了什么（基本信息），再看问题、再签收，统计与附录后置。`{{BODY_HTML}}` 与 `nav.toc` 均按此序：
 
-**一 → 二 → 三 → 四 → 五 → 六 → 七**
+**基本信息（一）→ 问题清单（六）→ 验证与签收（七）→ 问题汇总（三）→ 变动文件（二）→ 技术栈与依据（四）→ 按领域归档（五）**
 
-目录 `nav.toc` 使用有序列表 `<ol>`，链接文案与章节一致（如「基本信息」「变动文件」「问题汇总」…）。
+目录 `nav.toc` 使用有序列表 `<ol>`，链接文案依次为「基本信息」「问题清单」「验证与签收」「问题汇总」「变动文件」「技术栈与依据」「按领域归档」。
 
 ## MD → HTML 章节映射表（必须逐节对齐）
 
-| MD 章节（`##` 标题） | HTML 区块 | 容器 class | 关键约束 |
-|---------------------|-----------|-----------|---------|
-| 一、基本信息 | 键值网格 | `details.collapse-panel#section-meta` | **默认展开**（加 `open`）；`dl.info-grid` 两列键值，紧凑 |
-| 二、本次变动文件清单 | 表 | `details.collapse-panel#section-files` | **默认折叠** |
-| 三、问题汇总统计 | 芯片 + 子表 | `details.collapse-panel#section-summary` | **默认展开**（`open`）；`stat-grid`；3.2/3.3 用 `collapse-sub` |
-| 四、技术栈与检视依据 | 段落 | `details.collapse-panel#section-stack` | **默认折叠** |
-| 五、详细检视结果 | 嵌套折叠 | `details.collapse-panel#section-detail` | **默认折叠**；5.1–5.4 各 `collapse-sub` |
-| 六、问题清单（全量） | 可展开行 + 勾选 | `details.collapse-panel#section-issues` | **默认展开**（`open`）；见「问题清单与签收」 |
-| 七、验证与签收 | 交互表单 | `details.collapse-panel#section-signoff` | **默认折叠**；须含 `#signoff-form` |
+HTML 面板标题**去掉 MD 的中文序号**（HTML 已重排，保留「一、」「三、」会出现序号倒挂）。下表行序即 `BODY_HTML` 输出序：
+
+| MD 章节（`##` 标题） | HTML 面板标题 | 容器 class | 关键约束 |
+|---------------------|--------------|-----------|---------|
+| 一、基本信息 | 基本信息 | `details.collapse-panel#section-meta` | **默认展开**（`open`）；`dl.info-grid` 两列键值，紧凑 |
+| 六、问题清单（全量） | 问题清单 | `details.collapse-panel#section-issues` | **默认展开**（`open`）；见「问题清单与签收」 |
+| 七、验证与签收 | 验证与签收 | `details.collapse-panel#section-signoff` | **默认展开**（`open`）；须含 `#signoff-form` |
+| 三、问题汇总统计 | 问题汇总统计 | `details.collapse-panel#section-summary` | **默认展开**（`open`）；`stat-grid`；3.2/3.3 用 `collapse-sub` |
+| 二、本次变动文件清单 | 本次变动文件清单 | `details.collapse-panel#section-files` | **默认折叠** |
+| 四、技术栈与检视依据 | 技术栈与检视依据 | `details.collapse-panel#section-stack` | **默认折叠** |
+| 五、详细检视结果 | 按领域归档 | `details.collapse-panel#section-detail` | **默认折叠**；5.1–5.4 各 `collapse-sub` |
 
 **已删除章节**（MD 中不应再出现）：「六、修复建议汇总」「八、必改项与处置结论」。若 MD 仍含旧章节，**忽略不渲染**。
 
@@ -52,7 +54,7 @@
 
 ```html
 <details class="collapse-panel" id="section-meta" open>
-  <summary><span>一、基本信息</span><span class="collapse-meta">分支 / 基准 / 范围</span></summary>
+  <summary><span>基本信息</span><span class="collapse-meta">分支 / 基准 / 范围</span></summary>
   <div class="collapse-body">
     <dl class="info-grid">
       <dt>检视分支</dt><dd><code>feature/…</code></dd>
@@ -67,7 +69,7 @@
 
 ```html
 <details class="collapse-panel" id="section-detail">
-  <summary><span>五、详细检视结果</span><span class="collapse-meta">8 项</span></summary>
+  <summary><span>按领域归档</span><span class="collapse-meta">8 项</span></summary>
   <div class="collapse-body">
     <details class="collapse-sub">…5.1…</details>
   </div>
@@ -111,46 +113,59 @@
 
 ### 第六节
 
+列序与壳内 CSS 栅格（11 列）严格对应，不得增删或调换：
+
 ```html
 <details class="collapse-panel" id="section-issues" open>
-  <summary><span>六、问题清单（全量）</span><span class="collapse-meta">勾选有效 / 已修</span></summary>
+  <summary><span>问题清单</span><span class="collapse-meta">N 条</span></summary>
   <div class="collapse-body">
+    <div class="issue-filters">
+      <label class="filter-chip"><input type="checkbox" id="filter-mustfix" checked> 仅必改</label>
+      <span class="filter-hint">关闭后显示全部问题；全部行仍保留在页面中供签收统计。</span>
+    </div>
     <div class="issue-list">
       <div class="issue-list-header">
-        <span aria-hidden="true"></span><span>ID</span><span>位置</span><span>函数</span><span>提交人</span>
-        <span>级</span><span>必改</span><span>有效</span><span>已修</span><span>描述</span><span aria-hidden="true"></span>
+        <span aria-hidden="true"></span><span>#</span><span>ID</span><span>级</span><span>必改</span>
+        <span>位置</span><span>函数</span><span>问题</span><span>有效</span><span>已修</span><span aria-hidden="true"></span>
       </div>
-      <details class="issue-row row-mustfix" data-issue-id="SEC-004" data-author="张三" data-domain="安全">
+      <details class="issue-row row-mustfix" data-issue-id="SEC-004" data-author="张三" data-domain="安全" data-mustfix="1" data-sev="critical">
         <summary>
+          <span class="col-index">1</span>
           <span class="col-id">SEC-004</span>
-          <span class="col-loc col-clip" title="OrderList.vue:52">OrderList.vue:52</span>
-          <span class="col-fn col-clip" title="loadOrders">loadOrders</span>
-          <span class="col-author col-clip" title="张三">张三</span>
           <span class="col-sev sev-critical">C</span>
           <span class="col-must yes">必改</span>
+          <span class="col-loc col-clip" title="OrderList.vue:52">OrderList.vue:52</span>
+          <span class="col-fn col-clip" title="loadOrders">loadOrders</span>
+          <span class="col-desc col-clip" title="水平越权">水平越权</span>
           <span class="col-chk"><label class="chk-label"><input type="checkbox" class="cb-valid">有效</label></span>
           <span class="col-chk"><label class="chk-label"><input type="checkbox" class="cb-fixed">已修</label></span>
-          <span class="col-desc">水平越权</span>
           <button type="button" class="btn-detail" data-issue-id="SEC-004" title="SEC-004"></button>
         </summary>
-        <div class="issue-row-expand">…loc-bar + code-snippet…</div>
+        <div class="issue-row-expand">
+          <div class="loc-bar"><span><strong>文件</strong> …</span><span><strong>行号</strong> …</span><span><strong>函数</strong> …</span><span><strong>提交人</strong> 张三</span><span><strong>领域</strong> 安全</span></div>
+          <p class="issue-label">问题描述</p><p>…</p>
+          <p class="issue-label">问题代码</p><pre class="code code-snippet">…</pre>
+          <p class="issue-label">怎么改</p><pre class="code code-fix">…</pre>
+        </div>
       </details>
     </div>
   </div>
 </details>
 ```
 
-- 每条 `details.issue-row` **必须** `data-issue-id="{ID}"`；若有提交人则加 `data-author="{name}"` 与 `<span class="col-author col-clip" title="...">`（第六节「提交人」列，便于认领与签收汇总）。
+- 每条 `details.issue-row` **必须**带 `data-issue-id`、`data-mustfix`（必改为 `1`）、`data-sev`；有提交人 / 领域时补 `data-author` / `data-domain`——签收汇总与「本次参与开发」只读这两个属性，不再读 `.col-author` 列。
+- 将问题 ID 当作不透明稳定标识原样传递；`COR-batch-002-02`、`SPR-SEC-002-003` 等复合 ID 都是合法值。禁止用 `^[A-Z]+-\d+$` 一类展示格式正则过滤；只拒绝空 ID，并以第五、六章 ID 集合完全一致作为真实性门禁。
+- 展开区必须同时给出「问题代码」与「怎么改」两块（缺失填「（无）」），这是开发者不跳转就能定位与修复的最小信息集。
 - 若第六节问题清单因分页、续表或批次拆成多张包含「问题 ID」的表，必须合并全部问题行后**统一重排**：严重级别 Critical → High → Medium → Low，同级别按文件路径升序、再按行号升序；禁止只取第一张表，也禁止保留按批次分段的乱序。最终 `details.issue-row` 数量必须覆盖 MD 第六节问题行，并不得少于第三节合计或第五节 issue 条目数。
 - **详情按钮**：`btn-detail` 的 `data-issue-id` 须与第五节 `article#issue-{ID}` 一致；若第五节暂无完整条目，**至少**在行内提供 `.issue-row-expand`（loc-bar + code-snippet），壳 JS 会回退展示该行摘要。
-- 可能被截断的列（`.col-loc`、`.col-fn`、`.col-author`、`.col-desc`）须加 class `col-clip`，并设置 `title`（或与 `data-full` 同值的完整文本），悬停可查看省略内容。
+- 可能被截断的列（`.col-loc`、`.col-fn`、`.col-desc`）须加 class `col-clip`，并设置 `title`（或与 `data-full` 同值的完整文本），悬停可查看省略内容。
 - `.cb-valid` / `.cb-fixed` 勾选会联动第七节统计（壳 JS 已内置）。
 
 ### 第七节（固定 id，壳 JS 依赖）
 
 ```html
-<details class="collapse-panel" id="section-signoff">
-  <summary><span>七、验证与签收</span><span class="collapse-meta">提交后生成 Fix 版</span></summary>
+<details class="collapse-panel" id="section-signoff" open>
+  <summary><span>验证与签收</span><span class="collapse-meta">提交后生成 Fix 版</span></summary>
   <div class="collapse-body">
     <form id="signoff-form" class="signoff-form">
       <div class="signoff-grid">
@@ -212,7 +227,7 @@
 
 1. 以壳模板为骨架，替换：
    - `{{REPORT_TITLE}}`：取自 MD 一级标题（去掉 `#`）
-   - `{{META_SUMMARY}}`：从「一、基本信息」提炼 4–6 个 `meta-card`（分支、日期、合计问题数、必改项等）；**必改**卡片须加 class `mustfix`（标签与数值标红）
+   - `{{META_SUMMARY}}`：固定 4 张 `meta-card`，依次为 Critical、High、必改项、合计（数值取自「三、问题汇总统计」）；**必改项**卡片须加 class `mustfix`（标签与数值标红）
    - `{{REPORT_META_JSON}}`：见「报告元数据」
    - `{{BODY_HTML}}`：按映射表转换的各 `section`
    - `{{GENERATED_AT}}`：与 MD 页脚时间一致

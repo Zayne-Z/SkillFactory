@@ -34,6 +34,7 @@ function getFilePriority(filePath) {
   // 统一使用正斜杠，兼容 Windows 路径
   const lowerPath = filePath.replace(/\\/g, '/').toLowerCase();
 
+  if (path.basename(lowerPath).startsWith('.env')) return 10;
   if (lowerPath.includes('/api/') || lowerPath.includes('/apis/')) return 10;
   if (lowerPath.includes('/router/') || lowerPath.includes('/routes/')) return 9;
   if (lowerPath.includes('/store/') || lowerPath.includes('/stores/')) return 8;

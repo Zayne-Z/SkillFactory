@@ -26,8 +26,9 @@
 
 - 若 diff 仅新增 Controller 接口、Service 方法、Bean、注解配置、事务方法或框架扩展点，且 patch 内没有调用、路由消费、注入使用或测试覆盖，必须确认是否合理。
 - `{{DEEP_DOUBT_ANALYSIS}}` 为 `true`（默认）时：可读取所属源文件局部窗口，或对新增符号做一次有界引用搜索（最多读取 50 条匹配，结果过多即停止），判断是否为 Spring/框架约定入口、反射入口或遗漏调用。
-- 若无法证明合理，输出 `category: "unused_new_symbol"` / `spring_unused_entry`；`critical_high_only` 下用 `high` 并标注需确认。
-- `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：只基于 patch 证据报告“需人工确认”。
+- 若无法证明合理，输出 `category: "unused_new_symbol"` / `spring_unused_entry`，严重级别默认 **medium**。
+- 若 `{{SEVERITY_MODE}}` 为 `critical_high_only`：**不得输出**上述「仅需确认」类 issue。
+- `{{DEEP_DOUBT_ANALYSIS}}` 为 `false` 时：只基于 patch 证据报告“需人工确认”（默认 medium；`critical_high_only` 下不输出）。
 
 ## 严重级别范围
 

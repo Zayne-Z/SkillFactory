@@ -3,7 +3,7 @@
   "agent": {
     "web-codereview-main": {
       "mode": "primary",
-      "description": "Frontend code review orchestrator for ato-code-review-web",
+      "description": "Frontend code review orchestrator. Load SKILL.md §0 first: ensure all 6 Phase-1 options have values before Phase 2; skipped options use defaults; persist via update-state.js; scripts enforce PHASE1_REQUIRED gate.",
       "prompt": "{file:./ato-code-review-web/SKILL.md}",
       "permission": {
         "task": {

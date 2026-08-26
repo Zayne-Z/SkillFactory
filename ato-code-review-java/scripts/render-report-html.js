@@ -27,12 +27,12 @@ const SHELL_PLACEHOLDERS = [
 
 const TOC = [
   { key: '一、基本信息', id: 'section-meta', label: '基本信息' },
-  { key: '二、本次变动文件清单', id: 'section-files', label: '变动文件' },
-  { key: '三、问题汇总统计', id: 'section-summary', label: '问题汇总' },
-  { key: '四、技术栈与检视依据', id: 'section-stack', label: '技术栈与依据' },
-  { key: '五、详细检视结果', id: 'section-detail', label: '详细检视结果' },
   { key: '六、问题清单', id: 'section-issues', label: '问题清单' },
   { key: '七、验证与签收', id: 'section-signoff', label: '验证与签收' },
+  { key: '三、问题汇总统计', id: 'section-summary', label: '问题汇总' },
+  { key: '二、本次变动文件清单', id: 'section-files', label: '变动文件' },
+  { key: '四、技术栈与检视依据', id: 'section-stack', label: '技术栈与依据' },
+  { key: '五、详细检视结果', id: 'section-detail', label: '按领域归档' },
 ];
 
 const SEV = {
@@ -506,7 +506,7 @@ function collapseSub(title, bodyHtml) {
 </details>`;
 }
 
-function buildMetaCards(kv, totalIssues, mustfixCount) {
+function buildMetaCards(totalIssues, mustfixCount, severityCounts) {
   const cards = [];
   const add = (label, value, mustfix) => {
     const cls = mustfix ? ' meta-card mustfix' : ' meta-card';
@@ -514,12 +514,30 @@ function buildMetaCards(kv, totalIssues, mustfixCount) {
       `<div class="${cls.trim()}"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`
     );
   };
-  if (kv['检视分支']) add('检视分支', kv['检视分支'], false);
-  if (kv['检视时间'] || kv['报告生成时间']) add('检视时间', kv['检视时间'] || kv['报告生成时间'], false);
-  if (totalIssues != null) add('问题合计', String(totalIssues), false);
+  const counts = severityCounts || {};
+  add('Critical', String(counts.critical != null ? counts.critical : 0), false);
+  add('High', String(counts.high != null ? counts.high : 0), false);
   add('必改项', String(mustfixCount != null ? mustfixCount : 0), true);
-  if (kv['变动文件数']) add('变动文件', kv['变动文件数'], false);
+  add('合计', String(totalIssues != null ? totalIssues : 0), false);
   return cards.join('\n');
+}
+
+function countSeverityBreakdown(section3) {
+  const result = { critical: 0, high: 0, medium: 0, low: 0 };
+  const m31 = section3.match(/###\s*3\.1[\s\S]*?(?=###|$)/);
+  if (!m31) return result;
+  const tables = extractTables(m31[0]);
+  const t = tables[0];
+  if (!t) return result;
+  for (const row of t.rows) {
+    const label = row[0] || '';
+    const num = parseInt(stripMd(row[1]), 10) || 0;
+    if (/Critical|严重/.test(label)) result.critical = num;
+    else if (/High|高危/.test(label)) result.high = num;
+    else if (/Medium|中危/.test(label)) result.medium = num;
+    else if (/Low|低危/.test(label)) result.low = num;
+  }
+  return result;
 }
 
 function buildStatGrid(section3) {
@@ -550,7 +568,7 @@ function parseIssueBlocks(section5) {
   const blocks = [];
   const useAnchor = /<a\s+id="issue-/m.test(section5);
   const parts = section5.split(
-    useAnchor ? /(?=<a\s+id="issue-)/m : /(?=^#####\s+[A-Z]+-\d+)/m
+    useAnchor ? /(?=<a\s+id="issue-)/m : /(?=^#####\s+[A-Za-z0-9][A-Za-z0-9._:-]*)/m
   );
   for (const part of parts) {
     const trimmed = part.trim();
@@ -560,7 +578,7 @@ function parseIssueBlocks(section5) {
     let id = anchor ? anchor[1] : null;
     let headerLine = head ? head[1].trim() : '';
     if (!id && headerLine) {
-      const idM = headerLine.match(/^([A-Z]+-\d+)/);
+      const idM = headerLine.match(/^([A-Za-z0-9][A-Za-z0-9._:-]*)/);
       if (idM) id = idM[1];
     }
     if (!id) continue;
@@ -655,7 +673,7 @@ function renderSection5(section5) {
       allParsed.blocks.map(renderIssueArticle).join('\n') || '<p>本节无详细问题条目。</p>';
   }
   const count = allParsed.blocks.length;
-  return collapsePanel('section-detail', '五、详细检视结果', `${count} 项`, inner, false);
+  return collapsePanel('section-detail', '按领域归档', `${count} 项`, inner, false);
 }
 
 function colIndex(headers, names) {
@@ -694,7 +712,7 @@ function renderSection6(section6, issueById) {
   );
   if (!issueTables.length) {
     return {
-      html: collapsePanel('section-issues', '六、问题清单（全量）', '0 条', '<p>未解析到问题表。</p>', true),
+      html: collapsePanel('section-issues', '问题清单', '0 条', '<p>未解析到问题表。</p>', true),
       rowCount: 0,
       tableCount: 0,
       duplicateIssueIds: [],
@@ -723,7 +741,10 @@ function renderSection6(section6, issueById) {
     for (const row of t.rows) {
       const get = (i) => (i >= 0 && row[i] != null ? stripMd(row[i]) : '');
       const id = get(idx.id);
-      if (!id || !/^[A-Z]+-\d+$/.test(id)) continue;
+      // 报告 ID 由 resolved issues / 第五章锚点生成，可能携带批次或来源段，
+      // 例如 COR-batch-002-02、SPR-SEC-002-003。这里不能用展示格式正则
+      // 静默丢弃合法行；真实性由下游 sectionIssueIdsMatch 精确核对第五、六章集合。
+      if (!id) continue;
       rawRowIds.push(id);
       if (seenIds.has(id)) {
         duplicateIssueIds.push(id);
@@ -753,43 +774,51 @@ function renderSection6(section6, issueById) {
     const loc = `${file}:${line}`.replace(/:$/, '');
     const issue = issueById[id];
     const rowCls = must === 'yes' ? 'issue-row row-mustfix' : 'issue-row';
-    let expand = '';
-    if (issue) {
-      expand = `<div class="issue-row-expand"><div class="loc-bar">`;
-      if (issue.loc.file) expand += `<span><strong>文件</strong> ${escapeHtml(issue.loc.file)}</span>`;
-      if (issue.loc.line) expand += `<span><strong>行号</strong> ${escapeHtml(issue.loc.line)}</span>`;
-      if (issue.loc.symbol) expand += `<span><strong>函数</strong> ${escapeHtml(issue.loc.symbol)}</span>`;
-      expand += '</div>';
-      if (issue.code) expand += `<pre class="code code-snippet">${escapeHtml(issue.code)}</pre>`;
-      expand += '</div>';
-    }
-    return `<details class="${rowCls}" data-issue-id="${escapeHtml(id)}" data-author="${escapeHtml(author)}" data-domain="${escapeHtml(domain)}">
+    let expand = `<div class="issue-row-expand"><div class="loc-bar">`;
+    expand += `<span><strong>文件</strong> ${escapeHtml((issue && issue.loc.file) || file || '—')}</span>`;
+    expand += `<span><strong>行号</strong> ${escapeHtml((issue && issue.loc.line) || line || '—')}</span>`;
+    expand += `<span><strong>函数</strong> ${escapeHtml((issue && issue.loc.symbol) || fn || '—')}</span>`;
+    if (author && author !== '—') expand += `<span><strong>提交人</strong> ${escapeHtml(author)}</span>`;
+    if (domain) expand += `<span><strong>领域</strong> ${escapeHtml(domain)}</span>`;
+    expand += '</div>';
+    const description = (issue && issue.description) || desc || '—';
+    expand += `<p class="issue-label">问题描述</p><p>${escapeHtml(description)}</p>`;
+    const code = (issue && issue.code) || '';
+    expand += `<p class="issue-label">问题代码</p><pre class="code code-snippet">${escapeHtml(code || '（无）')}</pre>`;
+    const fix = (issue && issue.fix) || '';
+    expand += `<p class="issue-label">怎么改</p><pre class="code code-fix">${escapeHtml(fix || '（无）')}</pre>`;
+    expand += '</div>';
+    return `<details class="${rowCls}" data-issue-id="${escapeHtml(id)}" data-author="${escapeHtml(author)}" data-domain="${escapeHtml(domain)}" data-mustfix="${must === 'yes' ? '1' : '0'}" data-sev="${escapeHtml(rec.sev)}">
   <summary>
     <span class="col-index">${index + 1}</span>
     <span class="col-id">${escapeHtml(id)}</span>
-    <span class="col-loc col-clip" title="${escapeHtml(loc)}">${escapeHtml(loc)}</span>
-    <span class="col-fn col-clip" title="${escapeHtml(fn)}">${escapeHtml(fn)}</span>
-    <span class="col-author col-clip" title="${escapeHtml(author)}">${escapeHtml(author)}</span>
     <span class="col-sev ${sevInfo.cls}">${sevInfo.letter}</span>
     <span class="col-must ${must}">${must === 'yes' ? '必改' : '—'}</span>
+    <span class="col-loc col-clip" title="${escapeHtml(loc)}">${escapeHtml(loc)}</span>
+    <span class="col-fn col-clip" title="${escapeHtml(fn)}">${escapeHtml(fn)}</span>
+    <span class="col-desc col-clip" title="${escapeHtml(desc)}">${escapeHtml(desc)}</span>
     <span class="col-chk"><label class="chk-label"><input type="checkbox" class="cb-valid">有效</label></span>
     <span class="col-chk"><label class="chk-label"><input type="checkbox" class="cb-fixed">已修</label></span>
-    <span class="col-desc col-clip" title="${escapeHtml(desc)}">${escapeHtml(desc)}</span>
     <button type="button" class="btn-detail" data-issue-id="${escapeHtml(id)}" title="${escapeHtml(id)}"></button>
   </summary>
   ${expand}
 </details>`;
   });
 
-  const body = `<div class="issue-list">
+  const filters = `<div class="issue-filters">
+  <label class="filter-chip"><input type="checkbox" id="filter-mustfix" checked> 仅必改</label>
+  <span class="filter-hint">关闭后显示全部问题；全部行仍保留在页面中供签收统计。</span>
+</div>`;
+
+  const body = `${filters}
+<div class="issue-list">
   <div class="issue-list-header">
-    <span aria-hidden="true"></span><span>#</span><span>ID</span><span>位置</span><span>函数</span><span>提交人</span>
-    <span>级</span><span>必改</span><span>有效</span><span>已修</span><span>描述</span><span aria-hidden="true"></span>
+    <span aria-hidden="true"></span><span>#</span><span>ID</span><span>级</span><span>必改</span><span>位置</span><span>函数</span><span>问题</span><span>有效</span><span>已修</span><span aria-hidden="true"></span>
   </div>
   ${rows.join('\n')}
 </div>`;
   return {
-    html: collapsePanel('section-issues', '六、问题清单（全量）', `${rows.length} 条`, body, true),
+    html: collapsePanel('section-issues', '问题清单', `${rows.length} 条`, body, true),
     rowCount: rows.length,
     tableCount: issueTables.length,
     duplicateIssueIds,
@@ -801,7 +830,7 @@ function renderSection6(section6, issueById) {
 function renderSignoffSection() {
   return collapsePanel(
     'section-signoff',
-    '七、验证与签收',
+    '验证与签收',
     '提交后生成 Fix 版',
     `<form id="signoff-form" class="signoff-form">
   <div class="signoff-grid">
@@ -822,7 +851,7 @@ function renderSignoffSection() {
   <p class="signoff-hint" id="signoff-hint">提交后更新同名 .md，并生成 【Fix】 前缀 HTML；若无法读取 MD 将根据当前页面自动生成。</p>
   <div class="signoff-toast" id="signoff-toast" hidden></div>
 </form>`,
-    false
+    true
   );
 }
 
@@ -913,25 +942,8 @@ function buildReportHtml(md, shell, mdPath, outPath, statePathOpt) {
   const allIssueCodeMissing = issueBlocks.length > 0 && missingCodeIssues.length === issueBlocks.length;
 
   const bodyParts = [];
-
-  let dl = '<dl class="info-grid">';
-  Object.entries(kv).forEach(([k, v]) => {
-    const val = v.includes('/') || v.includes('`') ? `<code>${escapeHtml(stripMd(v))}</code>` : escapeHtml(v);
-    dl += `<dt>${escapeHtml(k)}</dt><dd>${val}</dd>`;
-  });
-  dl += '</dl>';
-  bodyParts.push(collapsePanel('section-meta', '一、基本信息', '分支 / 基准 / 范围', dl, true));
-
-  const filesTable = extractTables(s2)[0];
-  bodyParts.push(
-    collapsePanel(
-      'section-files',
-      '二、本次变动文件清单',
-      filesTable ? `${filesTable.rows.length} 个文件` : '',
-      filesTable ? tableToHtml(filesTable, 'zebra') : '<p>无文件表。</p>',
-      false
-    )
-  );
+  const severityCounts = countSeverityBreakdown(s3);
+  const section6Render = renderSection6(s6, byId);
 
   let s3inner = buildStatGrid(s3);
   const sub32match = s3.match(/###\s*3\.2[\s\S]*?(?=###\s*3\.3|$)/);
@@ -944,30 +956,49 @@ function buildReportHtml(md, shell, mdPath, outPath, statePathOpt) {
     const tb = extractTables(sub33match[0])[0];
     if (tb) s3inner += collapseSub('3.3 问题最多的文件 Top 5', tableToHtml(tb, 'zebra'));
   }
+
+  let dl = '<dl class="info-grid">';
+  Object.entries(kv).forEach(([k, v]) => {
+    const val = v.includes('/') || v.includes('`') ? `<code>${escapeHtml(stripMd(v))}</code>` : escapeHtml(v);
+    dl += `<dt>${escapeHtml(k)}</dt><dd>${val}</dd>`;
+  });
+  dl += '</dl>';
+  bodyParts.push(collapsePanel('section-meta', '基本信息', '分支 / 基准 / 范围', dl, true));
+
+  bodyParts.push(section6Render.html);
+  bodyParts.push(renderSignoffSection());
   bodyParts.push(
-    collapsePanel('section-summary', '三、问题汇总统计', `合计 ${total}`, s3inner, true)
+    collapsePanel('section-summary', '问题汇总统计', `合计 ${total}`, s3inner, true)
+  );
+
+  const filesTable = extractTables(s2)[0];
+  bodyParts.push(
+    collapsePanel(
+      'section-files',
+      '本次变动文件清单',
+      filesTable ? `${filesTable.rows.length} 个文件` : '',
+      filesTable ? tableToHtml(filesTable, 'zebra') : '<p>无文件表。</p>',
+      false
+    )
   );
 
   bodyParts.push(
     collapsePanel(
       'section-stack',
-      '四、技术栈与检视依据',
+      '技术栈与检视依据',
       '规范摘要',
       `<div class="stack-text">${mdBlockToHtml(s4)}</div>`,
       false
     )
   );
 
-  const section6Render = renderSection6(s6, byId);
   bodyParts.push(renderSection5(s5));
-  bodyParts.push(section6Render.html);
-  bodyParts.push(renderSignoffSection());
 
   const bodyHtml = bodyParts.join('\n');
 
   let html = applyShellTemplate(shell, {
     REPORT_TITLE: escapeHtml(title),
-    META_SUMMARY: buildMetaCards(kv, total, mustfix),
+    META_SUMMARY: buildMetaCards(total, mustfix, severityCounts),
     REPORT_META_JSON: metaJson,
     BODY_HTML: bodyHtml,
     GENERATED_AT: escapeHtml(generatedAt || workspaceVars.GENERATED_AT || ''),

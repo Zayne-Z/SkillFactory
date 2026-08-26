@@ -116,8 +116,8 @@
 1. 把同批次同一文件的所有 issue 行号收集后，求 `[min_start - 5, max_end + 5]` 形成单一连续区间作为「该文件读取窗口」
 2. 对该窗口执行**一次** `read_file`（或 `git --no-pager show {{DIFF_BRANCH1}}:<file>` 截取相同行段）
 3. 同一文件后续 issue 的复核必须复用第 1 次读到的内容，**不允许**第 2 次打开同一文件
-4. 对 `unused_new_symbol`、`spring_unused_entry`、`data_unused_entry`、`unreachable_security_control`：若 `{{DEEP_DOUBT_ANALYSIS}} == true`，可额外对符号做一次有界引用搜索（最多读取 50 条匹配，结果过多即停止）；仅在能明确证明有调用/注入/框架动态入口时移入 `invalidated[]`，否则保留并在 `recommendation` 追加“需确认新增符号是否应接入调用链”
-   - 对 `unreachable_security_control` 默认保留；除非引用证据与局部代码同时证明它已被真实路径使用，禁止移入 `invalidated[]`
+4. 对 `unused_new_symbol`、`spring_unused_entry`、`data_unused_entry`、`unreachable_security_control`：若 `{{DEEP_DOUBT_ANALYSIS}} == true`，可额外对符号做一次有界引用搜索（最多读取 50 条匹配，结果过多即停止）；仅在能明确证明有调用/注入/框架动态入口时移入 `invalidated[]`，否则保留（默认 **medium**）并在 `recommendation` 追加“需确认新增符号是否应接入调用链”
+   - 对 `unreachable_security_control`：无真实利用链证据时保持 medium；仅当能证明可利用缺口时才允许 high/critical
 5. 文件类型为 `pom.xml` / `application.yml` / `application.properties` / `build.gradle` 等纯配置 → **跳过函数体复核**，但配置键类 `unused_new_symbol` 仍可按第 4 条做一次有界引用搜索
 6. `symbol == "unknown"` 或无法在读取窗口内定位到对应函数边界 → 保留该 issue，**不**移入 `invalidated`
 
@@ -185,8 +185,9 @@
 若 `{{SEVERITY_MODE}} == "critical_high_only"`：
 
 - `issues[]` 仅保留 `severity` 为 `critical` / `high` 的条目；`medium` / `low` 即便专家误输出也过滤掉
+- 对 `unused_new_symbol` / `spring_unused_entry` / `data_unused_entry` / 无利用链证据的 `unreachable_security_control`：即便专家误标为 high，也移入 `invalidated[]`，`reason` 写 `severity_mode_filter`（除非 security 已写明可利用缺口）
 - `summary` 中 `medium` / `low` 计数为 0
-- `invalidated[]` 同步过滤（避免暴露被排除的 medium 项）
+- 被 `severity_mode_filter` 排除的项进入 `invalidated[]` 供诊断；其它 medium 不必在报告中暴露
 
 ### Step 5：输出 `{{OUTPUT_PATH}}`
 

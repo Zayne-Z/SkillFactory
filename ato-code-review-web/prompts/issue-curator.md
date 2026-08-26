@@ -153,9 +153,10 @@
 
 若 `{{SEVERITY_MODE}} == "critical_high_only"`：
 
-- `issues[]` 仅保留 `critical` / `high`。
-- `invalidated[]` 同步过滤 medium / low。
-- `summary.medium` 与 `summary.low` 为 0。
+- `issues[]` 仅保留 `severity` 为 `critical` / `high` 的条目；`medium` / `low` 即便专家误输出也过滤掉
+- 对 `unused_new_symbol` / `framework_unused_entry` / `style_unused_selector` / `unreachable_reliability_path` / 无利用链证据的 `unreachable_security_control`：即便专家误标为 high，也移入 `invalidated[]`，`reason` 写 `severity_mode_filter`（除非 security 已写明可利用缺口）
+- `summary` 中 `medium` / `low` 计数为 0
+- 被 `severity_mode_filter` 排除的项进入 `invalidated[]` 供诊断；其它 medium 不必在报告中暴露
 
 ### Step 5：输出 `{{OUTPUT_PATH}}`
 

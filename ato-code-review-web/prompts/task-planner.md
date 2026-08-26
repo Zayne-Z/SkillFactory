@@ -10,7 +10,7 @@
 
 你是检视任务规划专家。你的任务是读取已由脚本生成的批次划分结果，根据每批文件的类型和技术栈信息，为每个批次确定应启用哪些专家，输出完整的检视任务计划。
 
-> **注意**：批次划分已由 `batch-processor.js` 完成并写入 `file-inventory.json`，**不要重新划分批次**，只需读取现有批次并规划各批次的专家适用性。
+> **注意**：批次划分已由 `batch-processor.js` 完成；专家适用性优先由 `scripts/plan-experts.js` 产出。本子执行器仅在脚本失败时兜底，**不要重新划分批次**。
 
 ## 输入变量
 
@@ -24,22 +24,26 @@
 
 读取 `{{INVENTORY_PATH}}` 中的 `batches` 数组（批次已由脚本划分好）和 `{{TECH_STACK_PATH}}`。
 
-### Step 2：确定各专家适用性规则（四位专家，已合并冗余）
+按每个文件的 `type` 字段与路径判断适用专家。**与 `scripts/plan-experts.js` 保持同一份映射**：
 
-| 专家键名 | 职责 | 典型适用 |
-|----------|------|----------|
-| `core` | 扫描 + 规范（语法/死代码/命名/import） | 几乎所有含 `.js`/`.ts`/`.vue`/`.html` 的批次 |
-| `framework` | Vue/React 最佳实践 + **样式**（scoped/CSS Modules/BEM） | `.vue`、`.tsx`/`.jsx`、`.css`/`.scss`/`.less`；纯样式批可仅 `framework` |
-| `reliability` | 性能 + 健壮性（key、泄漏、async、空值、防抖） | `.vue`、API、工具模块 |
-| `security` | XSS、密钥、权限、开放重定向等 | API、路由、表单、含 `v-html`/请求头的文件 |
+| 文件类型 / 路径 | 适用专家 |
+|---------|---------|
+| `vue` / `jsx` / `tsx` | core、framework、reliability、security |
+| `javascript` / `typescript` | core、reliability；路径含 `/api/` `/router/` `/pages/` `/views/` 时再加 security |
+| `css` / `scss` / `less` / `stylus` | framework |
+| `html` | core、framework、security |
+| `env`（`.env*`）/ `vite.config.*` `vue.config.*` `next.config.*` `nuxt.config.*` `webpack.*` `babel.config.*` `.eslintrc*` | core、security |
+| 纯样式批次（全部为 css/scss/less/stylus） | 仅 framework |
 
-判断规则：
-- **core**：批次内有任意前端源码即适用（纯配置文件可视情况保留或跳过）
-- **framework**：有 `.vue` / `.tsx` / `.jsx` / 样式表，或 `review_mode` 为 `vue2` / `vue3` / `react`；`review_mode === "other"` 且批次内无 `.vue`/`.tsx`/`.jsx` 且无样式文件时可 **skipped**
-- **reliability**：有 `.vue` / `.tsx`/`.jsx` 或 `.js`/`.ts` 业务逻辑；纯常量样式批可 **skipped**
-- **security**：有 `api/`、`router/`、`pages/`、`app/`、`views/` 含交互、或含 `v-html` / `dangerouslySetInnerHTML` / 路由守卫；纯 `variables.scss` 且无敏感逻辑可 **skipped**
+`core` 始终在并集内（纯样式批次除外）。
 
-### Step 3：输出任务计划
+### Step 3：为每个批次标注 applicable_experts
+
+1. 取该批次所有文件的 type / 路径，按上表取**并集**。
+2. **curator**、**fix** 均不列入 `applicable_experts`。
+3. **不要重新划分批次**；`line_ranges` / `diff_slice` 必须原样保留。
+
+### Step 4：输出任务计划
 
 读取 `{{INVENTORY_PATH}}` 中的批次，为每批填充 `applicable_experts`，**不修改批次 id、files、total_lines 等已有字段**。文件条目中的 `line_ranges` / `diff_slice` 必须逐字段原样保留，它们是超大单文件子批次的硬性所有权边界：
 

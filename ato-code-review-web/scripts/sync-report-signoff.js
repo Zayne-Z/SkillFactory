@@ -30,10 +30,12 @@ function patchMdSection6(md, issues) {
   const byId = Object.fromEntries(issues.map((i) => [i.id, i]));
   const lines = md.split('\n');
   let inTable = false;
+  let rowsHaveSignoffColumns = false;
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
     if (line.startsWith('## 六、问题清单')) inTable = false;
     if (line.includes('| 问题 ID |') && line.includes('详情')) {
+      rowsHaveSignoffColumns = line.includes('有效') && /已修(?:复)?/.test(line);
       if (!line.includes('有效')) {
         lines[i] = line.replace('| 详情 |', '| 有效 | 已修复 | 详情 |');
       }
@@ -41,23 +43,22 @@ function patchMdSection6(md, issues) {
       continue;
     }
     if (inTable && line.startsWith('|---')) {
-      if (!line.includes('有效')) {
-        const cols = line.split('|').length - 2;
-        if (cols <= 10) {
-          lines[i] = line.replace('|------|', '|------|------|');
-        }
+      if (!rowsHaveSignoffColumns) {
+        const cells = line.slice(1, -1).split('|');
+        cells.splice(-1, 0, '------', '------');
+        lines[i] = `|${cells.join('|')}|`;
       }
       continue;
     }
-    if (inTable && line.startsWith('|') && !line.includes('问题 ID')) {
-      const m = line.match(/\|\s*\d+\s*\|\s*([A-Z]+-\d+)/);
+    if (inTable && line.startsWith('|')) {
+      const m = line.match(/^\|\s*\d+\s*\|\s*([^|]+?)\s*\|/);
       if (!m) continue;
-      const id = m[1];
+      const id = m[1].replace(/[`*_]/g, '').trim();
       const rec = byId[id];
       if (!rec) continue;
       const valid = rec.valid ? '是' : '否';
       const fixed = rec.fixed ? '是' : '否';
-      if (line.includes('| 有效 |') || (line.match(/\|/g) || []).length >= 12) {
+      if (rowsHaveSignoffColumns) {
         lines[i] = line.replace(
           /\|\s*(是|否|-)\s*\|\s*(是|否|-)\s*\|\s*\[查看\]/,
           `| ${valid} | ${fixed} | [查看]`

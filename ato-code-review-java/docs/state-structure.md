@@ -234,3 +234,12 @@ completed 也不例外：不得因报告文件存在而绕过续跑 / 重新检�
 ## updated_at
 
 主编排器每次写回 state.json 时更新此字段为当前 ISO 时间戳，便于追踪最后操作时间。
+
+## 版本检查环境变量（`check-skill-version.js`）
+
+| 变量 | 说明 |
+|------|------|
+| `ATO_SKILL_NPM_REGISTRY` | 覆盖私有 npm registry |
+| `ATO_SKILL_UPDATE_URL` | 公司 Skill 市场详情页完整地址 |
+| `ATO_SKILL_NPM_TIMEOUT_MS` | 查询超时（500–10000ms） |
+| `ATO_SKILL_VERSION_CHECK=off` | 禁用版本检查 |

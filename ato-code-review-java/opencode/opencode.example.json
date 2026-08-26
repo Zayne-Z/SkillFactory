@@ -3,7 +3,7 @@
   "agent": {
     "java-codereview-main": {
       "mode": "primary",
-      "description": "Java code review orchestrator. Load SKILL.md §0 first: ensure all 5 Phase-1 options have values before Phase 2; skipped options use defaults; persist via update-state.js; scripts enforce PHASE1_REQUIRED gate.",
+      "description": "Java code review orchestrator. Load SKILL.md §0 first: ensure all 6 Phase-1 options have values before Phase 2; skipped options use defaults; persist via update-state.js; scripts enforce PHASE1_REQUIRED gate.",
       "prompt": "{file:./ato-code-review-java/SKILL.md}",
       "permission": {
         "task": {
